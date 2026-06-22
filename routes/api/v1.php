@@ -1,0 +1,86 @@
+<?php
+
+use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
+use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\V1\Admin\UserController;
+use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
+use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
+use App\Http\Controllers\Api\V1\Auth\AuthController;
+use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\FileUploadController;
+use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Order\OfferController;
+use App\Http\Controllers\Api\V1\Order\OrderController;
+use App\Http\Controllers\Api\V1\ProfileController;
+use App\Http\Controllers\Api\V1\PublicAgentController;
+use App\Http\Controllers\Api\V1\Telegram\WebhookController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/health', HealthController::class);
+
+// Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
+Route::post('/telegram/webhook', WebhookController::class);
+
+// Public marketplace listing of approved agents (home slider / browse).
+Route::get('/agents', [PublicAgentController::class, 'index']);
+
+Route::prefix('auth')->group(function (): void {
+    Route::post('/telegram', [AuthController::class, 'telegramLogin']);
+    Route::post('/admin/login', [AuthController::class, 'adminLogin']);
+
+    Route::middleware('auth:sanctum')->group(function (): void {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/me', [AuthController::class, 'me']);
+    });
+});
+
+// Authenticated mini app surface (any logged-in user).
+Route::middleware('auth:sanctum')->group(function (): void {
+    Route::post('/file-upload', [FileUploadController::class, 'store']);
+    Route::patch('/me', [ProfileController::class, 'update']);
+
+    Route::get('/categories', [CategoryController::class, 'index']);
+
+    // B2C client orders + selecting a winning offer.
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders/{order}', [OrderController::class, 'show']);
+    Route::post('/offers/{offer}/accept', [OfferController::class, 'accept']);
+
+    Route::prefix('agent')->group(function (): void {
+        Route::get('/profile', [AgentProfileController::class, 'show']);
+        Route::post('/profile', [AgentProfileController::class, 'store']);
+        Route::put('/profile', [AgentProfileController::class, 'update']);
+        Route::patch('/profile', [AgentProfileController::class, 'updateDetails']);
+
+        // Order opportunities + the agent's offers.
+        Route::get('/orders', [AgentOrderController::class, 'index']);
+        Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
+        Route::get('/offers', [AgentOrderController::class, 'myOffers']);
+    });
+});
+
+Route::prefix('admin')
+    ->middleware(['auth:sanctum', 'admin'])
+    ->group(function (): void {
+        Route::get('/users', [UserController::class, 'index']);
+        Route::get('/users/{user}', [UserController::class, 'show']);
+        Route::patch('/users/{user}', [UserController::class, 'update']);
+        Route::patch('/users/{user}/active', [UserController::class, 'toggleActive']);
+
+        Route::get('/categories', [AdminCategoryController::class, 'index']);
+        Route::post('/categories', [AdminCategoryController::class, 'store']);
+        Route::get('/categories/{category}', [AdminCategoryController::class, 'show']);
+        Route::patch('/categories/{category}', [AdminCategoryController::class, 'update']);
+        Route::patch('/categories/{category}/active', [AdminCategoryController::class, 'toggleActive']);
+        Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
+
+        Route::get('/agents', [AdminAgentProfileController::class, 'index']);
+        Route::get('/agents/{agentProfile}', [AdminAgentProfileController::class, 'show']);
+        Route::patch('/agents/{agentProfile}/status', [AdminAgentProfileController::class, 'updateStatus']);
+
+        Route::get('/orders', [AdminOrderController::class, 'index']);
+        Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
+        Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
+    });
