@@ -14,6 +14,6 @@ class HealthTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status', 'ok')
-            ->assertJsonPath('data.service', 'AdSpace');
+            ->assertJsonPath('data.service', config('app.name'));
     }
 }

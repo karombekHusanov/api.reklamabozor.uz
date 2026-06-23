@@ -2,7 +2,7 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "adspace/backend",
     "type": "project",
-    "description": "AdSpace backend API built with Laravel.",
+    "description": "Reklama Bozor backend API built with Laravel.",
     "keywords": ["laravel", "adspace", "api"],
     "license": "MIT",
     "require": {
