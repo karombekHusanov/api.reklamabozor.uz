@@ -25,6 +25,7 @@ class UserResource extends JsonResource
             'avatar_file_id' => $this->avatar_file_id,
             'avatar' => $this->avatarFile?->url(),
             'role' => $this->role->value,
+            'role_selected_at' => $this->role_selected_at,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

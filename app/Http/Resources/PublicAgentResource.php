@@ -25,6 +25,8 @@ class PublicAgentResource extends JsonResource
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
             'location_label' => $this->location_label,
+            'lat' => $this->lat,
+            'lng' => $this->lng,
             'website_url' => $this->website_url,
             'completion_percent' => $this->completionPercent(),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AgentProfileStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicAgentResource;
 use App\Models\AgentProfile;
@@ -28,5 +29,17 @@ class PublicAgentController extends ApiController
             ->values();
 
         return $this->success(PublicAgentResource::collection($agents));
+    }
+
+    /**
+     * Public detail of a single approved agent (marketplace profile page).
+     */
+    public function show(AgentProfile $agentProfile): JsonResponse
+    {
+        abort_unless($agentProfile->status === AgentProfileStatus::Approved, 404);
+
+        $agentProfile->load(['companyLogoFile', 'categories']);
+
+        return $this->success(new PublicAgentResource($agentProfile));
     }
 }

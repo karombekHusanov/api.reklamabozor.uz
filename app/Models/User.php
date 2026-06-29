@@ -30,6 +30,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'role_selected_at',
         'avatar_file_id',
         'is_active',
     ];
@@ -79,6 +80,7 @@ class User extends Authenticatable
         return [
             'telegram_id' => 'integer',
             'role' => Role::class,
+            'role_selected_at' => 'datetime',
             'is_active' => 'boolean',
             'password' => 'hashed',
         ];

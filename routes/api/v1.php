@@ -24,6 +24,7 @@ Route::post('/telegram/webhook', WebhookController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
+Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/telegram', [AuthController::class, 'telegramLogin']);
@@ -39,6 +40,7 @@ Route::prefix('auth')->group(function (): void {
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/file-upload', [FileUploadController::class, 'store']);
     Route::patch('/me', [ProfileController::class, 'update']);
+    Route::patch('/me/role', [ProfileController::class, 'setRole']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
 
