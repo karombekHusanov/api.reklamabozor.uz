@@ -30,7 +30,9 @@ class OrderService
             'category_id' => $category->id,
             'title' => $category->name_uz,
             'description' => $data['description'],
+            'deadline' => $data['deadline'] ?? null,
             'tz_file_id' => $data['tz_file_id'],
+            'attachment_file_ids' => $data['attachment_file_ids'] ?? null,
             'status' => OrderStatus::New,
         ]);
 
@@ -50,7 +52,7 @@ class OrderService
     {
         return $client->orders()
             ->with('category')
-            ->withCount('offers')
+            ->withCount(['offers', 'views'])
             ->latest()
             ->get();
     }
@@ -59,6 +61,6 @@ class OrderService
     {
         abort_unless($order->client_id === $client->id, 404);
 
-        return $order->load(Order::CLIENT_RELATIONS);
+        return $order->load(Order::CLIENT_RELATIONS)->loadCount(['offers', 'views']);
     }
 }

@@ -60,6 +60,49 @@ class OrderTest extends TestCase
         ]);
     }
 
+    public function test_client_can_place_an_order_with_deadline_and_attachments(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+        $extra1 = File::factory()->create(['uploaded_by' => $client->id]);
+        $extra2 = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'description' => 'Urgent outdoor campaign.',
+            'deadline' => 'today_tomorrow',
+            'tz_file_id' => $tz->id,
+            'attachment_file_ids' => [$extra1->id, $extra2->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.deadline', 'today_tomorrow')
+            ->assertJsonPath('data.attachment_file_ids', [$extra1->id, $extra2->id]);
+
+        $this->assertDatabaseHas('orders', [
+            'client_id' => $client->id,
+            'deadline' => 'today_tomorrow',
+        ]);
+    }
+
+    public function test_order_rejects_invalid_deadline_and_unowned_attachments(): void
+    {
+        [, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $stranger = File::factory()->create(['uploaded_by' => User::factory()->create()->id]);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'description' => 'x',
+            'deadline' => 'next_year',
+            'tz_file_id' => File::factory()->create()->id,
+            'attachment_file_ids' => [$stranger->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['deadline', 'tz_file_id', 'attachment_file_ids.0']);
+    }
+
     public function test_order_validates_required_fields(): void
     {
         [, $token] = $this->authedUser();
@@ -99,11 +142,47 @@ class OrderTest extends TestCase
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
             'description' => 'Need outdoor billboards.',
+            'deadline' => 'this_week',
             'tz_file_id' => $tz->id,
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'sendMessage')
-            && $request['chat_id'] === 555000111);
+        // The client's TZ brief is delivered to agents as a Telegram document,
+        // referenced by an absolute URL, with a caption carrying the full order
+        // info (category, deadline, comment) and a "view order" deep-link button.
+        Http::assertSent(function ($request) use ($tz, $category) {
+            $doc = $request['document'] ?? '';
+            $caption = $request['caption'] ?? '';
+
+            return str_contains($request->url(), 'sendDocument')
+                && $request['chat_id'] === 555000111
+                && str_starts_with($doc, 'http')
+                && str_contains($doc, $tz->path)
+                && str_contains($caption, $category->name_uz)
+                && str_contains($caption, 'Shu hafta')
+                && str_contains($caption, 'Need outdoor billboards.');
+        });
+    }
+
+    public function test_agents_outside_the_order_category_are_not_notified(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $orderCategory = Category::factory()->create();
+        $otherCategory = Category::factory()->create();
+        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+
+        // Approved agent, but serves a DIFFERENT category — must not be notified.
+        $outsider = User::factory()->create(['telegram_id' => 999888777]);
+        AgentProfile::factory()->for($outsider)->approved()->create()
+            ->categories()->attach($otherCategory);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $orderCategory->id,
+            'description' => 'Only my category should hear about this.',
+            'tz_file_id' => $tz->id,
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        Http::assertNotSent(fn ($request) => ($request['chat_id'] ?? null) === 999888777);
     }
 
     public function test_new_order_notification_deep_links_to_the_order(): void

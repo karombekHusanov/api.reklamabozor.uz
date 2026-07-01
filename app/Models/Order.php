@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OfferStatus;
+use App\Enums\OrderDeadline;
 use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -23,7 +24,9 @@ class Order extends Model
         'category_id',
         'title',
         'description',
+        'deadline',
         'tz_file_id',
+        'attachment_file_ids',
         'budget_min',
         'budget_max',
         'status',
@@ -60,6 +63,11 @@ class Order extends Model
         return $this->hasMany(Offer::class);
     }
 
+    public function views(): HasMany
+    {
+        return $this->hasMany(OrderView::class);
+    }
+
     public function acceptedOffer(): HasOne
     {
         return $this->hasOne(Offer::class)->where('status', OfferStatus::Accepted);
@@ -92,6 +100,8 @@ class Order extends Model
             'budget_min' => 'decimal:2',
             'budget_max' => 'decimal:2',
             'status' => OrderStatus::class,
+            'deadline' => OrderDeadline::class,
+            'attachment_file_ids' => 'array',
         ];
     }
 }

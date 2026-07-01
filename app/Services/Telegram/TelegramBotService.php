@@ -34,6 +34,31 @@ class TelegramBotService
     }
 
     /**
+     * Send a document by public URL — Telegram fetches the file from the URL,
+     * so it must be an absolute, publicly reachable address (see File::absoluteUrl()).
+     *
+     * @param  array<string, mixed>|null  $replyMarkup
+     */
+    public function sendDocument(int|string $chatId, string $documentUrl, ?string $caption = null, ?array $replyMarkup = null): Response
+    {
+        $payload = [
+            'chat_id' => $chatId,
+            'document' => $documentUrl,
+        ];
+
+        if ($caption !== null) {
+            $payload['caption'] = $caption;
+            $payload['parse_mode'] = 'HTML';
+        }
+
+        if ($replyMarkup !== null) {
+            $payload['reply_markup'] = $replyMarkup;
+        }
+
+        return Http::asJson()->post($this->endpoint('sendDocument'), $payload);
+    }
+
+    /**
      * Reply keyboard with a single "share phone" button.
      *
      * @return array<string, mixed>

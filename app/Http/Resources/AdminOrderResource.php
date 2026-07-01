@@ -25,6 +25,7 @@ class AdminOrderResource extends JsonResource
             'id' => $this->id,
             'title' => $this->title,
             'description' => $this->description,
+            'deadline' => $this->deadline?->value,
             'status' => $this->status->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
             'tz_file' => $this->tzFile?->url(),

@@ -7,6 +7,7 @@ use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderView;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -30,9 +31,10 @@ class OfferService
 
         $categoryIds = $profile->categories()->pluck('categories.id');
 
-        return Order::query()
+        $orders = Order::query()
             ->whereIn('category_id', $categoryIds)
             ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::openForOffers()))
+            ->withCount(['views', 'offers'])
             ->with([
                 'category',
                 'tzFile',
@@ -41,6 +43,35 @@ class OfferService
             ])
             ->latest()
             ->get();
+
+        $this->recordViews($agent, $orders);
+
+        return $orders;
+    }
+
+    /**
+     * Mark each listed order as viewed by this agent (distinct — one row per
+     * order+viewer). Idempotent via the unique index, so repeat loads don't
+     * inflate the count.
+     *
+     * @param  Collection<int, Order>  $orders
+     */
+    private function recordViews(User $agent, Collection $orders): void
+    {
+        if ($orders->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+
+        $rows = $orders->map(fn (Order $order): array => [
+            'order_id' => $order->id,
+            'user_id' => $agent->id,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all();
+
+        OrderView::upsert($rows, ['order_id', 'user_id'], ['updated_at']);
     }
 
     /**

@@ -27,6 +27,8 @@ class PublicAgentResource extends JsonResource
             'location_label' => $this->location_label,
             'lat' => $this->lat,
             'lng' => $this->lng,
+            // Distance in metres from the requested point — only set by the "nearby" endpoint.
+            'distance_m' => $this->when($this->distance_m !== null, fn () => $this->distance_m),
             'website_url' => $this->website_url,
             'completion_percent' => $this->completionPercent(),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),

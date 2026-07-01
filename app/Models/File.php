@@ -28,9 +28,23 @@ class File extends Model
     }
 
     /**
-     * Public URL for the stored file, resolved against its own disk.
+     * Public path for the stored file, relative to the API host
+     * (e.g. "/storage/uploads/foo.jpg"). The client prepends its own base URL,
+     * so file links never bake in a server-side host (which may be stale).
      */
     public function url(): string
+    {
+        $url = Storage::disk($this->disk)->url($this->path);
+
+        return parse_url($url, PHP_URL_PATH) ?: $url;
+    }
+
+    /**
+     * Absolute public URL (host included) for server-side consumers that fetch
+     * the file over HTTP — e.g. Telegram, which downloads documents/photos from
+     * a public URL. Built from the app/disk host (APP_URL), not the client base.
+     */
+    public function absoluteUrl(): string
     {
         return Storage::disk($this->disk)->url($this->path);
     }

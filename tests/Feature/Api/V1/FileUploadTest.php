@@ -44,6 +44,21 @@ class FileUploadTest extends TestCase
         Storage::disk('public')->assertExists($path);
     }
 
+    public function test_upload_url_is_relative_without_a_host(): void
+    {
+        Storage::fake('public');
+
+        $url = $this->postJson('/api/v1/file-upload', [
+            'file' => UploadedFile::fake()->image('avatar.png', 200, 200),
+        ], ['Authorization' => 'Bearer '.$this->userToken()])
+            ->assertCreated()
+            ->json('data.url');
+
+        // The API must return a host-less path; the client prepends its base URL.
+        $this->assertStringStartsWith('/storage/', $url);
+        $this->assertStringNotContainsString('http', $url);
+    }
+
     public function test_upload_rejects_disallowed_mime(): void
     {
         Storage::fake('public');

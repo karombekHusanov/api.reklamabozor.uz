@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
+use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
+use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,7 +26,13 @@ Route::post('/telegram/webhook', WebhookController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
+// Nearest agents to a point — declared before the {agentProfile} route so
+// "nearby" is not captured as a model-bound id.
+Route::get('/agents/nearby', [PublicAgentController::class, 'nearby']);
 Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
+
+// Public banners for the mini app home slider.
+Route::get('/banners', [PublicBannerController::class, 'index']);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/telegram', [AuthController::class, 'telegramLogin']);
@@ -85,4 +93,11 @@ Route::prefix('admin')
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
+
+        Route::get('/banners', [AdminBannerController::class, 'index']);
+        Route::post('/banners', [AdminBannerController::class, 'store']);
+        Route::get('/banners/{banner}', [AdminBannerController::class, 'show']);
+        Route::patch('/banners/{banner}', [AdminBannerController::class, 'update']);
+        Route::patch('/banners/{banner}/active', [AdminBannerController::class, 'toggleActive']);
+        Route::delete('/banners/{banner}', [AdminBannerController::class, 'destroy']);
     });

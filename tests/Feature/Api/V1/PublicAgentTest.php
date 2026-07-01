@@ -59,4 +59,41 @@ class PublicAgentTest extends TestCase
             ->assertOk()
             ->assertJsonCount(3, 'data');
     }
+
+    public function test_nearby_orders_agents_by_distance_and_includes_distance(): void
+    {
+        // Reference point (Tashkent center).
+        $lat = 41.3111;
+        $lng = 69.2797;
+
+        $near = AgentProfile::factory()->approved()->create(['lat' => 41.3120, 'lng' => 69.2800, 'company_name' => 'Near']);
+        $far = AgentProfile::factory()->approved()->create(['lat' => 41.5500, 'lng' => 69.6000, 'company_name' => 'Far']);
+        AgentProfile::factory()->approved()->create(['lat' => null, 'lng' => null]); // excluded (no coords)
+        AgentProfile::factory()->create(['lat' => 41.3111, 'lng' => 69.2797]); // pending, excluded
+
+        $response = $this->getJson("/api/v1/agents/nearby?lat={$lat}&lng={$lng}")
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$near->id, $far->id], $ids);
+        $this->assertIsInt($response->json('data.0.distance_m'));
+        $this->assertLessThan($response->json('data.1.distance_m'), $response->json('data.0.distance_m'));
+    }
+
+    public function test_nearby_respects_limit(): void
+    {
+        AgentProfile::factory()->approved()->count(4)->create(['lat' => 41.31, 'lng' => 69.28]);
+
+        $this->getJson('/api/v1/agents/nearby?lat=41.31&lng=69.28&limit=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+    }
+
+    public function test_nearby_requires_coordinates(): void
+    {
+        $this->getJson('/api/v1/agents/nearby')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['lat', 'lng']);
+    }
 }
