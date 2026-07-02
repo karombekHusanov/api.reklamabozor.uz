@@ -37,6 +37,10 @@ class AuthService
 
         $user->save();
 
+        // The mini app authenticates from Telegram initData on every launch, so keep a single
+        // active token per user — otherwise personal_access_tokens would grow without bound.
+        $user->tokens()->delete();
+
         return [
             'user' => $user,
             'token' => $user->createToken('auth')->plainTextToken,
