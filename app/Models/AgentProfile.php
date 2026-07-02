@@ -3,11 +3,14 @@
 namespace App\Models;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\OfferStatus;
+use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AgentProfile extends Model
 {
@@ -93,6 +96,18 @@ class AgentProfile extends Model
     {
         return $this->belongsToMany(Category::class, 'agent_categories')
             ->withPivot('is_custom');
+    }
+
+    /**
+     * Accepted offers of this agency that ended in a completed order —
+     * i.e. its successfully delivered jobs. Keyed off the owning user
+     * (offers.agent_id references the user, not the profile).
+     */
+    public function completedOrders(): HasMany
+    {
+        return $this->hasMany(Offer::class, 'agent_id', 'user_id')
+            ->where('status', OfferStatus::Accepted)
+            ->whereHas('order', fn (Builder $query) => $query->where('status', OrderStatus::Completed));
     }
 
     /**

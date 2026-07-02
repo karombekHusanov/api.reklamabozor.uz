@@ -23,6 +23,7 @@ class PublicAgentController extends ApiController
         $agents = AgentProfile::query()
             ->approved()
             ->with(['companyLogoFile', 'categories'])
+            ->withCount('completedOrders')
             ->get()
             ->sortByDesc(fn (AgentProfile $profile) => $profile->completionPercent())
             ->take($limit)
@@ -52,6 +53,7 @@ class PublicAgentController extends ApiController
             ->whereNotNull('lat')
             ->whereNotNull('lng')
             ->with(['companyLogoFile', 'categories'])
+            ->withCount('completedOrders')
             ->get()
             ->each(function (AgentProfile $profile) use ($lat, $lng): void {
                 $profile->distance_m = (int) round(
@@ -73,6 +75,7 @@ class PublicAgentController extends ApiController
         abort_unless($agentProfile->status === AgentProfileStatus::Approved, 404);
 
         $agentProfile->load(['companyLogoFile', 'categories']);
+        $agentProfile->loadCount('completedOrders');
 
         return $this->success(new PublicAgentResource($agentProfile));
     }

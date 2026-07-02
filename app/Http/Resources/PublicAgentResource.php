@@ -31,6 +31,7 @@ class PublicAgentResource extends JsonResource
             'distance_m' => $this->when($this->distance_m !== null, fn () => $this->distance_m),
             'website_url' => $this->website_url,
             'completion_percent' => $this->completionPercent(),
+            'completed_orders_count' => (int) ($this->completed_orders_count ?? 0),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
         ];
     }
