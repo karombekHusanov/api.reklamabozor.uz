@@ -4,14 +4,16 @@ namespace App\Services\Order;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OrderDeadline;
+use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Support\Str;
 
 /**
- * Notifies the approved providers (agents/designers) that serve an order's
- * category about a freshly placed order, via the Telegram bot.
+ * Telegram bot notifications around the order lifecycle: approved providers
+ * hear about freshly placed orders in their categories, and the client hears
+ * about each incoming offer.
  */
 class OrderNotifier
 {
@@ -62,10 +64,61 @@ class OrderNotifier
     }
 
     /**
+     * Tells the client that an agent sent an offer for their order.
+     * Returns false when the client has no Telegram id to reach.
+     */
+    public function notifyNewOffer(Offer $offer): bool
+    {
+        $offer->loadMissing('order.client', 'agent.agentProfile');
+
+        $client = $offer->order->client;
+
+        if ($client?->telegram_id === null) {
+            return false;
+        }
+
+        $deepLink = $this->miniAppLink('/orders/'.$offer->order_id);
+        $markup = $deepLink !== null
+            ? $this->bot->openAppInlineKeyboard("📂 Taklifni ko'rish", $deepLink)
+            : null;
+
+        $this->bot->sendMessage((int) $client->telegram_id, $this->buildOfferMessage($offer), $markup);
+
+        return true;
+    }
+
+    private function buildOfferMessage(Offer $offer): string
+    {
+        $order = $offer->order;
+        $agent = $offer->agent;
+        $company = e($agent?->agentProfile?->company_name
+            ?? trim(($agent?->first_name ?? '').' '.($agent?->last_name ?? '')));
+        $price = number_format((float) $offer->price, 0, '.', ' ');
+        $comment = e(Str::limit($offer->comment, 300));
+
+        return implode("\n", [
+            '💼 <b>Yangi taklif!</b>',
+            '',
+            "🔖 Buyurtma: <b>#{$order->id}</b> — ".e($order->title),
+            "🏢 Agentlik: <b>{$company}</b>",
+            "💰 Narx: <b>{$price} so'm</b>",
+            "💬 Izoh: {$comment}",
+            '',
+            "Taklifni ko'rish va tanlash uchun quyidagi tugmani bosing.",
+        ]);
+    }
+
+    /**
      * Mini-app deep link that lands an agent directly on the order so they can
      * review it and send an offer. Null when no mini app URL is configured.
      */
     private function orderDeepLink(Order $order): ?string
+    {
+        // The agent workspace lives on the profile page's "offers" tab.
+        return $this->miniAppLink('/profile?tab=offers&order='.$order->id);
+    }
+
+    private function miniAppLink(string $pathWithQuery): ?string
     {
         $miniAppUrl = (string) config('services.telegram.mini_app_url');
 
@@ -73,7 +126,7 @@ class OrderNotifier
             return null;
         }
 
-        return rtrim($miniAppUrl, '/').'/agent?order='.$order->id;
+        return rtrim($miniAppUrl, '/').$pathWithQuery;
     }
 
     private function buildMessage(Order $order): string
@@ -82,7 +135,7 @@ class OrderNotifier
         $description = e(Str::limit($order->description, 300));
 
         $lines = [
-            '🆕 <b>Yangi buyurtma!</b>',
+            "🆕 <b>Yangi buyurtma — #{$order->id}</b>",
             '',
             "📁 Yo'nalish: <b>{$category}</b>",
         ];

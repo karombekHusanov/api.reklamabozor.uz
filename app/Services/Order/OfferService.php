@@ -15,6 +15,10 @@ use Illuminate\Validation\ValidationException;
 
 class OfferService
 {
+    public function __construct(
+        private readonly OrderNotifier $notifier,
+    ) {}
+
     /**
      * Orders an approved agent may bid on: open for offers, in one of the
      * agent's categories. Each order carries the agent's own offer (if any).
@@ -115,6 +119,12 @@ class OfferService
 
         if ($order->status === OrderStatus::New) {
             $order->update(['status' => OrderStatus::OffersSent]);
+        }
+
+        try {
+            $this->notifier->notifyNewOffer($offer);
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         return $offer->load('agent.agentProfile.companyLogoFile');

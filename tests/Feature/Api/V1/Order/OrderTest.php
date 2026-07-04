@@ -146,10 +146,12 @@ class OrderTest extends TestCase
             'tz_file_id' => $tz->id,
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
+        $order = $client->orders()->latest('id')->first();
+
         // The client's TZ brief is delivered to agents as a Telegram document,
         // referenced by an absolute URL, with a caption carrying the full order
-        // info (category, deadline, comment) and a "view order" deep-link button.
-        Http::assertSent(function ($request) use ($tz, $category) {
+        // info (id, category, deadline, comment) and a "view order" deep-link button.
+        Http::assertSent(function ($request) use ($tz, $category, $order) {
             $doc = $request['document'] ?? '';
             $caption = $request['caption'] ?? '';
 
@@ -157,6 +159,7 @@ class OrderTest extends TestCase
                 && $request['chat_id'] === 555000111
                 && str_starts_with($doc, 'http')
                 && str_contains($doc, $tz->path)
+                && str_contains($caption, "#{$order->id}")
                 && str_contains($caption, $category->name_uz)
                 && str_contains($caption, 'Shu hafta')
                 && str_contains($caption, 'Need outdoor billboards.');
@@ -205,10 +208,12 @@ class OrderTest extends TestCase
 
         $order = $client->orders()->latest('id')->first();
 
+        // Agents work from the profile page's "offers" tab, so the deep link
+        // must land there (a bare /agent route no longer exists in the app).
         Http::assertSent(function ($request) use ($order) {
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
 
-            return $url === "https://app.test/agent?order={$order->id}";
+            return $url === "https://app.test/profile?tab=offers&order={$order->id}";
         });
     }
 

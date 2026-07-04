@@ -9,6 +9,7 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class AgentOrderTest extends TestCase
@@ -46,6 +47,7 @@ class AgentOrderTest extends TestCase
 
     public function test_agent_can_submit_an_offer(): void
     {
+        Http::fake();
         $category = Category::factory()->create();
         [, $token] = $this->approvedAgent($category);
         $order = Order::factory()->for($category)->create();
@@ -60,6 +62,36 @@ class AgentOrderTest extends TestCase
         // First offer flips the order from new → offers_sent.
         $this->assertSame(OrderStatus::OffersSent, $order->fresh()->status);
         $this->assertDatabaseCount('offers', 1);
+    }
+
+    public function test_submitting_an_offer_notifies_the_client(): void
+    {
+        config(['services.telegram.mini_app_url' => 'https://app.test']);
+        Http::fake();
+        $category = Category::factory()->create();
+        [$agent, $token] = $this->approvedAgent($category);
+        $client = User::factory()->create(['telegram_id' => 444000333]);
+        $order = Order::factory()->for($category)->for($client, 'client')->create();
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
+            'price' => 2_500_000,
+            'comment' => 'We can deliver in 2 weeks.',
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        // The client hears about the offer: order id, agency name, price, and a
+        // deep-link button straight to their order detail page.
+        Http::assertSent(function ($request) use ($order, $agent) {
+            $text = $request['text'] ?? '';
+            $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
+
+            return str_contains($request->url(), 'sendMessage')
+                && $request['chat_id'] === 444000333
+                && str_contains($text, "#{$order->id}")
+                && str_contains($text, $agent->agentProfile->company_name)
+                && str_contains($text, '2 500 000')
+                && str_contains($text, 'We can deliver in 2 weeks.')
+                && $url === "https://app.test/orders/{$order->id}";
+        });
     }
 
     public function test_agent_cannot_offer_twice_for_the_same_order(): void
