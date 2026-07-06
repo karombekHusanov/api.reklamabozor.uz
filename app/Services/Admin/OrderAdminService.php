@@ -22,13 +22,16 @@ class OrderAdminService
      * @var array<string, list<OrderStatus>>
      */
     private const TRANSITIONS = [
-        OrderStatus::InProgress->value => [OrderStatus::ClientSelected],
-        OrderStatus::Completed->value => [OrderStatus::InProgress],
+        // work_submitted → in_progress lets the admin resolve a dispute by
+        // sending the work back for another round.
+        OrderStatus::InProgress->value => [OrderStatus::ClientSelected, OrderStatus::WorkSubmitted],
+        OrderStatus::Completed->value => [OrderStatus::InProgress, OrderStatus::WorkSubmitted],
         OrderStatus::Cancelled->value => [
             OrderStatus::New,
             OrderStatus::OffersSent,
             OrderStatus::ClientSelected,
             OrderStatus::InProgress,
+            OrderStatus::WorkSubmitted,
         ],
     ];
 

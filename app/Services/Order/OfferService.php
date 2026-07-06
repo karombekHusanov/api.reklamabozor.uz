@@ -144,7 +144,8 @@ class OfferService
 
     /**
      * Client picks a winning offer: it becomes accepted, the rest rejected,
-     * and the order moves to "client selected" (awaiting admin activation).
+     * and the order activates immediately (auto-manager — no manual admin
+     * gate in the MVP). Both sides and the ops group are notified.
      */
     public function acceptOffer(User $client, Offer $offer): Offer
     {
@@ -161,8 +162,14 @@ class OfferService
         DB::transaction(function () use ($order, $offer): void {
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
-            $order->update(['status' => OrderStatus::ClientSelected]);
+            $order->update(['status' => OrderStatus::InProgress]);
         });
+
+        try {
+            $this->notifier->notifyOfferAccepted($offer);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return $offer->load('agent.agentProfile.companyLogoFile');
     }

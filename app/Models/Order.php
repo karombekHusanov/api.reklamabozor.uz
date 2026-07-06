@@ -30,6 +30,10 @@ class Order extends Model
         'budget_min',
         'budget_max',
         'status',
+        'work_submitted_at',
+        'completion_reminder_sent_at',
+        'completed_at',
+        'auto_completed',
     ];
 
     /**
@@ -102,6 +106,10 @@ class Order extends Model
             'status' => OrderStatus::class,
             'deadline' => OrderDeadline::class,
             'attachment_file_ids' => 'array',
+            'work_submitted_at' => 'datetime',
+            'completion_reminder_sent_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'auto_completed' => 'boolean',
         ];
     }
 }

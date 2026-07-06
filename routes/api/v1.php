@@ -57,6 +57,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::post('/offers/{offer}/accept', [OfferController::class, 'accept']);
+    // Completion handshake: client accepts or rejects the delivered work.
+    Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
+    Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
 
     Route::prefix('agent')->group(function (): void {
         Route::get('/profile', [AgentProfileController::class, 'show']);
@@ -67,6 +70,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         // Order opportunities + the agent's offers.
         Route::get('/orders', [AgentOrderController::class, 'index']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
+        Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
     });
 });

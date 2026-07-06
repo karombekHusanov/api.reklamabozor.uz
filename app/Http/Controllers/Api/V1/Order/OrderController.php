@@ -40,4 +40,24 @@ class OrderController extends ApiController
 
         return $this->success(new OrderResource($order));
     }
+
+    /**
+     * Client accepts the delivered work (order was work_submitted).
+     */
+    public function confirmCompletion(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->confirmCompletion($request->user(), $order);
+
+        return $this->success(new OrderResource($order), 'Order completed. Thank you!');
+    }
+
+    /**
+     * Client rejects the delivered work — the ops team is notified.
+     */
+    public function dispute(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->disputeCompletion($request->user(), $order);
+
+        return $this->success(new OrderResource($order), 'We received your report — our team will contact you.');
+    }
 }

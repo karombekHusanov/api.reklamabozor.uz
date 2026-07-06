@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Validation\ValidationException;
 
 class OrderService
 {
@@ -62,5 +63,103 @@ class OrderService
         abort_unless($order->client_id === $client->id, 404);
 
         return $order->load(Order::CLIENT_RELATIONS)->loadCount(['offers', 'views']);
+    }
+
+    /**
+     * The winning agent marks the work as delivered — the order waits for the
+     * client's confirmation (or the 3-day auto-complete).
+     */
+    public function submitWork(User $agent, Order $order): Order
+    {
+        $isWinner = $order->acceptedOffer()->where('agent_id', $agent->id)->exists();
+
+        abort_unless($isWinner, 404);
+
+        if ($order->status !== OrderStatus::InProgress) {
+            throw ValidationException::withMessages([
+                'order' => ['Only an order in progress can be submitted for review.'],
+            ]);
+        }
+
+        $order->update([
+            'status' => OrderStatus::WorkSubmitted,
+            'work_submitted_at' => now(),
+            'completion_reminder_sent_at' => null,
+        ]);
+
+        try {
+            $this->notifier->notifyWorkSubmitted($order);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $order->load(Order::CLIENT_RELATIONS);
+    }
+
+    /**
+     * The client accepts the delivered work — the deal is done.
+     */
+    public function confirmCompletion(User $client, Order $order): Order
+    {
+        abort_unless($order->client_id === $client->id, 404);
+
+        $this->assertAwaitingConfirmation($order);
+
+        $this->complete($order, auto: false);
+
+        return $order->load(Order::CLIENT_RELATIONS);
+    }
+
+    /**
+     * The client rejects the delivered work — back to in_progress, and the
+     * ops team is signalled to step in.
+     */
+    public function disputeCompletion(User $client, Order $order): Order
+    {
+        abort_unless($order->client_id === $client->id, 404);
+
+        $this->assertAwaitingConfirmation($order);
+
+        $order->update([
+            'status' => OrderStatus::InProgress,
+            'work_submitted_at' => null,
+            'completion_reminder_sent_at' => null,
+        ]);
+
+        try {
+            $this->notifier->notifyDisputeOpened($order);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $order->load(Order::CLIENT_RELATIONS);
+    }
+
+    /**
+     * Shared completion transition, used by the client confirmation and the
+     * scheduler's auto-complete.
+     */
+    public function complete(Order $order, bool $auto): void
+    {
+        $order->update([
+            'status' => OrderStatus::Completed,
+            'completed_at' => now(),
+            'auto_completed' => $auto,
+        ]);
+
+        try {
+            $this->notifier->notifyOrderCompleted($order, $auto);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    private function assertAwaitingConfirmation(Order $order): void
+    {
+        if ($order->status !== OrderStatus::WorkSubmitted) {
+            throw ValidationException::withMessages([
+                'order' => ['This order is not awaiting completion confirmation.'],
+            ]);
+        }
     }
 }

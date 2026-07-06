@@ -8,6 +8,9 @@ enum OrderStatus: string
     case OffersSent = 'offers_sent';
     case ClientSelected = 'client_selected';
     case InProgress = 'in_progress';
+    // Agent delivered the work; waiting for the client to confirm (or the
+    // 3-day auto-complete to kick in).
+    case WorkSubmitted = 'work_submitted';
     case Completed = 'completed';
     case Cancelled = 'cancelled';
 

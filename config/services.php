@@ -41,6 +41,11 @@ return [
         'api_url' => env('TELEGRAM_API_URL', 'https://api.telegram.org'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'mini_app_url' => env('TELEGRAM_MINI_APP_URL'),
+        // Private ops group where the bot reports marketplace events. Empty = disabled.
+        'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
+        // Comma-separated event keys to report ("*" = all):
+        // order_placed, offer_submitted, deal, work_submitted, completed, dispute
+        'admin_events' => env('TELEGRAM_ADMIN_EVENTS', '*'),
     ],
 
 ];
