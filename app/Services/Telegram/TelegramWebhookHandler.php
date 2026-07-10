@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Enums\Role;
 use App\Models\User;
+use App\Services\Agent\AgentAccountLinker;
 
 class TelegramWebhookHandler
 {
@@ -13,6 +14,7 @@ class TelegramWebhookHandler
 
     public function __construct(
         private readonly TelegramBotService $bot,
+        private readonly AgentAccountLinker $agentLinker,
     ) {}
 
     /**
@@ -109,6 +111,10 @@ class TelegramWebhookHandler
         }
 
         $user->save();
+
+        // A manager may have pre-created this agent by phone — adopt that
+        // account so the person lands on their approved agency profile.
+        $this->agentLinker->linkByPhone($user);
 
         if ($chatId === null) {
             return;

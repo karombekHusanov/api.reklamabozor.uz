@@ -111,6 +111,15 @@ class AgentProfile extends Model
     }
 
     /**
+     * Moderated client reviews — the only ones that count publicly.
+     * Keyed off the owning user (reviews.agent_id references the user).
+     */
+    public function approvedReviews(): HasMany
+    {
+        return $this->hasMany(Review::class, 'agent_id', 'user_id')->approved();
+    }
+
+    /**
      * Weighted completion of the client-facing presentation fields (0–100).
      */
     public function completionPercent(): int

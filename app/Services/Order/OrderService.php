@@ -2,7 +2,9 @@
 
 namespace App\Services\Order;
 
+use App\Enums\AgentProfileStatus;
 use App\Enums\OrderStatus;
+use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\User;
@@ -16,8 +18,9 @@ class OrderService
     ) {}
 
     /**
-     * Place a B2C order. The title is derived from the category, and approved
-     * providers serving that category are notified via the bot.
+     * Place a B2C order. The title is derived from the category. A normal order
+     * is broadcast to every approved provider serving that category; a directed
+     * order (agent_profile_id) reaches only the chosen agency.
      *
      * @param  array<string, mixed>  $data
      */
@@ -26,9 +29,12 @@ class OrderService
         /** @var Category $category */
         $category = Category::findOrFail($data['category_id']);
 
+        $targetAgentId = $this->resolveTargetAgent($data['agent_profile_id'] ?? null, $category);
+
         /** @var Order $order */
         $order = $client->orders()->create([
             'category_id' => $category->id,
+            'target_agent_id' => $targetAgentId,
             'title' => $category->name_uz,
             'description' => $data['description'],
             'deadline' => $data['deadline'] ?? null,
@@ -47,12 +53,35 @@ class OrderService
     }
 
     /**
+     * Resolve an optional directed-order target (an agency's public profile id)
+     * to the agent's user id. The agency must be approved and actually serve the
+     * chosen category — otherwise it could never see or bid on the order.
+     */
+    private function resolveTargetAgent(?int $agentProfileId, Category $category): ?int
+    {
+        if ($agentProfileId === null) {
+            return null;
+        }
+
+        /** @var AgentProfile $profile */
+        $profile = AgentProfile::where('status', AgentProfileStatus::Approved)->findOrFail($agentProfileId);
+
+        if (! $profile->categories()->where('categories.id', $category->id)->exists()) {
+            throw ValidationException::withMessages([
+                'agent_profile_id' => ['This agency does not serve the selected category.'],
+            ]);
+        }
+
+        return $profile->user_id;
+    }
+
+    /**
      * @return Collection<int, Order>
      */
     public function listForClient(User $client): Collection
     {
         return $client->orders()
-            ->with('category')
+            ->with(['category', 'targetAgent.agentProfile'])
             ->withCount(['offers', 'views'])
             ->latest()
             ->get();

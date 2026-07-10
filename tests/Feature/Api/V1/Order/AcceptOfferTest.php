@@ -61,7 +61,7 @@ class AcceptOfferTest extends TestCase
             return ($request['chat_id'] ?? null) === 111000111
                 && str_contains($text, "#{$order->id}")
                 && str_contains($text, '3 000 000')
-                && $url === "https://app.test/profile?tab=offers&order={$order->id}";
+                && $url === "https://app.test/orders/{$order->id}";
         });
 
         // Loser: told the order went to someone else.

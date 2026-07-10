@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1\Auth;
 
 use App\Enums\Role;
+use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -229,5 +230,32 @@ class AuthTest extends TestCase
     public function test_logout_requires_authentication(): void
     {
         $this->postJson('/api/v1/auth/logout')->assertUnauthorized();
+    }
+
+    public function test_login_links_admin_created_agent_by_phone(): void
+    {
+        // Phone was captured earlier; the manager created the agency afterwards.
+        $telegramUser = User::factory()->create([
+            'telegram_id' => 424242,
+            'phone' => '+998907771122',
+            'role' => Role::Client,
+        ]);
+
+        $placeholder = User::factory()->create([
+            'telegram_id' => null,
+            'phone' => '+998907771122',
+            'role' => Role::Agent,
+        ]);
+        $profile = AgentProfile::factory()->approved()->create(['user_id' => $placeholder->id]);
+
+        $this->postJson('/api/v1/auth/telegram', [
+            'telegram_id' => 424242,
+            'first_name' => 'Akmal',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.user.role', 'agent');
+
+        $this->assertSame($telegramUser->id, $profile->refresh()->user_id);
+        $this->assertDatabaseMissing('users', ['id' => $placeholder->id]);
     }
 }

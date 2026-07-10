@@ -61,6 +61,52 @@ class OrderAdminTest extends TestCase
             ->assertJsonCount(1, 'data.items');
     }
 
+    public function test_admin_can_filter_stuck_orders(): void
+    {
+        [, $token] = $this->admin();
+
+        $stuck = Order::factory()->status(OrderStatus::InProgress)->create();
+        $stuck->timestamps = false;
+        $stuck->forceFill(['updated_at' => now()->subDays(10)])->save();
+
+        Order::factory()->status(OrderStatus::InProgress)->create(); // fresh, not stuck
+        Order::factory()->status(OrderStatus::New)->create();
+
+        $this->getJson('/api/v1/admin/orders?attention=stuck', $this->auth($token))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $stuck->id);
+    }
+
+    public function test_admin_can_filter_orders_without_offers(): void
+    {
+        [, $token] = $this->admin();
+
+        $dead = Order::factory()->status(OrderStatus::New)->create();
+        $dead->timestamps = false;
+        $dead->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $withOffer = Order::factory()->status(OrderStatus::New)->create();
+        $withOffer->timestamps = false;
+        $withOffer->forceFill(['created_at' => now()->subDays(2)])->save();
+        Offer::factory()->for($withOffer)->create();
+
+        Order::factory()->status(OrderStatus::New)->create(); // inside the 24h grace window
+
+        $this->getJson('/api/v1/admin/orders?attention=no_offers', $this->auth($token))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $dead->id);
+    }
+
+    public function test_attention_filter_value_is_validated(): void
+    {
+        [, $token] = $this->admin();
+
+        $this->getJson('/api/v1/admin/orders?attention=bogus', $this->auth($token))
+            ->assertUnprocessable();
+    }
+
     public function test_admin_can_view_an_order_with_offers_and_client(): void
     {
         [, $token] = $this->admin();

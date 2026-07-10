@@ -11,7 +11,7 @@ class UserAdminService
 {
     /**
      * @param  array{
-     *     role: string,
+     *     role?: string|null,
      *     search?: string|null,
      *     is_active?: bool|null,
      *     per_page?: int,
@@ -21,9 +21,15 @@ class UserAdminService
      */
     public function list(array $filters): LengthAwarePaginator
     {
-        $query = User::query()
-            ->with('avatarFile')
-            ->where('role', $filters['role']);
+        $query = User::query()->with(['avatarFile', 'agentProfile']);
+
+        // No role = the "all users" view: every marketplace account,
+        // including agent-role users who never submitted a KYC application.
+        if (! empty($filters['role'])) {
+            $query->where('role', $filters['role']);
+        } else {
+            $query->where('role', '!=', Role::Admin);
+        }
 
         if (isset($filters['is_active'])) {
             $query->where('is_active', $filters['is_active']);

@@ -208,12 +208,11 @@ class OrderTest extends TestCase
 
         $order = $client->orders()->latest('id')->first();
 
-        // Agents work from the profile page's "offers" tab, so the deep link
-        // must land there (a bare /agent route no longer exists in the app).
+        // Agents open the order detail page from the bot deep link.
         Http::assertSent(function ($request) use ($order) {
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
 
-            return $url === "https://app.test/profile?tab=offers&order={$order->id}";
+            return $url === "https://app.test/orders/{$order->id}";
         });
     }
 

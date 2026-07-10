@@ -26,6 +26,12 @@ class UserResource extends JsonResource
             'avatar' => $this->avatarFile?->url(),
             'role' => $this->role->value,
             'role_selected_at' => $this->role_selected_at,
+            // KYC application status; null = agent-role user who never applied.
+            'agent_profile_status' => $this->whenLoaded(
+                'agentProfile',
+                fn () => $this->agentProfile?->status->value,
+                null,
+            ),
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

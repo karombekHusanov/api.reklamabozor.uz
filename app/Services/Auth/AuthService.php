@@ -4,11 +4,16 @@ namespace App\Services\Auth;
 
 use App\Enums\Role;
 use App\Models\User;
+use App\Services\Agent\AgentAccountLinker;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class AuthService
 {
+    public function __construct(
+        private readonly AgentAccountLinker $agentLinker,
+    ) {}
+
     /**
      * Authenticate or register a Telegram user.
      *
@@ -36,6 +41,10 @@ class AuthService
         }
 
         $user->save();
+
+        // Covers the "phone shared before the manager pre-created the agency"
+        // ordering — the webhook contact handler covers the opposite order.
+        $this->agentLinker->linkByPhone($user);
 
         // The mini app authenticates from Telegram initData on every launch, so keep a single
         // active token per user — otherwise personal_access_tokens would grow without bound.

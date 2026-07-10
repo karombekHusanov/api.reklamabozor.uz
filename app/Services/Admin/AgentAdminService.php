@@ -5,7 +5,9 @@ namespace App\Services\Admin;
 use App\Enums\AgentProfileStatus;
 use App\Enums\Role;
 use App\Models\AgentProfile;
+use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AgentAdminService
@@ -92,5 +94,44 @@ class AgentAdminService
         $profile->save();
 
         return $profile->load(['user', ...AgentProfile::PROFILE_RELATIONS]);
+    }
+
+    /**
+     * Manager-created agent: a new agent user plus an approved KYC profile.
+     * No Telegram identity yet — it links up when the person first opens the
+     * mini app with the same phone number.
+     *
+     * @param  array<string, mixed>  $data  validated StoreAgentRequest payload
+     */
+    public function create(array $data): AgentProfile
+    {
+        return DB::transaction(function () use ($data): AgentProfile {
+            $user = User::create([
+                'first_name' => $data['director_name'],
+                // Same "+digits" shape the Telegram webhook stores, so the
+                // account links up when the person shares this phone in the bot.
+                'phone' => $this->normalizePhone($data['phone']),
+                'role' => Role::Agent,
+                'role_selected_at' => now(),
+                'is_active' => true,
+            ]);
+
+            /** @var AgentProfile $profile */
+            $profile = $user->agentProfile()->create([
+                ...$data,
+                'status' => AgentProfileStatus::Approved,
+                'approved_at' => now(),
+            ]);
+
+            return $profile->load(['user', ...AgentProfile::PROFILE_RELATIONS]);
+        });
+    }
+
+    /**
+     * "+998 90 777-11-22" → "+998907771122" — mirrors the Telegram webhook.
+     */
+    private function normalizePhone(string $raw): string
+    {
+        return '+'.preg_replace('/[^0-9]/', '', $raw);
     }
 }

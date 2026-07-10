@@ -14,7 +14,7 @@ class OrderAdminService
      *
      * @var list<string>
      */
-    private const RELATIONS = ['category', 'tzFile', 'client', 'offers.agent.agentProfile'];
+    private const RELATIONS = ['category', 'tzFile', 'client', 'targetAgent.agentProfile', 'offers.agent.agentProfile'];
 
     /**
      * Allowed admin status transitions: target => acceptable source states.
@@ -38,6 +38,7 @@ class OrderAdminService
     /**
      * @param  array{
      *     status?: string|null,
+     *     attention?: string|null,
      *     search?: string|null,
      *     per_page?: int
      * }  $filters
@@ -45,11 +46,18 @@ class OrderAdminService
     public function list(array $filters): LengthAwarePaginator
     {
         $query = Order::query()
-            ->with(['category', 'client'])
+            ->with(['category', 'client', 'targetAgent.agentProfile'])
             ->withCount('offers');
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
+        }
+
+        // Ops-attention shortcuts: same definitions the dashboard counts use.
+        if (($filters['attention'] ?? null) === 'stuck') {
+            $query->stuck();
+        } elseif (($filters['attention'] ?? null) === 'no_offers') {
+            $query->withoutOffers();
         }
 
         if (! empty($filters['search'])) {

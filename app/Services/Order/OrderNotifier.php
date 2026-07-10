@@ -32,10 +32,16 @@ class OrderNotifier
         $recipients = User::query()
             ->whereNotNull('telegram_id')
             ->whereHas('agentProfile', function ($query) use ($order): void {
-                $query
-                    ->where('status', AgentProfileStatus::Approved)
-                    ->whereHas('categories', fn ($c) => $c->where('categories.id', $order->category_id));
+                $query->where('status', AgentProfileStatus::Approved);
+
+                // Broadcast order → every approved provider serving the category.
+                // Directed order → only the chosen agency (filtered by id below),
+                // so the category constraint is skipped here.
+                if ($order->target_agent_id === null) {
+                    $query->whereHas('categories', fn ($c) => $c->where('categories.id', $order->category_id));
+                }
             })
+            ->when($order->target_agent_id !== null, fn ($q) => $q->whereKey($order->target_agent_id))
             ->get();
 
         $text = $this->buildMessage($order);
@@ -225,6 +231,16 @@ class OrderNotifier
     }
 
     /**
+     * Nudge the other side of an order conversation about fresh messages.
+     */
+    public function notifyNewChatMessage(Order $order, User $recipient): void
+    {
+        $this->sendToUser($recipient, implode("\n", [
+            "💬 Buyurtma <b>#{$order->id}</b> (".e($order->title).") bo'yicha yangi xabar keldi.",
+        ]), '✉️ Chatni ochish', '/chat/'.$order->id);
+    }
+
+    /**
      * Guarded single-user send: skips users without Telegram, never throws.
      * The button is attached only when a mini-app path is given and configured.
      */
@@ -252,7 +268,7 @@ class OrderNotifier
 
     private function agentOrderPath(Order $order): string
     {
-        return '/profile?tab=offers&order='.$order->id;
+        return '/orders/'.$order->id;
     }
 
     private function buildOfferMessage(Offer $offer): string

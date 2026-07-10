@@ -19,7 +19,8 @@ class IndexUsersRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'role' => ['required', Rule::in([
+            // Omitted role = all marketplace users (admins excluded).
+            'role' => ['nullable', Rule::in([
                 Role::Client->value,
                 Role::Agent->value,
                 Role::Designer->value,

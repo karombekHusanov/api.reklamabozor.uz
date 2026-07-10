@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Api\V1\Telegram;
 
+use App\Enums\Role;
+use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -160,5 +162,63 @@ class TelegramWebhookTest extends TestCase
         ])->assertOk();
 
         $this->assertDatabaseMissing('users', ['phone' => '+998900000000']);
+    }
+
+    public function test_shared_contact_links_admin_created_agent_by_phone(): void
+    {
+        // Manager pre-created this agency: phone but no Telegram identity.
+        $placeholder = User::factory()->create([
+            'telegram_id' => null,
+            'phone' => '+998907771122',
+            'role' => Role::Agent,
+        ]);
+        $profile = AgentProfile::factory()->approved()->create(['user_id' => $placeholder->id]);
+
+        $this->postWebhook([
+            'message' => [
+                'chat' => ['id' => 555],
+                'from' => ['id' => 555, 'first_name' => 'Akmal', 'username' => 'akmal'],
+                'contact' => [
+                    'phone_number' => '998 90 777-11-22',
+                    'user_id' => 555,
+                    'first_name' => 'Akmal',
+                ],
+            ],
+        ])->assertOk();
+
+        $telegramUser = User::query()->firstWhere('telegram_id', 555);
+
+        // The real person adopted the approved profile; the placeholder is gone.
+        $this->assertNotNull($telegramUser);
+        $this->assertSame(Role::Agent, $telegramUser->role);
+        $this->assertSame($telegramUser->id, $profile->refresh()->user_id);
+        $this->assertDatabaseMissing('users', ['id' => $placeholder->id]);
+    }
+
+    public function test_shared_contact_with_unrelated_phone_does_not_link(): void
+    {
+        $placeholder = User::factory()->create([
+            'telegram_id' => null,
+            'phone' => '+998907771122',
+            'role' => Role::Agent,
+        ]);
+        AgentProfile::factory()->approved()->create(['user_id' => $placeholder->id]);
+
+        $this->postWebhook([
+            'message' => [
+                'chat' => ['id' => 556],
+                'from' => ['id' => 556, 'first_name' => 'Boshqa'],
+                'contact' => [
+                    'phone_number' => '+998900000001',
+                    'user_id' => 556,
+                    'first_name' => 'Boshqa',
+                ],
+            ],
+        ])->assertOk();
+
+        $telegramUser = User::query()->firstWhere('telegram_id', 556);
+
+        $this->assertSame(Role::Client, $telegramUser->role);
+        $this->assertDatabaseHas('users', ['id' => $placeholder->id]);
     }
 }

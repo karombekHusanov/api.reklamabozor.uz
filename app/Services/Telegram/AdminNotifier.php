@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\Review;
 use App\Models\User;
 
 /**
@@ -76,6 +77,20 @@ class AdminNotifier
             "⚠️ <b>Muammo — buyurtma #{$order->id}</b>",
             '👤 Klient: '.$this->userLabel($order->client),
             'Klient ishni qabul qilmadi — aralashuv kerak. Buyurtma in_progress holatiga qaytarildi.',
+        ]));
+    }
+
+    public function reviewSubmitted(Review $review): void
+    {
+        $review->loadMissing('agent.agentProfile');
+
+        $agency = e($review->agent?->agentProfile?->company_name
+            ?? trim(($review->agent?->first_name ?? '').' '.($review->agent?->last_name ?? '')));
+
+        $this->send('review', implode("\n", [
+            "⭐ Yangi baho — buyurtma <b>#{$review->order_id}</b>",
+            "🏢 {$agency} • {$review->rating}/5",
+            'Moderatsiya kutilmoqda (admin panel → Reviews).',
         ]));
     }
 

@@ -21,6 +21,7 @@ class Order extends Model
      */
     protected $fillable = [
         'client_id',
+        'target_agent_id',
         'category_id',
         'title',
         'description',
@@ -44,12 +45,23 @@ class Order extends Model
     public const CLIENT_RELATIONS = [
         'category',
         'tzFile',
+        'targetAgent.agentProfile',
         'offers.agent.agentProfile.companyLogoFile',
+        'review',
     ];
 
     public function client(): BelongsTo
     {
         return $this->belongsTo(User::class, 'client_id');
+    }
+
+    /**
+     * The single agency this order was directed to (from its public profile),
+     * or null for a normal broadcast order.
+     */
+    public function targetAgent(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'target_agent_id');
     }
 
     public function category(): BelongsTo
@@ -77,6 +89,16 @@ class Order extends Model
         return $this->hasOne(Offer::class)->where('status', OfferStatus::Accepted);
     }
 
+    public function chat(): HasOne
+    {
+        return $this->hasOne(Chat::class);
+    }
+
+    public function review(): HasOne
+    {
+        return $this->hasOne(Review::class);
+    }
+
     /**
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -93,6 +115,39 @@ class Order extends Model
     public function scopeByStatus(Builder $query, OrderStatus|string $status): Builder
     {
         return $query->where('status', $status instanceof OrderStatus ? $status : OrderStatus::from($status));
+    }
+
+    /** Days after which an untouched in-progress order counts as stuck. */
+    public const STUCK_AFTER_DAYS = 7;
+
+    /** Hours after which an order without offers counts as dead. */
+    public const NO_OFFERS_AFTER_HOURS = 24;
+
+    /**
+     * Active deals that have not been touched for a week — ops attention needed.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeStuck(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', [OrderStatus::InProgress, OrderStatus::WorkSubmitted])
+            ->where('updated_at', '<', now()->subDays(self::STUCK_AFTER_DAYS));
+    }
+
+    /**
+     * Orders past the grace window that never received an offer.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithoutOffers(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', [OrderStatus::New, OrderStatus::OffersSent])
+            ->where('created_at', '<', now()->subHours(self::NO_OFFERS_AFTER_HOURS))
+            ->doesntHave('offers');
     }
 
     /**

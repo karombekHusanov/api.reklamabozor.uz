@@ -44,7 +44,7 @@ return [
         // Private ops group where the bot reports marketplace events. Empty = disabled.
         'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
         // Comma-separated event keys to report ("*" = all):
-        // order_placed, offer_submitted, deal, work_submitted, completed, dispute
+        // order_placed, offer_submitted, deal, work_submitted, completed, dispute, review
         'admin_events' => env('TELEGRAM_ADMIN_EVENTS', '*'),
     ],
 

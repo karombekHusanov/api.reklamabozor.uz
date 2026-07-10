@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Order;
 
+use App\Enums\AgentProfileStatus;
 use App\Enums\OrderDeadline;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,6 +30,14 @@ class StoreOrderRequest extends FormRequest
                 Rule::exists('categories', 'id')->where('is_active', true),
             ],
             'description' => ['required', 'string', 'max:2000'],
+            // Optional: direct the order to a single agency (chosen from its public
+            // profile). Must be an approved provider; the service also checks it
+            // serves the chosen category. Absent = normal broadcast order.
+            'agent_profile_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('agent_profiles', 'id')->where('status', AgentProfileStatus::Approved->value),
+            ],
             // How soon the work is needed (optional urgency preset).
             'deadline' => ['nullable', Rule::enum(OrderDeadline::class)],
             // The technical brief must reference a file the user uploaded themselves.

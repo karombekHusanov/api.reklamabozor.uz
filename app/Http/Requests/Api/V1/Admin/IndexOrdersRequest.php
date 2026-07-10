@@ -20,6 +20,8 @@ class IndexOrdersRequest extends FormRequest
     {
         return [
             'status' => ['nullable', Rule::enum(OrderStatus::class)],
+            // Ops-attention shortcuts surfaced on the dashboard.
+            'attention' => ['nullable', Rule::in(['stuck', 'no_offers'])],
             'search' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],

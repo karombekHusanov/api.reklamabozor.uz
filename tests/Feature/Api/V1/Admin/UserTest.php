@@ -132,9 +132,32 @@ class UserTest extends TestCase
             ->assertJsonValidationErrors(['is_active']);
     }
 
-    public function test_list_requires_role(): void
+    public function test_list_without_role_returns_all_marketplace_users(): void
     {
-        $this->getJson('/api/v1/admin/users', [
+        User::factory()->count(2)->create(['role' => Role::Client]);
+        // Picked the agent role but never submitted a KYC application —
+        // must still be visible in the all-users view.
+        User::factory()->agent()->create();
+        User::factory()->create(['role' => Role::Seller]);
+
+        $response = $this->getJson('/api/v1/admin/users', [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ]);
+
+        // The seeded admin from adminToken() is excluded.
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.meta.total', 4)
+            ->assertJsonCount(4, 'data.items');
+
+        $agentRow = collect($response->json('data.items'))->firstWhere('role', 'agent');
+        $this->assertNotNull($agentRow);
+        $this->assertNull($agentRow['agent_profile_status']);
+    }
+
+    public function test_list_rejects_invalid_role(): void
+    {
+        $this->getJson('/api/v1/admin/users?role=bogus', [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])
             ->assertUnprocessable()

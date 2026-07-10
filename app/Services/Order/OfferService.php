@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Models\Chat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderView;
@@ -37,6 +38,9 @@ class OfferService
 
         $orders = Order::query()
             ->whereIn('category_id', $categoryIds)
+            // Broadcast orders (no target) are open to all; a directed order only
+            // ever shows to the single agency it was addressed to.
+            ->where(fn ($q) => $q->whereNull('target_agent_id')->orWhere('target_agent_id', $agent->id))
             ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::openForOffers()))
             ->withCount(['views', 'offers'])
             ->with([
@@ -163,6 +167,12 @@ class OfferService
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
             $order->update(['status' => OrderStatus::InProgress]);
+
+            // Open the client ↔ agent conversation for this deal.
+            Chat::firstOrCreate(
+                ['order_id' => $order->id],
+                ['client_id' => $order->client_id, 'agent_id' => $offer->agent_id],
+            );
         });
 
         try {

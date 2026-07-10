@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Enums\AgentProfileStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Admin\IndexAgentProfilesRequest;
+use App\Http\Requests\Api\V1\Admin\StoreAgentRequest;
 use App\Http\Requests\Api\V1\Admin\UpdateAgentProfileStatusRequest;
 use App\Http\Resources\AdminAgentProfileResource;
 use App\Models\AgentProfile;
@@ -38,6 +39,17 @@ class AgentProfileController extends ApiController
                 'total' => $paginator->total(),
             ],
         ]);
+    }
+
+    /**
+     * Manager-created agent: user + approved KYC profile in one step.
+     * The form mirrors the mini app agent application.
+     */
+    public function store(StoreAgentRequest $request): JsonResponse
+    {
+        $profile = $this->agentAdminService->create($request->validated());
+
+        return $this->success(new AdminAgentProfileResource($profile), 'Agent created', 201);
     }
 
     public function show(AgentProfile $agentProfile): JsonResponse

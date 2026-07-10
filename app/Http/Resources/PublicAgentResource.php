@@ -32,6 +32,11 @@ class PublicAgentResource extends JsonResource
             'website_url' => $this->website_url,
             'completion_percent' => $this->completionPercent(),
             'completed_orders_count' => (int) ($this->completed_orders_count ?? 0),
+            // Moderated review aggregates (avg is null until the first approved review).
+            'rating_avg' => $this->approved_reviews_avg_rating !== null
+                ? round((float) $this->approved_reviews_avg_rating, 1)
+                : null,
+            'rating_count' => (int) ($this->approved_reviews_count ?? 0),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
         ];
     }

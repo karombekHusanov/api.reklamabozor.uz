@@ -29,6 +29,11 @@ class AdminOrderResource extends JsonResource
             'status' => $this->status->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
             'tz_file' => $this->tzFile?->url(),
+            // Set when the client sent the order directly to one agency.
+            'target_agent' => $this->whenLoaded('targetAgent', fn () => $this->targetAgent ? [
+                'id' => $this->targetAgent->id,
+                'company_name' => $this->targetAgent->agentProfile?->company_name,
+            ] : null),
             'client' => $client ? [
                 'id' => $client->id,
                 'first_name' => $client->first_name,

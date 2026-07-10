@@ -1,14 +1,17 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
+use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\Chat\ChatController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
@@ -16,6 +19,7 @@ use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
+use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -61,6 +65,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
 
+    // Per-order client ↔ agent conversation (opened when an offer is accepted).
+    Route::get('/chats', [ChatController::class, 'index']);
+    Route::get('/orders/{order}/chat', [ChatController::class, 'show']);
+    Route::get('/orders/{order}/chat/messages', [ChatController::class, 'messages']);
+    Route::post('/orders/{order}/chat/messages', [ChatController::class, 'store']);
+
+    // Client rates the agency once the order is completed (moderated).
+    Route::post('/orders/{order}/review', [ReviewController::class, 'store']);
+
     Route::prefix('agent')->group(function (): void {
         Route::get('/profile', [AgentProfileController::class, 'show']);
         Route::post('/profile', [AgentProfileController::class, 'store']);
@@ -78,6 +91,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
 Route::prefix('admin')
     ->middleware(['auth:sanctum', 'admin'])
     ->group(function (): void {
+        Route::get('/analytics', [AdminAnalyticsController::class, 'index']);
+        Route::get('/analytics/activity', [AdminAnalyticsController::class, 'activity']);
+
         Route::get('/users', [UserController::class, 'index']);
         Route::get('/users/{user}', [UserController::class, 'show']);
         Route::patch('/users/{user}', [UserController::class, 'update']);
@@ -91,12 +107,17 @@ Route::prefix('admin')
         Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
 
         Route::get('/agents', [AdminAgentProfileController::class, 'index']);
+        Route::post('/agents', [AdminAgentProfileController::class, 'store']);
         Route::get('/agents/{agentProfile}', [AdminAgentProfileController::class, 'show']);
         Route::patch('/agents/{agentProfile}/status', [AdminAgentProfileController::class, 'updateStatus']);
 
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
+        Route::get('/orders/{order}/chat', [AdminOrderController::class, 'chat']);
+
+        Route::get('/reviews', [AdminReviewController::class, 'index']);
+        Route::patch('/reviews/{review}/status', [AdminReviewController::class, 'updateStatus']);
 
         Route::get('/banners', [AdminBannerController::class, 'index']);
         Route::post('/banners', [AdminBannerController::class, 'store']);
