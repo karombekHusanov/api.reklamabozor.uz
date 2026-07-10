@@ -16,7 +16,6 @@ class AuthTest extends TestCase
     {
         $response = $this->postJson('/api/v1/auth/telegram', [
             'telegram_id' => 987654321,
-            'phone' => '+998901234567',
             'first_name' => 'Ali',
             'last_name' => 'Valiyev',
             'username' => 'ali_valiyev',
@@ -29,7 +28,9 @@ class AuthTest extends TestCase
             ->assertJsonPath('data.user.first_name', 'Ali')
             ->assertJsonPath('data.user.last_name', 'Valiyev')
             ->assertJsonPath('data.user.username', 'ali_valiyev')
-            ->assertJsonPath('data.user.phone', '+998901234567')
+            // Phone is never accepted at login — it only enters via the bot's
+            // verified contact flow.
+            ->assertJsonPath('data.user.phone', null)
             ->assertJsonPath('data.user.role', 'client')
             ->assertJsonPath('data.user.is_active', true)
             ->assertJsonPath('data.token_type', 'Bearer')
@@ -59,7 +60,6 @@ class AuthTest extends TestCase
 
         $response = $this->postJson('/api/v1/auth/telegram', [
             'telegram_id' => 111222333,
-            'phone' => '+998900000000',
             'first_name' => 'Updated',
             'last_name' => 'Name',
             'username' => 'new_username',
@@ -75,11 +75,11 @@ class AuthTest extends TestCase
         $this->assertDatabaseCount('users', 1);
     }
 
-    public function test_telegram_login_requires_telegram_id_and_first_name(): void
+    public function test_telegram_login_requires_an_identity(): void
     {
         $this->postJson('/api/v1/auth/telegram', [])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['telegram_id', 'first_name']);
+            ->assertJsonValidationErrors(['telegram_id']);
     }
 
     public function test_telegram_login_does_not_wipe_an_existing_phone(): void

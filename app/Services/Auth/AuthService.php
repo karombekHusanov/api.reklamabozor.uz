@@ -12,28 +12,49 @@ class AuthService
 {
     public function __construct(
         private readonly AgentAccountLinker $agentLinker,
+        private readonly TelegramInitDataValidator $initDataValidator,
     ) {}
 
     /**
      * Authenticate or register a Telegram user.
      *
-     * @param  array{telegram_id: int, phone?: ?string, first_name: string, last_name?: ?string, username?: ?string}  $data
+     * With verification enabled (production), identity comes exclusively from
+     * the HMAC-verified initData — any client-supplied fields are ignored.
+     * Phone is never accepted here: it only enters via the bot's verified
+     * contact flow, which is also what the agent account linker trusts.
+     *
+     * @param  array{init_data?: ?string, telegram_id?: int, first_name?: string, last_name?: ?string, username?: ?string}  $data
      * @return array{user: User, token: string, created: bool}
      */
     public function telegramLogin(array $data): array
     {
-        $user = User::firstOrNew(['telegram_id' => $data['telegram_id']]);
+        if (config('services.telegram.verify_init_data')) {
+            $verified = $this->initDataValidator->validate((string) ($data['init_data'] ?? ''));
+
+            $telegramId = (int) $verified['id'];
+            $firstName = (string) ($verified['first_name'] ?? 'Telegram User');
+            $lastName = $verified['last_name'] ?? null;
+            $username = $verified['username'] ?? null;
+        } else {
+            // Dev/test mode without a Telegram client.
+            $telegramId = (int) ($data['telegram_id'] ?? 0);
+            $firstName = (string) ($data['first_name'] ?? 'Telegram User');
+            $lastName = $data['last_name'] ?? null;
+            $username = $data['username'] ?? null;
+
+            if ($telegramId <= 0) {
+                throw ValidationException::withMessages([
+                    'telegram_id' => ['The telegram id field is required.'],
+                ]);
+            }
+        }
+
+        $user = User::firstOrNew(['telegram_id' => $telegramId]);
         $isNew = ! $user->exists;
 
-        $user->first_name = $data['first_name'];
-        $user->last_name = $data['last_name'] ?? null;
-        $user->username = $data['username'] ?? null;
-
-        // Only set phone when the caller actually provides one — never overwrite a
-        // previously captured phone (e.g. shared via the bot) with null on re-login.
-        if (! empty($data['phone'])) {
-            $user->phone = $data['phone'];
-        }
+        $user->first_name = $firstName;
+        $user->last_name = $lastName;
+        $user->username = $username;
 
         if ($isNew) {
             $user->role = Role::Client;

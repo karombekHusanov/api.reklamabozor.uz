@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfil
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
+use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
@@ -64,6 +66,13 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Completion handshake: client accepts or rejects the delivered work.
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
+
+    // Community-wide global chat, open to every authenticated user.
+    Route::get('/chat/global', [GlobalChatController::class, 'meta']);
+    Route::get('/chat/global/messages', [GlobalChatController::class, 'messages']);
+    // Tight flood guard on top of the cooldown rules.
+    Route::post('/chat/global/messages', [GlobalChatController::class, 'store'])
+        ->middleware('throttle:20,1');
 
     // Per-order client ↔ agent conversation (opened when an offer is accepted).
     Route::get('/chats', [ChatController::class, 'index']);
@@ -118,6 +127,22 @@ Route::prefix('admin')
 
         Route::get('/reviews', [AdminReviewController::class, 'index']);
         Route::patch('/reviews/{review}/status', [AdminReviewController::class, 'updateStatus']);
+
+        // Global chat moderation: feed, rules, bans, settings + pinned announcement.
+        Route::get('/global-chat/messages', [AdminGlobalChatController::class, 'messages']);
+        Route::delete('/global-chat/messages/{message}', [AdminGlobalChatController::class, 'deleteMessage'])
+            ->whereNumber('message');
+        Route::get('/global-chat/rules', [AdminGlobalChatController::class, 'rules']);
+        Route::put('/global-chat/rules/roles', [AdminGlobalChatController::class, 'updateRoleRules']);
+        Route::post('/global-chat/rules/users', [AdminGlobalChatController::class, 'setUserRule']);
+        Route::delete('/global-chat/rules/users/{userId}', [AdminGlobalChatController::class, 'removeUserRule'])
+            ->whereNumber('userId');
+        Route::get('/global-chat/bans', [AdminGlobalChatController::class, 'bans']);
+        Route::post('/global-chat/bans', [AdminGlobalChatController::class, 'storeBan']);
+        Route::delete('/global-chat/bans/{ban}', [AdminGlobalChatController::class, 'destroyBan'])
+            ->whereNumber('ban');
+        Route::get('/global-chat/settings', [AdminGlobalChatController::class, 'settings']);
+        Route::put('/global-chat/settings', [AdminGlobalChatController::class, 'updateSettings']);
 
         Route::get('/banners', [AdminBannerController::class, 'index']);
         Route::post('/banners', [AdminBannerController::class, 'store']);

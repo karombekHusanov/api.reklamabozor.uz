@@ -37,6 +37,9 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        // HMAC verification of Mini App initData on login. Only disable in
+        // local/dev environments without a real Telegram client.
+        'verify_init_data' => env('TELEGRAM_VERIFY_INIT_DATA', true),
         'init_data_max_age' => env('TELEGRAM_INIT_DATA_MAX_AGE', 86400),
         'api_url' => env('TELEGRAM_API_URL', 'https://api.telegram.org'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
