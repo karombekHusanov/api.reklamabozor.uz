@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
+use App\Http\Controllers\Api\V1\PublicClientController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -57,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::patch('/me/role', [ProfileController::class, 'setRole']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
+    Route::get('/clients/{user}', [PublicClientController::class, 'show'])->whereNumber('user');
 
     // B2C client orders + selecting a winning offer.
     Route::get('/orders', [OrderController::class, 'index']);

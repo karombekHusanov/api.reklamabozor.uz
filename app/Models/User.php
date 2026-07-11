@@ -63,6 +63,11 @@ class User extends Authenticatable
         return $this->hasMany(Offer::class, 'agent_id');
     }
 
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class, 'client_id');
+    }
+
     /**
      * @param  Builder<self>  $query
      * @return Builder<self>
