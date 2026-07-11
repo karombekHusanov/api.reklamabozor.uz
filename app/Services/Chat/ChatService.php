@@ -25,16 +25,25 @@ class ChatService
 
     /**
      * All conversations the user takes part in (either side), newest activity first.
+     * Optionally narrowed to threads with a specific agency profile.
      *
      * @return Collection<int, Chat>
      */
-    public function listForUser(User $user): Collection
+    public function listForUser(User $user, ?int $agentProfileId = null): Collection
     {
-        return Chat::query()
+        $chats = Chat::query()
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
             ->with(['order.category', 'client', 'agent.agentProfile', 'lastMessage.attachments'])
             ->latest('updated_at')
             ->get();
+
+        if ($agentProfileId === null) {
+            return $chats;
+        }
+
+        return $chats
+            ->filter(fn (Chat $chat) => $chat->otherParticipant($user)->agentProfile?->id === $agentProfileId)
+            ->values();
     }
 
     /**

@@ -39,6 +39,7 @@ class ChatResource extends JsonResource
                 'id' => $other->id,
                 'name' => trim($other->first_name.' '.($other->last_name ?? '')),
                 'company_name' => $other->agentProfile?->company_name,
+                'agent_profile_id' => $other->agentProfile?->id,
             ],
             'last_message' => $this->whenLoaded('lastMessage', fn () => $this->lastMessage
                 ? new ChatMessageResource($this->lastMessage)

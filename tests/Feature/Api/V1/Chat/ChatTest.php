@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1\Chat;
 
 use App\Enums\OrderStatus;
+use App\Models\AgentProfile;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\File;
@@ -214,6 +215,21 @@ class ChatTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.unread_count', 2)
             ->assertJsonPath('data.0.other_participant.id', $agent->id);
+    }
+
+    public function test_chat_list_can_be_filtered_by_agent_profile(): void
+    {
+        [$order, $chat, $client, $agent] = $this->deal();
+        $profile = AgentProfile::factory()->for($agent)->approved()->create();
+        Chat::factory()->create(); // unrelated chat
+
+        $this->getJson("/api/v1/chats?agent_profile_id={$profile->id}", [
+            'Authorization' => 'Bearer '.$this->token($client),
+        ])
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_id', $order->id)
+            ->assertJsonPath('data.0.other_participant.agent_profile_id', $profile->id);
     }
 
     public function test_admin_can_read_the_transcript(): void

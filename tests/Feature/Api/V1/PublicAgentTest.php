@@ -3,6 +3,9 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Models\AgentProfile;
+use App\Models\Category;
+use App\Models\Review;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -95,5 +98,58 @@ class PublicAgentTest extends TestCase
         $this->getJson('/api/v1/agents/nearby')
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['lat', 'lng']);
+    }
+
+    public function test_public_agents_can_be_filtered_by_designer_category_type(): void
+    {
+        $designerCategory = Category::factory()->designer()->create();
+        $agentCategory = Category::factory()->create();
+
+        $designerProfile = AgentProfile::factory()->approved()->create(['company_name' => 'Studio A']);
+        $designerProfile->categories()->attach($designerCategory);
+
+        $agentOnlyProfile = AgentProfile::factory()->approved()->create(['company_name' => 'Agency B']);
+        $agentOnlyProfile->categories()->attach($agentCategory);
+
+        $this->getJson('/api/v1/agents?type=designer')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $designerProfile->id)
+            ->assertJsonPath('data.0.company_name', 'Studio A');
+    }
+
+    public function test_public_agent_detail_exposes_presentation_fields_and_approved_reviews(): void
+    {
+        $agentUser = User::factory()->create(['first_name' => 'Bekzod', 'last_name' => 'Aliyev']);
+        $profile = AgentProfile::factory()->for($agentUser)->approved()->create([
+            'bio' => 'Outdoor ads agency',
+            'results_text' => '500+ billboards installed',
+            'website_url' => 'https://agency.uz',
+            'linkedin_url' => 'https://linkedin.com/company/agency',
+            'location_label' => 'Tashkent',
+        ]);
+
+        Review::factory()->approved()->create([
+            'agent_id' => $agentUser->id,
+            'rating' => 5,
+            'comment' => 'Great work!',
+        ]);
+        Review::factory()->create([
+            'agent_id' => $agentUser->id,
+            'rating' => 1,
+            'comment' => 'Pending review',
+        ]);
+
+        $this->getJson("/api/v1/agents/{$profile->id}")
+            ->assertOk()
+            ->assertJsonPath('data.bio', 'Outdoor ads agency')
+            ->assertJsonPath('data.results_text', '500+ billboards installed')
+            ->assertJsonPath('data.website_url', 'https://agency.uz')
+            ->assertJsonPath('data.linkedin_url', 'https://linkedin.com/company/agency')
+            ->assertJsonPath('data.location_label', 'Tashkent')
+            ->assertJsonCount(1, 'data.reviews')
+            ->assertJsonPath('data.reviews.0.rating', 5)
+            ->assertJsonPath('data.reviews.0.comment', 'Great work!')
+            ->assertJsonPath('data.user_id', $agentUser->id);
     }
 }

@@ -4,12 +4,13 @@ namespace App\Http\Requests\Api\V1\Order;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OrderDeadline;
+use App\Models\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * B2C order — deliberately minimal: pick a category, attach a brief (TZ),
- * leave a comment. The title is derived from the category server-side.
+ * B2C order — pick a category, describe the need, attach reference files.
+ * The title is derived from the category server-side.
  */
 class StoreOrderRequest extends FormRequest
 {
@@ -40,14 +41,13 @@ class StoreOrderRequest extends FormRequest
             ],
             // How soon the work is needed (optional urgency preset).
             'deadline' => ['nullable', Rule::enum(OrderDeadline::class)],
-            // The technical brief must reference a file the user uploaded themselves.
-            'tz_file_id' => [
+            // One or more files the client uploaded for this order.
+            'attachment_file_ids' => [
                 'required',
-                'integer',
-                Rule::exists('files', 'id')->where('uploaded_by', $this->user()->id),
+                'array',
+                'min:1',
+                'max:'.Order::MAX_ATTACHMENTS,
             ],
-            // Extra reference files (slots 2-4). Each must be owned by the user.
-            'attachment_file_ids' => ['nullable', 'array', 'max:3'],
             'attachment_file_ids.*' => [
                 'integer',
                 Rule::exists('files', 'id')->where('uploaded_by', $this->user()->id),

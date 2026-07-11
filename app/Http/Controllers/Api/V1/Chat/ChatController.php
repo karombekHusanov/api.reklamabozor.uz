@@ -22,7 +22,16 @@ class ChatController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
-        return $this->success(ChatResource::collection($this->chats->listForUser($request->user())));
+        $validated = $request->validate([
+            'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
+        ]);
+
+        $chats = $this->chats->listForUser(
+            $request->user(),
+            isset($validated['agent_profile_id']) ? (int) $validated['agent_profile_id'] : null,
+        );
+
+        return $this->success(ChatResource::collection($chats));
     }
 
     /**

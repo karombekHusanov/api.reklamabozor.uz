@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\CategoryType;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicAgentResource;
 use App\Models\AgentProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class PublicAgentController extends ApiController
 {
@@ -17,11 +19,23 @@ class PublicAgentController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
-        $limit = (int) $request->integer('limit', 12);
+        $validated = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'type' => ['nullable', Rule::enum(CategoryType::class)],
+        ]);
+
+        $limit = (int) ($validated['limit'] ?? 12);
         $limit = max(1, min($limit, 50));
 
         $agents = AgentProfile::query()
             ->approved()
+            ->when(
+                isset($validated['type']),
+                fn ($query) => $query->whereHas(
+                    'categories',
+                    fn ($categoryQuery) => $categoryQuery->where('type', $validated['type']),
+                ),
+            )
             ->with(['companyLogoFile', 'categories'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')
@@ -76,7 +90,14 @@ class PublicAgentController extends ApiController
     {
         abort_unless($agentProfile->status === AgentProfileStatus::Approved, 404);
 
-        $agentProfile->load(['companyLogoFile', 'categories']);
+        $agentProfile->load([
+            'companyLogoFile',
+            'categories',
+            'approvedReviews' => fn ($query) => $query
+                ->latest()
+                ->limit(10)
+                ->with(['client.avatarFile']),
+        ]);
         $agentProfile->loadCount(['completedOrders', 'approvedReviews']);
         $agentProfile->loadAvg('approvedReviews', 'rating');
 

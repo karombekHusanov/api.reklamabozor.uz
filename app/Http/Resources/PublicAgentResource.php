@@ -21,6 +21,7 @@ class PublicAgentResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'user_id' => $this->user_id,
             'company_name' => $this->company_name,
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
@@ -30,6 +31,8 @@ class PublicAgentResource extends JsonResource
             // Distance in metres from the requested point — only set by the "nearby" endpoint.
             'distance_m' => $this->when($this->distance_m !== null, fn () => $this->distance_m),
             'website_url' => $this->website_url,
+            'linkedin_url' => $this->linkedin_url,
+            'results_text' => $this->results_text,
             'completion_percent' => $this->completionPercent(),
             'completed_orders_count' => (int) ($this->completed_orders_count ?? 0),
             // Moderated review aggregates (avg is null until the first approved review).
@@ -38,6 +41,7 @@ class PublicAgentResource extends JsonResource
                 : null,
             'rating_count' => (int) ($this->approved_reviews_count ?? 0),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
+            'reviews' => PublicReviewResource::collection($this->whenLoaded('approvedReviews')),
         ];
     }
 }

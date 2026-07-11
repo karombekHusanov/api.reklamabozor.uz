@@ -38,8 +38,7 @@ class OrderService
             'title' => $category->name_uz,
             'description' => $data['description'],
             'deadline' => $data['deadline'] ?? null,
-            'tz_file_id' => $data['tz_file_id'],
-            'attachment_file_ids' => $data['attachment_file_ids'] ?? null,
+            'attachment_file_ids' => $data['attachment_file_ids'],
             'status' => OrderStatus::New,
         ]);
 
@@ -49,7 +48,7 @@ class OrderService
             report($e);
         }
 
-        return $order->load(Order::CLIENT_RELATIONS);
+        return $this->withClientRelations($order);
     }
 
     /**
@@ -80,18 +79,22 @@ class OrderService
      */
     public function listForClient(User $client): Collection
     {
-        return $client->orders()
+        $orders = $client->orders()
             ->with(['category', 'targetAgent.agentProfile'])
             ->withCount(['offers', 'views'])
             ->latest()
             ->get();
+
+        Order::hydrateAttachmentFiles($orders);
+
+        return $orders;
     }
 
     public function findForClient(User $client, Order $order): Order
     {
         abort_unless($order->client_id === $client->id, 404);
 
-        return $order->load(Order::CLIENT_RELATIONS)->loadCount(['offers', 'views']);
+        return $this->withClientRelations($order)->loadCount(['offers', 'views']);
     }
 
     /**
@@ -122,7 +125,7 @@ class OrderService
             report($e);
         }
 
-        return $order->load(Order::CLIENT_RELATIONS);
+        return $this->withClientRelations($order);
     }
 
     /**
@@ -136,7 +139,7 @@ class OrderService
 
         $this->complete($order, auto: false);
 
-        return $order->load(Order::CLIENT_RELATIONS);
+        return $this->withClientRelations($order);
     }
 
     /**
@@ -161,7 +164,7 @@ class OrderService
             report($e);
         }
 
-        return $order->load(Order::CLIENT_RELATIONS);
+        return $this->withClientRelations($order);
     }
 
     /**
@@ -190,5 +193,13 @@ class OrderService
                 'order' => ['This order is not awaiting completion confirmation.'],
             ]);
         }
+    }
+
+    private function withClientRelations(Order $order): Order
+    {
+        $order->load(Order::CLIENT_RELATIONS);
+        Order::hydrateAttachmentFiles($order);
+
+        return $order;
     }
 }

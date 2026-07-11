@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AgentProfileStatus;
 use App\Models\GlobalChatMessage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -26,6 +27,10 @@ class GlobalChatMessageResource extends JsonResource
                 'role' => $this->user->role->value,
                 // Approved agencies speak under their company name.
                 'company_name' => $this->user->agentProfile?->company_name,
+                // Tap target: only approved agencies have a public in-app profile page.
+                'agent_profile_id' => $this->user->agentProfile?->status === AgentProfileStatus::Approved
+                    ? $this->user->agentProfile->id
+                    : null,
             ],
             // Moderation fields, present only on the admin surface.
             'deleted_at' => $this->when(

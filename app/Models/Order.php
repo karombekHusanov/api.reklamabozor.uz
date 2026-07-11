@@ -6,11 +6,13 @@ use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 
 class Order extends Model
 {
@@ -44,11 +46,13 @@ class Order extends Model
      */
     public const CLIENT_RELATIONS = [
         'category',
-        'tzFile',
         'targetAgent.agentProfile',
         'offers.agent.agentProfile.companyLogoFile',
         'review',
     ];
+
+    /** Max files a client may attach to one order. */
+    public const MAX_ATTACHMENTS = 5;
 
     public function client(): BelongsTo
     {
@@ -72,6 +76,60 @@ class Order extends Model
     public function tzFile(): BelongsTo
     {
         return $this->belongsTo(File::class, 'tz_file_id');
+    }
+
+    /**
+     * All file ids for this order, including legacy rows that still store the
+     * first upload in tz_file_id until the data migration has run.
+     *
+     * @return list<int>
+     */
+    public function allAttachmentFileIds(): array
+    {
+        $ids = $this->attachment_file_ids ?? [];
+
+        if ($this->tz_file_id !== null && ! in_array($this->tz_file_id, $ids, true)) {
+            array_unshift($ids, $this->tz_file_id);
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Hydrate the virtual `attachmentFiles` relation from stored file ids.
+     * Batched across a collection to avoid N+1 lookups.
+     *
+     * @param  Order|EloquentCollection<int, Order>|Collection<int, Order>  $orders
+     */
+    public static function hydrateAttachmentFiles(Order|EloquentCollection|Collection $orders): void
+    {
+        if ($orders instanceof Order) {
+            self::hydrateAttachmentFiles(new EloquentCollection([$orders]));
+
+            return;
+        }
+
+        if ($orders->isEmpty()) {
+            return;
+        }
+
+        $allIds = $orders
+            ->flatMap(fn (Order $order) => $order->allAttachmentFileIds())
+            ->unique()
+            ->values();
+
+        $filesById = $allIds->isEmpty()
+            ? collect()
+            : File::query()->whereIn('id', $allIds)->get()->keyBy('id');
+
+        foreach ($orders as $order) {
+            $files = collect($order->allAttachmentFileIds())
+                ->map(fn (int $id) => $filesById->get($id))
+                ->filter()
+                ->values();
+
+            $order->setRelation('attachmentFiles', new EloquentCollection($files->all()));
+        }
     }
 
     public function offers(): HasMany

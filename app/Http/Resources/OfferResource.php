@@ -24,6 +24,7 @@ class OfferResource extends JsonResource
             'status' => $this->status->value,
             'agent' => [
                 'id' => $this->agent_id,
+                'profile_id' => $profile?->id,
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
                 'location_label' => $profile?->location_label,

@@ -27,7 +27,9 @@ class AgentOrderResource extends JsonResource
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
-            'tz_file' => $this->tzFile?->url(),
+            'attachment_files' => FileResource::collection(
+                $this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [],
+            ),
             'budget_min' => $this->budget_min,
             'budget_max' => $this->budget_max,
             'status' => $this->status->value,

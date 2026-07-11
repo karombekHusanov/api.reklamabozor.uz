@@ -14,7 +14,7 @@ class OrderAdminService
      *
      * @var list<string>
      */
-    private const RELATIONS = ['category', 'tzFile', 'client', 'targetAgent.agentProfile', 'offers.agent.agentProfile'];
+    private const RELATIONS = ['category', 'client', 'targetAgent.agentProfile', 'offers.agent.agentProfile'];
 
     /**
      * Allowed admin status transitions: target => acceptable source states.
@@ -84,7 +84,10 @@ class OrderAdminService
 
     public function find(Order $order): Order
     {
-        return $order->load(self::RELATIONS);
+        $order->load(self::RELATIONS);
+        Order::hydrateAttachmentFiles($order);
+
+        return $order;
     }
 
     public function updateStatus(Order $order, OrderStatus $target): Order
@@ -99,6 +102,9 @@ class OrderAdminService
 
         $order->update(['status' => $target]);
 
-        return $order->load(self::RELATIONS);
+        $order->load(self::RELATIONS);
+        Order::hydrateAttachmentFiles($order);
+
+        return $order;
     }
 }

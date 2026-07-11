@@ -27,7 +27,8 @@ class OrderNotifier
 
     public function notifyNewOrder(Order $order): int
     {
-        $order->loadMissing('category', 'tzFile');
+        $order->loadMissing('category');
+        Order::hydrateAttachmentFiles($order);
 
         $recipients = User::query()
             ->whereNotNull('telegram_id')
@@ -51,16 +52,17 @@ class OrderNotifier
             : null;
 
         // Telegram fetches the document over HTTP, so it needs the absolute URL.
-        $tzUrl = $order->tzFile?->absoluteUrl();
+        $firstFile = $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles->first() : null;
+        $documentUrl = $firstFile?->absoluteUrl();
 
         $sent = 0;
 
         foreach ($recipients as $recipient) {
             try {
-                if ($tzUrl !== null) {
-                    // Deliver the client's brief (TZ) as a document with the order
-                    // summary as caption, so agents review it without leaving chat.
-                    $this->bot->sendDocument((int) $recipient->telegram_id, $tzUrl, $text, $markup);
+                if ($documentUrl !== null) {
+                    // Deliver the first attached file as a document with the order
+                    // summary as caption; agents open the mini app for the full set.
+                    $this->bot->sendDocument((int) $recipient->telegram_id, $documentUrl, $text, $markup);
                 } else {
                     $this->bot->sendMessage((int) $recipient->telegram_id, $text, $markup);
                 }
@@ -330,8 +332,11 @@ class OrderNotifier
 
         $lines[] = "📝 Izoh: {$description}";
 
-        if ($order->tz_file_id !== null) {
-            $lines[] = '📎 Texnik topshiriq (TZ) ilova qilindi.';
+        $fileCount = $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles->count() : count($order->allAttachmentFileIds());
+        if ($fileCount > 0) {
+            $lines[] = $fileCount === 1
+                ? '📎 1 ta fayl ilova qilindi.'
+                : "📎 {$fileCount} ta fayl ilova qilindi.";
         }
 
         $lines[] = '';

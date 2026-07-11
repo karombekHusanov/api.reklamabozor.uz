@@ -45,7 +45,6 @@ class OfferService
             ->withCount(['views', 'offers'])
             ->with([
                 'category',
-                'tzFile',
                 'client',
                 'offers' => fn ($query) => $query->where('agent_id', $agent->id),
             ])
@@ -53,6 +52,7 @@ class OfferService
             ->get();
 
         $this->recordViews($agent, $orders);
+        Order::hydrateAttachmentFiles($orders);
 
         return $orders;
     }

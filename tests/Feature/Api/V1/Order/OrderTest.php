@@ -37,48 +37,52 @@ class OrderTest extends TestCase
         Http::fake();
         [$client, $token] = $this->authedUser();
         $category = Category::factory()->create();
-        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $response = $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
             'description' => 'Need a banner campaign across Tashkent metro.',
-            'tz_file_id' => $tz->id,
+            'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token]);
 
         $response
             ->assertCreated()
             ->assertJsonPath('data.status', 'new')
             ->assertJsonPath('data.category.id', $category->id)
-            // Title is derived from the category.
-            ->assertJsonPath('data.title', $category->name_uz);
+            ->assertJsonPath('data.title', $category->name_uz)
+            ->assertJsonPath('data.attachment_file_ids', [$file->id])
+            ->assertJsonCount(1, 'data.attachment_files');
 
         $this->assertDatabaseHas('orders', [
             'client_id' => $client->id,
             'category_id' => $category->id,
-            'tz_file_id' => $tz->id,
+            'tz_file_id' => null,
             'status' => 'new',
         ]);
     }
 
-    public function test_client_can_place_an_order_with_deadline_and_attachments(): void
+    public function test_client_can_place_an_order_with_deadline_and_multiple_attachments(): void
     {
         Http::fake();
         [$client, $token] = $this->authedUser();
         $category = Category::factory()->create();
-        $tz = File::factory()->create(['uploaded_by' => $client->id]);
-        $extra1 = File::factory()->create(['uploaded_by' => $client->id]);
-        $extra2 = File::factory()->create(['uploaded_by' => $client->id]);
+        $file1 = File::factory()->create(['uploaded_by' => $client->id]);
+        $file2 = File::factory()->create(['uploaded_by' => $client->id]);
+        $file3 = File::factory()->create(['uploaded_by' => $client->id]);
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
             'description' => 'Urgent outdoor campaign.',
             'deadline' => 'today_tomorrow',
-            'tz_file_id' => $tz->id,
-            'attachment_file_ids' => [$extra1->id, $extra2->id],
+            'attachment_file_ids' => [$file1->id, $file2->id, $file3->id],
         ], ['Authorization' => 'Bearer '.$token])
             ->assertCreated()
             ->assertJsonPath('data.deadline', 'today_tomorrow')
-            ->assertJsonPath('data.attachment_file_ids', [$extra1->id, $extra2->id]);
+            ->assertJsonPath('data.attachment_file_ids', [$file1->id, $file2->id, $file3->id])
+            ->assertJsonCount(3, 'data.attachment_files')
+            ->assertJsonPath('data.attachment_files.0.id', $file1->id)
+            ->assertJsonPath('data.attachment_files.0.url', $file1->url())
+            ->assertJsonPath('data.attachment_files.2.id', $file3->id);
 
         $this->assertDatabaseHas('orders', [
             'client_id' => $client->id,
@@ -96,11 +100,10 @@ class OrderTest extends TestCase
             'category_id' => $category->id,
             'description' => 'x',
             'deadline' => 'next_year',
-            'tz_file_id' => File::factory()->create()->id,
             'attachment_file_ids' => [$stranger->id],
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['deadline', 'tz_file_id', 'attachment_file_ids.0']);
+            ->assertJsonValidationErrors(['deadline', 'attachment_file_ids.0']);
     }
 
     public function test_order_validates_required_fields(): void
@@ -109,10 +112,10 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['category_id', 'description', 'tz_file_id']);
+            ->assertJsonValidationErrors(['category_id', 'description', 'attachment_file_ids']);
     }
 
-    public function test_tz_file_must_belong_to_the_client(): void
+    public function test_attachment_files_must_belong_to_the_client(): void
     {
         [, $token] = $this->authedUser();
         $category = Category::factory()->create();
@@ -121,10 +124,10 @@ class OrderTest extends TestCase
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
             'description' => 'x',
-            'tz_file_id' => $strangerFile->id,
+            'attachment_file_ids' => [$strangerFile->id],
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['tz_file_id']);
+            ->assertJsonValidationErrors(['attachment_file_ids.0']);
     }
 
     public function test_placing_an_order_notifies_matching_approved_agents(): void
@@ -132,9 +135,8 @@ class OrderTest extends TestCase
         Http::fake();
         [$client, $token] = $this->authedUser();
         $category = Category::factory()->create();
-        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
 
-        // An approved agent that serves this category and has a Telegram id.
         $agentUser = User::factory()->create(['telegram_id' => 555000111]);
         $profile = AgentProfile::factory()->for($agentUser)->approved()->create();
         $profile->categories()->attach($category);
@@ -143,26 +145,24 @@ class OrderTest extends TestCase
             'category_id' => $category->id,
             'description' => 'Need outdoor billboards.',
             'deadline' => 'this_week',
-            'tz_file_id' => $tz->id,
+            'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
         $order = $client->orders()->latest('id')->first();
 
-        // The client's TZ brief is delivered to agents as a Telegram document,
-        // referenced by an absolute URL, with a caption carrying the full order
-        // info (id, category, deadline, comment) and a "view order" deep-link button.
-        Http::assertSent(function ($request) use ($tz, $category, $order) {
+        Http::assertSent(function ($request) use ($file, $category, $order) {
             $doc = $request['document'] ?? '';
             $caption = $request['caption'] ?? '';
 
             return str_contains($request->url(), 'sendDocument')
                 && $request['chat_id'] === 555000111
                 && str_starts_with($doc, 'http')
-                && str_contains($doc, $tz->path)
+                && str_contains($doc, $file->path)
                 && str_contains($caption, "#{$order->id}")
                 && str_contains($caption, $category->name_uz)
                 && str_contains($caption, 'Shu hafta')
-                && str_contains($caption, 'Need outdoor billboards.');
+                && str_contains($caption, 'Need outdoor billboards.')
+                && str_contains($caption, '1 ta fayl ilova qilindi.');
         });
     }
 
@@ -172,9 +172,8 @@ class OrderTest extends TestCase
         [$client, $token] = $this->authedUser();
         $orderCategory = Category::factory()->create();
         $otherCategory = Category::factory()->create();
-        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
 
-        // Approved agent, but serves a DIFFERENT category — must not be notified.
         $outsider = User::factory()->create(['telegram_id' => 999888777]);
         AgentProfile::factory()->for($outsider)->approved()->create()
             ->categories()->attach($otherCategory);
@@ -182,7 +181,7 @@ class OrderTest extends TestCase
         $this->postJson('/api/v1/orders', [
             'category_id' => $orderCategory->id,
             'description' => 'Only my category should hear about this.',
-            'tz_file_id' => $tz->id,
+            'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
         Http::assertNotSent(fn ($request) => ($request['chat_id'] ?? null) === 999888777);
@@ -194,7 +193,7 @@ class OrderTest extends TestCase
         Http::fake();
         [$client, $token] = $this->authedUser();
         $category = Category::factory()->create();
-        $tz = File::factory()->create(['uploaded_by' => $client->id]);
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $agentUser = User::factory()->create(['telegram_id' => 777000222]);
         $profile = AgentProfile::factory()->for($agentUser)->approved()->create();
@@ -203,12 +202,11 @@ class OrderTest extends TestCase
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
             'description' => 'Need a launch campaign.',
-            'tz_file_id' => $tz->id,
+            'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
         $order = $client->orders()->latest('id')->first();
 
-        // Agents open the order detail page from the bot deep link.
         Http::assertSent(function ($request) use ($order) {
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
 
@@ -220,7 +218,7 @@ class OrderTest extends TestCase
     {
         [$client, $token] = $this->authedUser();
         Order::factory()->for($client, 'client')->count(2)->create();
-        Order::factory()->count(3)->create(); // other clients
+        Order::factory()->count(3)->create();
 
         $this->getJson('/api/v1/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
@@ -231,12 +229,52 @@ class OrderTest extends TestCase
     {
         [$client, $token] = $this->authedUser();
         $order = Order::factory()->for($client, 'client')->create();
-        Offer::factory()->for($order)->count(2)->create();
+        $agentUser = User::factory()->create();
+        $profile = AgentProfile::factory()->for($agentUser)->approved()->create();
+        Offer::factory()->for($order)->create(['agent_id' => $agentUser->id]);
 
         $this->getJson("/api/v1/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.id', $order->id)
-            ->assertJsonCount(2, 'data.offers');
+            ->assertJsonCount(1, 'data.offers')
+            ->assertJsonPath('data.offers.0.agent.profile_id', $profile->id)
+            ->assertJsonPath('data.attachment_files', []);
+    }
+
+    public function test_client_can_view_order_attachment_files_with_urls(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $file1 = File::factory()->create(['uploaded_by' => $client->id]);
+        $file2 = File::factory()->create(['uploaded_by' => $client->id]);
+        $order = Order::factory()->for($client, 'client')->create([
+            'attachment_file_ids' => [$file1->id, $file2->id],
+        ]);
+
+        $this->getJson("/api/v1/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.attachment_file_ids', [$file1->id, $file2->id])
+            ->assertJsonCount(2, 'data.attachment_files')
+            ->assertJsonPath('data.attachment_files.0.id', $file1->id)
+            ->assertJsonPath('data.attachment_files.0.url', $file1->url())
+            ->assertJsonPath('data.attachment_files.1.id', $file2->id)
+            ->assertJsonPath('data.attachment_files.1.url', $file2->url());
+    }
+
+    public function test_legacy_tz_only_orders_still_expose_files_via_attachments(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $legacyFile = File::factory()->create(['uploaded_by' => $client->id]);
+        $order = Order::factory()->for($client, 'client')->create([
+            'tz_file_id' => $legacyFile->id,
+            'attachment_file_ids' => null,
+        ]);
+
+        $this->getJson("/api/v1/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.attachment_file_ids', [$legacyFile->id])
+            ->assertJsonCount(1, 'data.attachment_files')
+            ->assertJsonPath('data.attachment_files.0.id', $legacyFile->id)
+            ->assertJsonPath('data.attachment_files.0.url', $legacyFile->url());
     }
 
     public function test_client_cannot_view_another_clients_order(): void
