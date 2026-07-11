@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Chat;
 
+use App\Models\File;
 use App\Models\GlobalChatBan;
 use App\Models\GlobalChatMessage;
 use App\Models\GlobalChatRule;
@@ -43,6 +44,72 @@ class GlobalChatTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.body', 'Salom hammaga!')
             ->assertJsonPath('data.0.sender.role', 'client');
+    }
+
+    public function test_user_can_attach_a_file(): void
+    {
+        [$user, $headers] = $this->client();
+        $file = File::factory()->create(['uploaded_by' => $user->id]);
+
+        $this->postJson('/api/v1/chat/global/messages', ['body' => 'Look', 'file_ids' => [$file->id]], $headers)
+            ->assertCreated()
+            ->assertJsonPath('data.body', 'Look')
+            ->assertJsonPath('data.attachments.0.id', $file->id)
+            ->assertJsonPath('data.attachments.0.original_name', $file->original_name);
+
+        $this->getJson('/api/v1/chat/global/messages', $headers)
+            ->assertOk()
+            ->assertJsonPath('data.0.attachments.0.id', $file->id);
+    }
+
+    public function test_multiple_files_stay_on_one_message_in_picked_order(): void
+    {
+        [$user, $headers] = $this->client();
+        $files = File::factory()->count(3)->create(['uploaded_by' => $user->id]);
+        $ids = [$files[2]->id, $files[0]->id, $files[1]->id];
+
+        $this->postJson('/api/v1/chat/global/messages', ['body' => 'Album', 'file_ids' => $ids], $headers)
+            ->assertCreated()
+            ->assertJsonCount(3, 'data.attachments')
+            ->assertJsonPath('data.attachments.0.id', $ids[0])
+            ->assertJsonPath('data.attachments.1.id', $ids[1])
+            ->assertJsonPath('data.attachments.2.id', $ids[2]);
+
+        // One message, not three.
+        $this->getJson('/api/v1/chat/global/messages', $headers)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonCount(3, 'data.0.attachments');
+    }
+
+    public function test_file_only_message_is_allowed(): void
+    {
+        [$user, $headers] = $this->client();
+        $file = File::factory()->create(['uploaded_by' => $user->id]);
+
+        $this->postJson('/api/v1/chat/global/messages', ['file_ids' => [$file->id]], $headers)
+            ->assertCreated()
+            ->assertJsonPath('data.body', '')
+            ->assertJsonPath('data.attachments.0.id', $file->id);
+    }
+
+    public function test_message_requires_body_or_file(): void
+    {
+        [, $headers] = $this->client();
+
+        $this->postJson('/api/v1/chat/global/messages', [], $headers)
+            ->assertStatus(422);
+    }
+
+    public function test_cannot_attach_another_users_file(): void
+    {
+        [$user, $headers] = $this->client();
+        $mine = File::factory()->create(['uploaded_by' => $user->id]);
+        $foreign = File::factory()->create(['uploaded_by' => User::factory()->create()->id]);
+
+        $this->postJson('/api/v1/chat/global/messages', ['file_ids' => [$mine->id, $foreign->id]], $headers)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('file_ids');
     }
 
     public function test_deleted_messages_are_hidden_from_the_feed(): void

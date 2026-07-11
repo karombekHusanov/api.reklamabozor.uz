@@ -56,7 +56,12 @@ class ChatController extends ApiController
 
     public function store(StoreChatMessageRequest $request, Order $order): JsonResponse
     {
-        $message = $this->chats->send($request->user(), $order, $request->validated('body'));
+        $message = $this->chats->send(
+            $request->user(),
+            $order,
+            $request->validated('body'),
+            array_map(intval(...), $request->validated('file_ids') ?? []),
+        );
 
         return $this->success(new ChatMessageResource($message), 'Message sent', 201);
     }

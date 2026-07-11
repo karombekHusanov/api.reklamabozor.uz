@@ -8,6 +8,7 @@ use App\Models\GlobalChatMessage;
 use App\Models\GlobalChatRule;
 use App\Models\GlobalChatSetting;
 use App\Models\User;
+use App\Services\Chat\MessageAttachments;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -58,7 +59,7 @@ class GlobalChatService
     {
         $query = GlobalChatMessage::query()
             ->visible()
-            ->with('user.agentProfile');
+            ->with(['user.agentProfile', 'attachments']);
 
         if ($afterId !== null) {
             return $query->where('id', '>', $afterId)->oldest('id')->limit($limit)->get();
@@ -72,7 +73,10 @@ class GlobalChatService
         return $query->latest('id')->limit($limit)->get()->reverse()->values();
     }
 
-    public function post(User $user, string $body): GlobalChatMessage
+    /**
+     * @param  list<int>  $fileIds
+     */
+    public function post(User $user, ?string $body, array $fileIds = []): GlobalChatMessage
     {
         $settings = GlobalChatSetting::current();
 
@@ -82,15 +86,26 @@ class GlobalChatService
             ]);
         }
 
+        // File-only messages are allowed; the DB keeps body non-null (empty string).
+        $body = $body !== null ? trim($body) : '';
+
+        if ($body === '' && $fileIds === []) {
+            throw ValidationException::withMessages([
+                'body' => ['Write a message or attach a file.'],
+            ]);
+        }
+
         if (mb_strlen($body) > $settings->max_message_length) {
             throw ValidationException::withMessages([
                 'body' => ["Message is too long (max {$settings->max_message_length} characters)."],
             ]);
         }
 
+        $files = MessageAttachments::resolve($user, $fileIds);
+
         // The user-row lock serialises concurrent posts from the same account,
         // so two parallel requests cannot both slip through the cooldown check.
-        return DB::transaction(function () use ($user, $body): GlobalChatMessage {
+        return DB::transaction(function () use ($user, $body, $files): GlobalChatMessage {
             if ($user->role !== Role::Admin) {
                 User::query()->whereKey($user->id)->lockForUpdate()->first();
 
@@ -98,10 +113,14 @@ class GlobalChatService
                 $this->assertCooldownPassed($user);
             }
 
-            return GlobalChatMessage::create([
+            $message = GlobalChatMessage::create([
                 'user_id' => $user->id,
                 'body' => $body,
-            ])->load('user.agentProfile');
+            ]);
+
+            MessageAttachments::attach($message->attachments(), $files);
+
+            return $message->load(['user.agentProfile', 'attachments']);
         });
     }
 

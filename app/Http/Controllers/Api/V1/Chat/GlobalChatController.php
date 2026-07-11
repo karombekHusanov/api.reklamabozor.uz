@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Chat;
 
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\GlobalChatMessageResource;
+use App\Services\Chat\MessageAttachments;
 use App\Services\GlobalChat\GlobalChatService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,10 +46,16 @@ class GlobalChatController extends ApiController
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:4000'],
+            'body' => ['nullable', 'string', 'max:4000', 'required_without:file_ids'],
+            'file_ids' => ['nullable', 'array', 'max:'.MessageAttachments::MAX_PER_MESSAGE, 'required_without:body'],
+            'file_ids.*' => ['integer', 'exists:files,id'],
         ]);
 
-        $message = $this->chat->post($request->user(), trim($validated['body']));
+        $message = $this->chat->post(
+            $request->user(),
+            $validated['body'] ?? null,
+            array_map(intval(...), $validated['file_ids'] ?? []),
+        );
 
         return $this->success(new GlobalChatMessageResource($message), 'Message sent', 201);
     }

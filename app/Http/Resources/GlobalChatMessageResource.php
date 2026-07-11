@@ -17,6 +17,7 @@ class GlobalChatMessageResource extends JsonResource
         return [
             'id' => $this->id,
             'body' => $this->body,
+            'attachments' => FileResource::collection($this->attachments),
             'created_at' => $this->created_at?->toIso8601String(),
             'sender' => [
                 'id' => $this->user->id,

@@ -18,6 +18,7 @@ class ChatMessageResource extends JsonResource
             'id' => $this->id,
             'sender_id' => $this->sender_id,
             'body' => $this->body,
+            'attachments' => FileResource::collection($this->attachments),
             'read_at' => $this->read_at,
             'created_at' => $this->created_at,
         ];

@@ -67,7 +67,7 @@ class OrderController extends ApiController
             return $this->success(['chat' => null, 'messages' => []]);
         }
 
-        $messages = $chat->messages()->orderBy('id')->get();
+        $messages = $chat->messages()->with('attachments')->orderBy('id')->get();
 
         return $this->success([
             'chat' => [

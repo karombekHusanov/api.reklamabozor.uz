@@ -32,7 +32,7 @@ class ChatService
     {
         return Chat::query()
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
-            ->with(['order.category', 'client', 'agent.agentProfile', 'lastMessage'])
+            ->with(['order.category', 'client', 'agent.agentProfile', 'lastMessage.attachments'])
             ->latest('updated_at')
             ->get();
     }
@@ -61,6 +61,7 @@ class ChatService
         $chat = $this->forOrder($user, $order);
 
         $messages = $chat->messages()
+            ->with('attachments')
             ->when($afterId !== null, fn ($q) => $q->where('id', '>', $afterId))
             ->orderBy('id')
             ->get();
@@ -74,7 +75,10 @@ class ChatService
         return $messages;
     }
 
-    public function send(User $user, Order $order, string $body): ChatMessage
+    /**
+     * @param  list<int>  $fileIds
+     */
+    public function send(User $user, Order $order, ?string $body, array $fileIds = []): ChatMessage
     {
         $chat = $this->forOrder($user, $order);
 
@@ -83,6 +87,17 @@ class ChatService
                 'chat' => ['This conversation is closed.'],
             ]);
         }
+
+        // File-only messages are allowed; the DB keeps body non-null (empty string).
+        $body = $body !== null ? trim($body) : '';
+
+        if ($body === '' && $fileIds === []) {
+            throw ValidationException::withMessages([
+                'body' => ['Write a message or attach a file.'],
+            ]);
+        }
+
+        $files = MessageAttachments::resolve($user, $fileIds);
 
         $recipient = $chat->otherParticipant($user);
 
@@ -95,6 +110,9 @@ class ChatService
             'sender_id' => $user->id,
             'body' => $body,
         ]);
+
+        MessageAttachments::attach($message->attachments(), $files);
+        $message->setRelation('attachments', $files->values());
 
         $chat->touch();
 

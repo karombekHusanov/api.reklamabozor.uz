@@ -5,6 +5,7 @@ namespace Tests\Feature\Api\V1\Chat;
 use App\Enums\OrderStatus;
 use App\Models\Chat;
 use App\Models\ChatMessage;
+use App\Models\File;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
@@ -108,6 +109,41 @@ class ChatTest extends TestCase
             'Authorization' => 'Bearer '.$this->token($client),
         ])->assertCreated();
         Http::assertNothingSent();
+    }
+
+    public function test_participant_can_attach_files(): void
+    {
+        Http::fake();
+        [$order, , $client] = $this->deal();
+        $files = File::factory()->count(2)->create(['uploaded_by' => $client->id]);
+
+        $this->postJson("/api/v1/orders/{$order->id}/chat/messages", [
+            'body' => 'TZ',
+            'file_ids' => [$files[0]->id, $files[1]->id],
+        ], [
+            'Authorization' => 'Bearer '.$this->token($client),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.body', 'TZ')
+            ->assertJsonCount(2, 'data.attachments')
+            ->assertJsonPath('data.attachments.0.id', $files[0]->id)
+            ->assertJsonPath('data.attachments.1.id', $files[1]->id);
+
+        // The whole batch is one message.
+        $this->assertSame(1, ChatMessage::count());
+    }
+
+    public function test_cannot_attach_another_users_file(): void
+    {
+        Http::fake();
+        [$order, , $client] = $this->deal();
+        $file = File::factory()->create(['uploaded_by' => User::factory()->create()->id]);
+
+        $this->postJson("/api/v1/orders/{$order->id}/chat/messages", ['file_ids' => [$file->id]], [
+            'Authorization' => 'Bearer '.$this->token($client),
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('file_ids');
     }
 
     public function test_reading_marks_messages_read_and_reenables_ping(): void
