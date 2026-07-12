@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
+use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
@@ -240,6 +241,17 @@ class OrderNotifier
         $this->sendToUser($recipient, implode("\n", [
             "💬 Buyurtma <b>#{$order->id}</b> (".e($order->title).") bo'yicha yangi xabar keldi.",
         ]), '✉️ Chatni ochish', '/chat/'.$order->id);
+    }
+
+    public function notifyNewDirectChatMessage(DirectChat $chat, User $recipient): void
+    {
+        $sender = $chat->otherParticipant($recipient);
+        $label = $sender->agentProfile?->company_name
+            ?? trim($sender->first_name.' '.($sender->last_name ?? ''));
+
+        $this->sendToUser($recipient, implode("\n", [
+            '💬 <b>'.e($label).'</b> bilan yangi xabar keldi.',
+        ]), '✉️ Chatni ochish', '/chat/direct/'.$chat->id);
     }
 
     /**

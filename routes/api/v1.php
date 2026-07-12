@@ -1,18 +1,23 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AdvantageController as AdminAdvantageController;
 use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
+use App\Http\Controllers\Api\V1\AdvantageController;
 use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
+use App\Http\Controllers\Api\V1\Agent\AgentPortfolioController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
+use App\Http\Controllers\Api\V1\Chat\DirectChatController;
 use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HealthController;
@@ -82,6 +87,21 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/orders/{order}/chat/messages', [ChatController::class, 'messages']);
     Route::post('/orders/{order}/chat/messages', [ChatController::class, 'store']);
 
+    // Direct client ↔ agency chat (opened from an agent profile, no order required).
+    Route::post('/agents/{agentProfile}/direct-chat', [DirectChatController::class, 'open']);
+
+    // Advantages catalog (active) — providers pick from it in the profile editor.
+    Route::get('/advantages', [AdvantageController::class, 'index']);
+
+    // Provider portfolio ("qilgan ishlarimiz") — approved profiles only.
+    Route::get('/agent/portfolio', [AgentPortfolioController::class, 'index']);
+    Route::post('/agent/portfolio', [AgentPortfolioController::class, 'store']);
+    Route::patch('/agent/portfolio/{portfolioItem}', [AgentPortfolioController::class, 'update']);
+    Route::delete('/agent/portfolio/{portfolioItem}', [AgentPortfolioController::class, 'destroy']);
+    Route::get('/direct-chats/{directChat}', [DirectChatController::class, 'show']);
+    Route::get('/direct-chats/{directChat}/messages', [DirectChatController::class, 'messages']);
+    Route::post('/direct-chats/{directChat}/messages', [DirectChatController::class, 'store']);
+
     // Client rates the agency once the order is completed (moderated).
     Route::post('/orders/{order}/review', [ReviewController::class, 'store']);
 
@@ -121,6 +141,14 @@ Route::prefix('admin')
         Route::post('/agents', [AdminAgentProfileController::class, 'store']);
         Route::get('/agents/{agentProfile}', [AdminAgentProfileController::class, 'show']);
         Route::patch('/agents/{agentProfile}/status', [AdminAgentProfileController::class, 'updateStatus']);
+
+        // Advantages catalog CRUD + portfolio takedown.
+        Route::get('/advantages', [AdminAdvantageController::class, 'index']);
+        Route::post('/advantages', [AdminAdvantageController::class, 'store']);
+        Route::patch('/advantages/{advantage}', [AdminAdvantageController::class, 'update']);
+        Route::delete('/advantages/{advantage}', [AdminAdvantageController::class, 'destroy']);
+        Route::get('/agents/{agentProfile}/portfolio', [PortfolioModerationController::class, 'index']);
+        Route::patch('/portfolio-items/{portfolioItem}/visibility', [PortfolioModerationController::class, 'setVisibility']);
 
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);

@@ -93,6 +93,10 @@ class PublicAgentController extends ApiController
         $agentProfile->load([
             'companyLogoFile',
             'categories',
+            'advantages' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order'),
+            'portfolioItems.imageFile',
+            'portfolioItems.imageFiles',
+            'portfolioItems.attachmentFiles',
             'approvedReviews' => fn ($query) => $query
                 ->latest()
                 ->limit(10)

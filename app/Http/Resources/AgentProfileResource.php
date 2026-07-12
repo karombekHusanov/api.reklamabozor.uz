@@ -43,6 +43,9 @@ class AgentProfileResource extends JsonResource
             'location_label' => $this->location_label,
             'results_text' => $this->results_text,
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
+            'advantages' => AdvantageResource::collection($this->whenLoaded('advantages')),
+            'portfolio' => AgentPortfolioItemResource::collection($this->whenLoaded('portfolioItems')),
+            'workflow_steps' => $this->workflow_steps ?? [],
             'completion_percent' => $this->completionPercent(),
 
             // Status.

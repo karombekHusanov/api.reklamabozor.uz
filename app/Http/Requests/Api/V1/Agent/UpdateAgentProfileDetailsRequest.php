@@ -44,6 +44,16 @@ class UpdateAgentProfileDetailsRequest extends FormRequest
                 'integer',
                 Rule::exists('categories', 'id')->where('is_active', true),
             ],
+            // Picked from the admin-managed advantages catalog (max 6).
+            'advantage_ids' => ['sometimes', 'array', 'max:6'],
+            'advantage_ids.*' => [
+                'integer',
+                Rule::exists('advantages', 'id')->where('is_active', true),
+            ],
+            // Editable "ish jarayoni" steps shown on the public profile.
+            'workflow_steps' => ['sometimes', 'nullable', 'array', 'max:6'],
+            'workflow_steps.*.title' => ['required', 'string', 'max:80'],
+            'workflow_steps.*.description' => ['nullable', 'string', 'max:200'],
         ];
     }
 }

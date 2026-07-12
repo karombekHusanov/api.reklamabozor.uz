@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Api\V1\Agent;
 
+use App\Models\Advantage;
+use App\Models\AgentPortfolioItem;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\File;
@@ -265,7 +267,7 @@ class AgentProfileTest extends TestCase
         ]);
         $categoryIds = Category::factory()->count(1)->create()->pluck('id')->all();
 
-        // logo (20) + location (20) + categories (20) + bio (15) = 75
+        // logo (15) + location (15) + categories (15) + bio (10) = 55
         $this->patchJson('/api/v1/agent/profile', [
             'company_logo_file_id' => $logo->id,
             'lat' => 41.31,
@@ -275,6 +277,29 @@ class AgentProfileTest extends TestCase
             'category_ids' => $categoryIds,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.completion_percent', 75);
+            ->assertJsonPath('data.completion_percent', 55);
+    }
+
+    public function test_completion_percent_counts_portfolio_and_advantages(): void
+    {
+        [$user, $token] = $this->authedUser();
+        $profile = AgentProfile::factory()->for($user)->approved()->create([
+            'results_text' => null,
+            'website_url' => null,
+            'linkedin_url' => null,
+            'bio' => null,
+            'lat' => null,
+            'lng' => null,
+            'location_label' => null,
+        ]);
+        $advantage = Advantage::factory()->create();
+        AgentPortfolioItem::factory()->for($profile)->create();
+
+        // portfolio (20) + advantages (10) = 30 on an otherwise empty profile
+        $this->patchJson('/api/v1/agent/profile', [
+            'advantage_ids' => [$advantage->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.completion_percent', 30);
     }
 }

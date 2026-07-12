@@ -70,13 +70,18 @@ class AgentProfileService
     public function updateDetails(AgentProfile $profile, array $data): AgentProfile
     {
         $categoryIds = $data['category_ids'] ?? null;
-        unset($data['category_ids']);
+        $advantageIds = $data['advantage_ids'] ?? null;
+        unset($data['category_ids'], $data['advantage_ids']);
 
         $profile->fill($data);
         $profile->save();
 
         if ($categoryIds !== null) {
             $profile->categories()->sync($categoryIds);
+        }
+
+        if ($advantageIds !== null) {
+            $profile->advantages()->sync($advantageIds);
         }
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);

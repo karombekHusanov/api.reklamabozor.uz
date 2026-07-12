@@ -23,6 +23,10 @@ class AgentProfile extends Model
      */
     public const PROFILE_RELATIONS = [
         'categories',
+        'advantages',
+        'portfolioItems.imageFile',
+        'portfolioItems.imageFiles',
+        'portfolioItems.attachmentFiles',
         'companyLogoFile',
         'directorPassportFile',
         'registrationCertificateFile',
@@ -35,12 +39,14 @@ class AgentProfile extends Model
      * @var array<string, int>
      */
     private const COMPLETION_WEIGHTS = [
-        'logo' => 20,
-        'location' => 20,
-        'categories' => 20,
-        'bio' => 15,
-        'results' => 15,
-        'links' => 10,
+        'logo' => 15,
+        'location' => 15,
+        'categories' => 15,
+        'bio' => 10,
+        'results' => 10,
+        'links' => 5,
+        'portfolio' => 20,
+        'advantages' => 10,
     ];
 
     /**
@@ -67,6 +73,7 @@ class AgentProfile extends Model
         'lng',
         'location_label',
         'results_text',
+        'workflow_steps',
         'status',
         'rejection_reason',
         'approved_at',
@@ -120,6 +127,19 @@ class AgentProfile extends Model
     }
 
     /**
+     * Advantages the provider picked from the admin-managed catalog.
+     */
+    public function advantages(): BelongsToMany
+    {
+        return $this->belongsToMany(Advantage::class, 'agent_profile_advantage');
+    }
+
+    public function portfolioItems(): HasMany
+    {
+        return $this->hasMany(AgentPortfolioItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
      * Weighted completion of the client-facing presentation fields (0–100).
      */
     public function completionPercent(): int
@@ -153,6 +173,22 @@ class AgentProfile extends Model
 
         if (filled($this->website_url) || filled($this->linkedin_url)) {
             $earned += $w['links'];
+        }
+
+        $hasPortfolio = $this->relationLoaded('portfolioItems')
+            ? $this->portfolioItems->whereNull('hidden_at')->isNotEmpty()
+            : $this->portfolioItems()->visible()->exists();
+
+        if ($hasPortfolio) {
+            $earned += $w['portfolio'];
+        }
+
+        $hasAdvantages = $this->relationLoaded('advantages')
+            ? $this->advantages->isNotEmpty()
+            : $this->advantages()->exists();
+
+        if ($hasAdvantages) {
+            $earned += $w['advantages'];
         }
 
         return $earned;
@@ -195,6 +231,7 @@ class AgentProfile extends Model
             'lng' => 'decimal:7',
             'status' => AgentProfileStatus::class,
             'approved_at' => 'datetime',
+            'workflow_steps' => 'array',
         ];
     }
 }

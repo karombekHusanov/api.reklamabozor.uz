@@ -6,8 +6,10 @@ use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Chat\StoreChatMessageRequest;
 use App\Http\Resources\ChatMessageResource;
 use App\Http\Resources\ChatResource;
+use App\Http\Resources\DirectChatResource;
 use App\Models\Order;
 use App\Services\Chat\ChatService;
+use App\Services\Chat\DirectChatService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,6 +17,7 @@ class ChatController extends ApiController
 {
     public function __construct(
         private readonly ChatService $chats,
+        private readonly DirectChatService $directChats,
     ) {}
 
     /**
@@ -26,12 +29,18 @@ class ChatController extends ApiController
             'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
         ]);
 
-        $chats = $this->chats->listForUser(
-            $request->user(),
-            isset($validated['agent_profile_id']) ? (int) $validated['agent_profile_id'] : null,
-        );
+        $agentProfileId = isset($validated['agent_profile_id']) ? (int) $validated['agent_profile_id'] : null;
 
-        return $this->success(ChatResource::collection($chats));
+        $orderChats = $this->chats->listForUser($request->user(), $agentProfileId);
+        $directChats = $this->directChats->listForUser($request->user(), $agentProfileId);
+
+        $items = collect()
+            ->concat(ChatResource::collection($orderChats)->resolve($request))
+            ->concat(DirectChatResource::collection($directChats)->resolve($request))
+            ->sortByDesc(fn (array $item) => $item['updated_at'])
+            ->values();
+
+        return $this->success($items);
     }
 
     /**

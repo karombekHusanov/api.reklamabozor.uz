@@ -42,6 +42,12 @@ class PublicAgentResource extends JsonResource
             'rating_count' => (int) ($this->approved_reviews_count ?? 0),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
             'reviews' => PublicReviewResource::collection($this->whenLoaded('approvedReviews')),
+            'advantages' => AdvantageResource::collection($this->whenLoaded('advantages')),
+            // Only items not taken down by moderation reach the public payload.
+            'portfolio' => $this->whenLoaded('portfolioItems', fn () => AgentPortfolioItemResource::collection(
+                $this->portfolioItems->whereNull('hidden_at')->values(),
+            )),
+            'workflow_steps' => $this->workflow_steps ?? [],
         ];
     }
 }
