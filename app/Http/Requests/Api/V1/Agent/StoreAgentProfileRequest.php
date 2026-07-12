@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Agent;
 
+use App\Enums\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -16,7 +17,9 @@ class StoreAgentProfileRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Designers are individuals — they open a profile via the no-KYC
+        // designer flow, never through the agency verification form.
+        return $this->user()?->role !== Role::Designer;
     }
 
     /**

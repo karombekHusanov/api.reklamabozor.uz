@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\Role;
 use App\Models\AgentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -23,6 +24,12 @@ class PublicAgentResource extends JsonResource
             'id' => $this->id,
             'user_id' => $this->user_id,
             'company_name' => $this->company_name,
+            // Designers are individuals: without a studio name the card shows
+            // the person's own (live) name and Telegram avatar.
+            'display_name' => $this->company_name
+                ?: trim($this->user->first_name.' '.($this->user->last_name ?? '')),
+            'avatar' => $this->user->avatarFile?->url(),
+            'provider_type' => $this->user->role === Role::Designer ? 'designer' : 'agent',
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
             'location_label' => $this->location_label,

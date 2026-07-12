@@ -22,6 +22,7 @@ class AgentProfile extends Model
      * @var list<string>
      */
     public const PROFILE_RELATIONS = [
+        'user.avatarFile',
         'categories',
         'advantages',
         'portfolioItems.imageFile',
