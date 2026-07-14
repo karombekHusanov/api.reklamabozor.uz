@@ -53,7 +53,9 @@ class DirectChatService
             ]);
         }
 
-        if ($user->role === Role::Client) {
+        // Capability check, not active-role check: every non-admin user holds
+        // the client base role, so anyone can reach out to an agency as a client.
+        if ($user->hasRole(Role::Client)) {
             return DirectChat::query()->firstOrCreate(
                 ['client_id' => $user->id, 'agent_id' => $agent->id],
             );

@@ -160,6 +160,48 @@ class AgentProfileTest extends TestCase
         $this->assertNotNull($profile->fresh()->approved_at);
     }
 
+    public function test_approval_grants_agent_role_without_dropping_client_role(): void
+    {
+        $user = User::factory()->create([
+            'role' => Role::Client,
+            'roles' => [Role::Client],
+            'role_selected_at' => now(),
+        ]);
+        $profile = AgentProfile::factory()->for($user)->create();
+
+        $this->patchJson("/api/v1/admin/agents/{$profile->id}/status", [
+            'status' => 'approved',
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])->assertOk();
+
+        $fresh = $user->fresh();
+        $this->assertSame(Role::Agent, $fresh->role);
+        $this->assertTrue($fresh->hasRole(Role::Client));
+    }
+
+    public function test_rejection_revokes_agent_role_and_falls_back_to_client(): void
+    {
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+            'role_selected_at' => now(),
+        ]);
+        $profile = AgentProfile::factory()->for($user)->approved()->create();
+
+        $this->patchJson("/api/v1/admin/agents/{$profile->id}/status", [
+            'status' => 'rejected',
+            'rejection_reason' => 'KYC documents expired.',
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])->assertOk();
+
+        $fresh = $user->fresh();
+        $this->assertSame(Role::Client, $fresh->role);
+        $this->assertFalse($fresh->hasRole(Role::Agent));
+        $this->assertTrue($fresh->hasRole(Role::Client));
+    }
+
     public function test_admin_can_reject_pending_application_with_reason(): void
     {
         $profile = AgentProfile::factory()->create();

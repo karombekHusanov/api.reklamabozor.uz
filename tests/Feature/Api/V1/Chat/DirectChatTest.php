@@ -120,6 +120,25 @@ class DirectChatTest extends TestCase
             ->assertJsonPath('data.0.type', 'direct');
     }
 
+    public function test_agent_can_open_direct_chat_with_another_agency_as_client(): void
+    {
+        // Multirole: every user holds the client base role, so an agency can
+        // reach out to a different agency acting as a client.
+        [, $profile] = $this->agency();
+        $otherAgent = User::factory()->agent()->create(['telegram_id' => 777888999]);
+
+        $this->postJson("/api/v1/agents/{$profile->id}/direct-chat", [], [
+            'Authorization' => 'Bearer '.$this->token($otherAgent),
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.type', 'direct');
+
+        $this->assertDatabaseHas('direct_chats', [
+            'client_id' => $otherAgent->id,
+            'agent_id' => $profile->user_id,
+        ]);
+    }
+
     public function test_agent_cannot_open_direct_chat_from_own_profile(): void
     {
         [, $profile, $agentUser] = $this->agency();

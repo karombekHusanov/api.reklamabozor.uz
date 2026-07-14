@@ -57,7 +57,10 @@ class AuthService
         $user->username = $username;
 
         if ($isNew) {
+            // Client is the base role every user holds from the start; the
+            // onboarding role selection later adds a second role on top.
             $user->role = Role::Client;
+            $user->roles = collect([Role::Client]);
             $user->is_active = true;
         }
 

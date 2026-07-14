@@ -23,7 +23,9 @@ class DesignerProfileController extends ApiController
     {
         $user = $request->user();
 
-        abort_if($user->role !== Role::Designer, 403);
+        // Multirole: holding the designer role is enough — it does not have
+        // to be the active one.
+        abort_if(! $user->hasRole(Role::Designer), 403);
 
         if (AgentProfile::query()->where('user_id', $user->id)->exists()) {
             throw ValidationException::withMessages([

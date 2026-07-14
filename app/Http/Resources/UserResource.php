@@ -24,7 +24,9 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'avatar_file_id' => $this->avatar_file_id,
             'avatar' => $this->avatarFile?->url(),
+            // Active role + every role the user holds (multirole).
             'role' => $this->role->value,
+            'roles' => $this->allRoles()->map(fn ($role) => $role->value)->all(),
             'role_selected_at' => $this->role_selected_at,
             // KYC application status; null = agent-role user who never applied.
             'agent_profile_status' => $this->whenLoaded(

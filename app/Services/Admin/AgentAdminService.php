@@ -74,15 +74,23 @@ class AgentAdminService
             $profile->approved_at = now();
             $profile->rejection_reason = null;
 
-            $profile->user()->update(['role' => Role::Agent]);
+            // Multirole: agent is granted on top of whatever the user already
+            // holds (e.g. client) and becomes the active role.
+            $user = $profile->user;
+            $user->grantRole(Role::Agent);
+            $user->role = Role::Agent;
+            $user->save();
         }
 
         if ($status === AgentProfileStatus::Rejected) {
             $profile->rejection_reason = $rejectionReason;
             $profile->approved_at = null;
 
-            if ($profile->user->role === Role::Agent) {
-                $profile->user()->update(['role' => Role::Client]);
+            $user = $profile->user;
+
+            if ($user->hasRole(Role::Agent)) {
+                $user->revokeRole(Role::Agent);
+                $user->save();
             }
         }
 
@@ -112,6 +120,7 @@ class AgentAdminService
                 // account links up when the person shares this phone in the bot.
                 'phone' => $this->normalizePhone($data['phone']),
                 'role' => Role::Agent,
+                'roles' => [Role::Agent],
                 'role_selected_at' => now(),
                 'is_active' => true,
             ]);

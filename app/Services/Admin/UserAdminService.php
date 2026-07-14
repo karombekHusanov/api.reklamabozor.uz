@@ -66,6 +66,14 @@ class UserAdminService
         if (isset($data['role'])) {
             $data['role'] = Role::from($data['role']);
             $this->guardRoleChange($user, $data['role'], $actor);
+
+            // Admin privileges are exclusive — demotion drops the admin role
+            // from the held set. Marketplace roles accumulate (multirole).
+            if ($user->role === Role::Admin && $data['role'] !== Role::Admin) {
+                $user->revokeRole(Role::Admin);
+            }
+
+            $user->grantRole($data['role']);
         }
 
         $user->fill($data);

@@ -16,7 +16,7 @@ class PublicClientController extends ApiController
      */
     public function show(User $user): JsonResponse
     {
-        abort_unless($user->role === Role::Client && $user->is_active, 404);
+        abort_unless($user->hasRole(Role::Client) && $user->is_active, 404);
 
         $inProgress = [
             OrderStatus::OffersSent,

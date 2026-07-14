@@ -49,12 +49,27 @@ class PublicClientTest extends TestCase
             ->assertJsonPath('data.rating_avg', 5);
     }
 
-    public function test_non_client_users_are_not_exposed(): void
+    public function test_providers_are_exposed_since_everyone_holds_the_client_base_role(): void
     {
+        // Multirole: every non-admin user holds the client base role, so a
+        // provider also has a viewable client-side profile.
         $viewer = User::factory()->create();
         $agent = User::factory()->create(['role' => Role::Agent]);
 
         $this->getJson("/api/v1/clients/{$agent->id}", [
+            'Authorization' => 'Bearer '.$viewer->createToken('test')->plainTextToken,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $agent->id);
+    }
+
+    public function test_admins_are_not_exposed_as_clients(): void
+    {
+        // Admins are provisioned out of band and never hold the client role.
+        $viewer = User::factory()->create();
+        $admin = User::factory()->admin()->create();
+
+        $this->getJson("/api/v1/clients/{$admin->id}", [
             'Authorization' => 'Bearer '.$viewer->createToken('test')->plainTextToken,
         ])->assertNotFound();
     }

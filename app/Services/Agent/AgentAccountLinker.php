@@ -46,6 +46,7 @@ class AgentAccountLinker
             // that must go.
             $placeholder->agentProfile()->update(['user_id' => $user->id]);
 
+            $user->grantRole(Role::Agent);
             $user->role = Role::Agent;
             $user->role_selected_at ??= now();
             $user->save();

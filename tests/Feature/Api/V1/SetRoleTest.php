@@ -16,7 +16,7 @@ class SetRoleTest extends TestCase
         $this->patchJson('/api/v1/me/role', ['role' => 'agent'])->assertUnauthorized();
     }
 
-    public function test_user_can_select_role_once(): void
+    public function test_user_selects_first_role_during_onboarding(): void
     {
         $user = User::factory()->create(['role' => Role::Client, 'role_selected_at' => null]);
         $token = $user->createToken('test')->plainTextToken;
@@ -26,26 +26,74 @@ class SetRoleTest extends TestCase
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.role', 'agent')
+            // Client is the base role and is retained; agent is added on top.
+            ->assertJsonPath('data.roles', ['client', 'agent'])
             ->assertJsonPath('data.id', $user->id);
 
         $this->assertDatabaseHas('users', ['id' => $user->id, 'role' => 'agent']);
-        $this->assertNotNull($user->fresh()->role_selected_at);
+
+        $fresh = $user->fresh();
+        $this->assertNotNull($fresh->role_selected_at);
+        $this->assertTrue($fresh->hasRole(Role::Client));
     }
 
-    public function test_role_cannot_be_changed_once_selected(): void
+    public function test_user_can_acquire_an_additional_role(): void
     {
         $user = User::factory()->create([
-            'role' => Role::Designer,
+            'role' => Role::Client,
+            'roles' => [Role::Client],
             'role_selected_at' => now(),
         ]);
         $token = $user->createToken('test')->plainTextToken;
 
         $this->patchJson('/api/v1/me/role', [
-            'role' => 'seller',
+            'role' => 'designer',
         ], ['Authorization' => 'Bearer '.$token])
-            ->assertForbidden();
+            ->assertOk()
+            ->assertJsonPath('data.role', 'designer')
+            ->assertJsonPath('data.roles', ['client', 'designer']);
 
-        $this->assertSame(Role::Designer, $user->fresh()->role);
+        $fresh = $user->fresh();
+        $this->assertSame(Role::Designer, $fresh->role);
+        $this->assertTrue($fresh->hasRole(Role::Client));
+    }
+
+    public function test_user_can_switch_back_to_a_held_role(): void
+    {
+        $user = User::factory()->create([
+            'role' => Role::Designer,
+            'roles' => [Role::Client, Role::Designer],
+            'role_selected_at' => now(),
+        ]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->patchJson('/api/v1/me/role', [
+            'role' => 'client',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'client')
+            ->assertJsonPath('data.roles', ['client', 'designer']);
+
+        $this->assertSame(Role::Client, $user->fresh()->role);
+    }
+
+    public function test_legacy_user_without_roles_column_keeps_held_role_when_switching(): void
+    {
+        // Rows written before the multirole migration have roles = null; the
+        // model normalizes the held set from the committed active role.
+        $user = User::factory()->create([
+            'role' => Role::Seller,
+            'roles' => null,
+            'role_selected_at' => now(),
+        ]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->patchJson('/api/v1/me/role', [
+            'role' => 'client',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'client')
+            ->assertJsonPath('data.roles', ['seller', 'client']);
     }
 
     public function test_admin_role_cannot_be_self_selected(): void
