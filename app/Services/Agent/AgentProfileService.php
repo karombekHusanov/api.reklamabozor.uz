@@ -3,6 +3,7 @@
 namespace App\Services\Agent;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\ProviderType;
 use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -31,6 +32,7 @@ class AgentProfileService
         /** @var AgentProfile $profile */
         $profile = $user->agentProfile()->create([
             ...$data,
+            'provider_type' => ProviderType::Agent,
             'status' => AgentProfileStatus::Pending,
         ]);
 

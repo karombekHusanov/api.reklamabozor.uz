@@ -27,6 +27,13 @@ class OrderResource extends JsonResource
             'budget_min' => $this->budget_min,
             'budget_max' => $this->budget_max,
             'status' => $this->status->value,
+            // Client's legal nature — present when the client is loaded (provider
+            // views), for billing context (can they be issued a VAT invoice).
+            'client' => $this->whenLoaded('client', fn () => $this->client ? [
+                'id' => $this->client->id,
+                'person_type' => $this->client->effectivePersonType()?->value,
+                'person_type_verified' => $this->client->isVerifiedLegalEntity(),
+            ] : null),
             // The single agency this order was directed to, or null for a normal
             // broadcast order (shown to every provider in the category).
             'target_agent' => $this->whenLoaded('targetAgent', fn () => $this->targetAgent ? [
@@ -36,6 +43,12 @@ class OrderResource extends JsonResource
             'work_submitted_at' => $this->work_submitted_at,
             'completed_at' => $this->completed_at,
             'auto_completed' => $this->auto_completed,
+            // Latest payment (checkout_url / status) so the client can settle or
+            // retry an awaiting_payment order. Null when the gateway is off.
+            'payment' => $this->whenLoaded(
+                'latestPayment',
+                fn () => $this->latestPayment ? new PaymentResource($this->latestPayment) : null,
+            ),
             'review' => new ReviewResource($this->whenLoaded('review')),
             'offers' => OfferResource::collection($this->whenLoaded('offers')),
             'offers_count' => $this->whenCounted('offers'),

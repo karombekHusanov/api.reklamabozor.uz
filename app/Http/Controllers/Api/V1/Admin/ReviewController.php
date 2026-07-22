@@ -23,7 +23,7 @@ class ReviewController extends ApiController
         ]);
 
         $paginator = Review::query()
-            ->with(['client', 'agent.agentProfile'])
+            ->with(['client', 'agent', 'agentProfile'])
             ->when($validated['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->latest()
             ->paginate($validated['per_page'] ?? 15);
@@ -52,7 +52,7 @@ class ReviewController extends ApiController
         $review->update(['status' => ReviewStatus::from($validated['status'])]);
 
         return $this->success(
-            new AdminReviewResource($review->load(['client', 'agent.agentProfile'])),
+            new AdminReviewResource($review->load(['client', 'agent', 'agentProfile'])),
             'Review status updated',
         );
     }

@@ -29,6 +29,9 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="TELEGRAM_VERIFY_INIT_DATA" value="false"/>
+        <!-- Payments off by default so the suite is independent of the local .env;
+             gateway tests opt in via config() at runtime. -->
+        <env name="MULTICARD_ENABLED" value="false"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

@@ -7,6 +7,10 @@ enum OrderStatus: string
     case New = 'new';
     case OffersSent = 'offers_sent';
     case ClientSelected = 'client_selected';
+    // Client picked an offer but payment is not yet confirmed. Only set when
+    // the Multicard gateway is enabled; the deal activates (in_progress) once
+    // the payment webhook reports success.
+    case AwaitingPayment = 'awaiting_payment';
     case InProgress = 'in_progress';
     // Agent delivered the work; waiting for the client to confirm (or the
     // 3-day auto-complete to kick in).

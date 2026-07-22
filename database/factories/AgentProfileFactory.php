@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\ProviderType;
 use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -21,6 +22,7 @@ class AgentProfileFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
+            'provider_type' => ProviderType::Agent,
             'company_name' => fake()->company(),
             'legal_form' => fake()->randomElement(['YaTT', 'MChJ', 'AJ']),
             'company_logo_file_id' => null,
@@ -44,6 +46,13 @@ class AgentProfileFactory extends Factory
             'rejection_reason' => null,
             'approved_at' => null,
         ];
+    }
+
+    public function designer(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'provider_type' => ProviderType::Designer,
+        ]);
     }
 
     public function approved(): static

@@ -25,7 +25,7 @@ class DirectChatController extends ApiController
     {
         $chat = $this->chats->open($request->user(), $agentProfile);
 
-        return $this->success(new DirectChatResource($chat->load(['client', 'agent.agentProfile', 'lastMessage.attachments'])));
+        return $this->success(new DirectChatResource($chat->load(['client', 'agent', 'agentProfile', 'lastMessage.attachments'])));
     }
 
     public function show(Request $request, DirectChat $directChat): JsonResponse

@@ -46,6 +46,7 @@ class AdminOrderResource extends JsonResource
             ] : null,
             'offers' => AdminOfferResource::collection($this->whenLoaded('offers')),
             'accepted_offer_id' => $acceptedOffer?->id,
+            'payments' => AdminPaymentResource::collection($this->whenLoaded('payments')),
             'offers_count' => $this->whenCounted('offers'),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

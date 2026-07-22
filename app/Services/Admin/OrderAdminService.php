@@ -14,7 +14,7 @@ class OrderAdminService
      *
      * @var list<string>
      */
-    private const RELATIONS = ['category', 'client', 'targetAgent.agentProfile', 'offers.agent.agentProfile'];
+    private const RELATIONS = ['category', 'client', 'targetAgent.agentProfile', 'offers.agent', 'offers.agentProfile', 'payments.payer'];
 
     /**
      * Allowed admin status transitions: target => acceptable source states.
@@ -23,13 +23,16 @@ class OrderAdminService
      */
     private const TRANSITIONS = [
         // work_submitted → in_progress lets the admin resolve a dispute by
-        // sending the work back for another round.
-        OrderStatus::InProgress->value => [OrderStatus::ClientSelected, OrderStatus::WorkSubmitted],
+        // sending the work back for another round. awaiting_payment → in_progress
+        // lets the admin force-activate a deal (e.g. paid offline) without waiting
+        // on the gateway callback.
+        OrderStatus::InProgress->value => [OrderStatus::ClientSelected, OrderStatus::AwaitingPayment, OrderStatus::WorkSubmitted],
         OrderStatus::Completed->value => [OrderStatus::InProgress, OrderStatus::WorkSubmitted],
         OrderStatus::Cancelled->value => [
             OrderStatus::New,
             OrderStatus::OffersSent,
             OrderStatus::ClientSelected,
+            OrderStatus::AwaitingPayment,
             OrderStatus::InProgress,
             OrderStatus::WorkSubmitted,
         ],

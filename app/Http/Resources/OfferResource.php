@@ -14,7 +14,8 @@ class OfferResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $profile = $this->agent?->agentProfile;
+        // The specific profile that placed the offer (not just the user's).
+        $profile = $this->agentProfile;
 
         return [
             'id' => $this->id,
@@ -28,6 +29,8 @@ class OfferResource extends JsonResource
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
                 'location_label' => $profile?->location_label,
+                'person_type' => $this->agent?->effectivePersonType()?->value,
+                'person_type_verified' => (bool) $this->agent?->isVerifiedLegalEntity(),
             ],
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

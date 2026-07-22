@@ -219,8 +219,13 @@ class ChatTest extends TestCase
 
     public function test_chat_list_can_be_filtered_by_agent_profile(): void
     {
-        [$order, $chat, $client, $agent] = $this->deal();
+        // Production ordering: the agent already has an approved profile when
+        // the deal (and its chat) is created, so the chat is linked to it.
+        $client = User::factory()->create();
+        $agent = User::factory()->create();
         $profile = AgentProfile::factory()->for($agent)->approved()->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
+        Chat::factory()->forDeal($order, $agent)->create();
         Chat::factory()->create(); // unrelated chat
 
         $this->getJson("/api/v1/chats?agent_profile_id={$profile->id}", [

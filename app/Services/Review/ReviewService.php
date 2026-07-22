@@ -31,9 +31,9 @@ class ReviewService
             ]);
         }
 
-        $agentId = $order->acceptedOffer()->value('agent_id');
+        $acceptedOffer = $order->acceptedOffer()->first(['agent_id', 'agent_profile_id']);
 
-        if ($agentId === null) {
+        if ($acceptedOffer === null) {
             throw ValidationException::withMessages([
                 'order' => ['This order has no winning agency to review.'],
             ]);
@@ -48,7 +48,8 @@ class ReviewService
         /** @var Review $review */
         $review = $order->review()->create([
             'client_id' => $client->id,
-            'agent_id' => $agentId,
+            'agent_id' => $acceptedOffer->agent_id,
+            'agent_profile_id' => $acceptedOffer->agent_profile_id,
             'rating' => $data['rating'],
             'comment' => $data['comment'] ?? null,
             'status' => ReviewStatus::Pending,

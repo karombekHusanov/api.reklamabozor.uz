@@ -32,7 +32,7 @@ class AdminReviewResource extends JsonResource
             'agent' => [
                 'id' => $this->agent?->id,
                 'name' => trim(($this->agent?->first_name ?? '').' '.($this->agent?->last_name ?? '')),
-                'company_name' => $this->agent?->agentProfile?->company_name,
+                'company_name' => $this->agentProfile?->company_name,
             ],
             'created_at' => $this->created_at,
         ];

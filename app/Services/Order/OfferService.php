@@ -5,11 +5,13 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Models\AgentProfile;
 use App\Models\Chat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderView;
 use App\Models\User;
+use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +20,7 @@ class OfferService
 {
     public function __construct(
         private readonly OrderNotifier $notifier,
+        private readonly PayoutService $payouts,
     ) {}
 
     /**
@@ -28,13 +31,20 @@ class OfferService
      */
     public function availableForAgent(User $agent): Collection
     {
-        $profile = $agent->agentProfile;
+        // Categories served by any of the agent's approved provider profiles.
+        $profiles = $agent->providerProfiles()
+            ->where('status', AgentProfileStatus::Approved)
+            ->with('categories')
+            ->get();
 
-        if ($profile === null || $profile->status !== AgentProfileStatus::Approved) {
+        if ($profiles->isEmpty()) {
             return new Collection;
         }
 
-        $categoryIds = $profile->categories()->pluck('categories.id');
+        $categoryIds = $profiles
+            ->flatMap(fn (AgentProfile $profile) => $profile->categories->pluck('id'))
+            ->unique()
+            ->values();
 
         $orders = Order::query()
             ->whereIn('category_id', $categoryIds)
@@ -87,15 +97,11 @@ class OfferService
      */
     public function submitOffer(User $agent, Order $order, array $data): Offer
     {
-        $profile = $agent->agentProfile;
+        // The approved profile whose categories include this order's — i.e. the
+        // one bidding. Null means no eligible profile (unapproved or off-category).
+        $profile = $agent->providerProfileForCategory($order->category_id);
 
-        if ($profile === null || $profile->status !== AgentProfileStatus::Approved) {
-            throw ValidationException::withMessages([
-                'status' => ['Only approved agents can send offers.'],
-            ]);
-        }
-
-        if (! $profile->categories()->where('categories.id', $order->category_id)->exists()) {
+        if ($profile === null) {
             throw ValidationException::withMessages([
                 'order' => ['This order is outside your service categories.'],
             ]);
@@ -116,6 +122,7 @@ class OfferService
         /** @var Offer $offer */
         $offer = $order->offers()->create([
             'agent_id' => $agent->id,
+            'agent_profile_id' => $profile->id,
             'price' => $data['price'],
             'comment' => $data['comment'],
             'status' => OfferStatus::Pending,
@@ -131,7 +138,7 @@ class OfferService
             report($e);
         }
 
-        return $offer->load('agent.agentProfile.companyLogoFile');
+        return $offer->load(['agent', 'agentProfile.companyLogoFile']);
     }
 
     /**
@@ -147,9 +154,12 @@ class OfferService
     }
 
     /**
-     * Client picks a winning offer: it becomes accepted, the rest rejected,
-     * and the order activates immediately (auto-manager — no manual admin
-     * gate in the MVP). Both sides and the ops group are notified.
+     * Client picks a winning offer: it becomes accepted and the rest rejected.
+     *
+     * When the payment gateway is enabled the order moves to `awaiting_payment`
+     * and the deal only activates once payment is confirmed (see
+     * {@see activateDeal()}, called from the payment webhook). When the gateway
+     * is off, the order activates immediately (offline MVP flow).
      */
     public function acceptOffer(User $client, Offer $offer): Offer
     {
@@ -163,24 +173,72 @@ class OfferService
             ]);
         }
 
-        DB::transaction(function () use ($order, $offer): void {
+        $paymentEnabled = (bool) config('services.multicard.enabled');
+
+        DB::transaction(function () use ($order, $offer, $paymentEnabled): void {
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
-            $order->update(['status' => OrderStatus::InProgress]);
 
-            // Open the client ↔ agent conversation for this deal.
-            Chat::firstOrCreate(
-                ['order_id' => $order->id],
-                ['client_id' => $order->client_id, 'agent_id' => $offer->agent_id],
-            );
+            if ($paymentEnabled) {
+                $order->update(['status' => OrderStatus::AwaitingPayment]);
+            } else {
+                $this->activateInTransaction($order, $offer);
+            }
         });
 
+        if (! $paymentEnabled) {
+            $this->notifyDeal($offer);
+        }
+
+        return $offer->load(['agent', 'agentProfile.companyLogoFile']);
+    }
+
+    /**
+     * Activate the deal for an already-accepted offer: move the order to
+     * in_progress and open the client ↔ agent conversation. Invoked by the
+     * payment webhook once a payment succeeds. Idempotent — a second webhook
+     * (Multicard retries) is a no-op once in_progress.
+     */
+    public function activateDeal(Offer $offer): void
+    {
+        $order = $offer->order;
+
+        if ($order->status === OrderStatus::InProgress) {
+            return;
+        }
+
+        DB::transaction(function () use ($order, $offer): void {
+            $this->activateInTransaction($order, $offer);
+        });
+
+        $this->notifyDeal($offer);
+    }
+
+    private function activateInTransaction(Order $order, Offer $offer): void
+    {
+        $order->update(['status' => OrderStatus::InProgress]);
+
+        // Open the client ↔ agent conversation for this deal.
+        Chat::firstOrCreate(
+            ['order_id' => $order->id],
+            [
+                'client_id' => $order->client_id,
+                'agent_id' => $offer->agent_id,
+                'agent_profile_id' => $offer->agent_profile_id,
+            ],
+        );
+
+        // Queue the agent's advance payout out of escrow (gateway flow only;
+        // no-op when payments are disabled). A manager releases it later.
+        $this->payouts->planAdvance($order);
+    }
+
+    private function notifyDeal(Offer $offer): void
+    {
         try {
             $this->notifier->notifyOfferAccepted($offer);
         } catch (\Throwable $e) {
             report($e);
         }
-
-        return $offer->load('agent.agentProfile.companyLogoFile');
     }
 }

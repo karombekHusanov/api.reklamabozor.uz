@@ -84,13 +84,13 @@ class AnalyticsService
                 ]);
             });
 
-        Offer::query()->with(['agent.agentProfile', 'order'])->latest()->limit($limit)->get()
+        Offer::query()->with(['agent', 'agentProfile', 'order'])->latest()->limit($limit)->get()
             ->each(function (Offer $offer) use ($events): void {
                 $events->push([
                     'type' => $offer->status === OfferStatus::Accepted ? 'offer_accepted' : 'offer_sent',
                     'at' => $offer->created_at?->toIso8601String(),
                     'title' => $offer->order?->title,
-                    'actor' => $offer->agent?->agentProfile?->company_name
+                    'actor' => $offer->agentProfile?->company_name
                         ?? $offer->agent?->first_name
                         ?? 'Agent',
                     'order_id' => $offer->order_id,

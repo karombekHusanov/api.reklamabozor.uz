@@ -8,6 +8,7 @@ use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -15,6 +16,7 @@ class OrderService
 {
     public function __construct(
         private readonly OrderNotifier $notifier,
+        private readonly PayoutService $payouts,
     ) {}
 
     /**
@@ -178,6 +180,10 @@ class OrderService
             'completed_at' => now(),
             'auto_completed' => $auto,
         ]);
+
+        // Queue the agent's final payout — the remaining escrow after the
+        // advance (gateway flow only). A manager releases it later.
+        $this->payouts->planFinal($order);
 
         try {
             $this->notifier->notifyOrderCompleted($order, $auto);

@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\Role;
 use App\Models\AgentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -29,7 +28,11 @@ class PublicAgentResource extends JsonResource
             'display_name' => $this->company_name
                 ?: trim($this->user->first_name.' '.($this->user->last_name ?? '')),
             'avatar' => $this->user->avatarFile?->url(),
-            'provider_type' => $this->user->role === Role::Designer ? 'designer' : 'agent',
+            'provider_type' => $this->provider_type->value,
+            // Legal nature of the provider (agents/sellers are verified legal
+            // entities; a designer may be an individual or a legal entity).
+            'person_type' => $this->user->effectivePersonType()?->value,
+            'person_type_verified' => $this->user->isVerifiedLegalEntity(),
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
             'location_label' => $this->location_label,

@@ -61,7 +61,7 @@ class OrderController extends ApiController
      */
     public function chat(Order $order): JsonResponse
     {
-        $chat = $order->chat()->with(['client', 'agent.agentProfile'])->first();
+        $chat = $order->chat()->with(['client', 'agent', 'agentProfile'])->first();
 
         if ($chat === null) {
             return $this->success(['chat' => null, 'messages' => []]);
@@ -76,7 +76,7 @@ class OrderController extends ApiController
                 'agent' => [
                     'id' => $chat->agent_id,
                     'name' => trim($chat->agent->first_name.' '.($chat->agent->last_name ?? '')),
-                    'company_name' => $chat->agent->agentProfile?->company_name,
+                    'company_name' => $chat->agentProfile?->company_name,
                 ],
             ],
             'messages' => ChatMessageResource::collection($messages),

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Designer;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\ProviderType;
 use App\Enums\Role;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Designer\StoreDesignerProfileRequest;
@@ -37,6 +38,7 @@ class DesignerProfileController extends ApiController
 
         $profile = AgentProfile::create([
             'user_id' => $user->id,
+            'provider_type' => ProviderType::Designer,
             // Optional studio name; public display falls back to the user's name.
             'company_name' => $validated['company_name'] ?? null,
             'bio' => $validated['bio'] ?? null,

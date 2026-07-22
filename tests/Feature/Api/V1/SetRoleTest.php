@@ -96,6 +96,59 @@ class SetRoleTest extends TestCase
             ->assertJsonPath('data.roles', ['seller', 'client']);
     }
 
+    public function test_designer_cannot_also_become_an_agent(): void
+    {
+        // Designer is a solo provider role — no agent/seller alongside it.
+        $user = User::factory()->create([
+            'role' => Role::Designer,
+            'roles' => [Role::Client, Role::Designer],
+            'role_selected_at' => now(),
+        ]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->patchJson('/api/v1/me/role', [
+            'role' => 'agent',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['role']);
+
+        $this->assertFalse($user->fresh()->hasRole(Role::Agent));
+    }
+
+    public function test_agent_can_also_become_a_seller(): void
+    {
+        // Agent + seller form the business group and may coexist.
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+            'role_selected_at' => now(),
+        ]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->patchJson('/api/v1/me/role', [
+            'role' => 'seller',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'seller')
+            ->assertJsonPath('data.roles', ['client', 'agent', 'seller']);
+    }
+
+    public function test_agent_cannot_also_become_a_designer(): void
+    {
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+            'role_selected_at' => now(),
+        ]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->patchJson('/api/v1/me/role', [
+            'role' => 'designer',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['role']);
+    }
+
     public function test_admin_role_cannot_be_self_selected(): void
     {
         $user = User::factory()->create(['role' => Role::Client, 'role_selected_at' => null]);

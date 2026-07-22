@@ -28,7 +28,9 @@ class AcceptOfferTest extends TestCase
             'Authorization' => 'Bearer '.$token,
         ])
             ->assertOk()
-            ->assertJsonPath('data.status', 'accepted');
+            ->assertJsonPath('data.offer.status', 'accepted')
+            // Gateway off by default: no invoice, deal activates immediately.
+            ->assertJsonPath('data.payment', null);
 
         $this->assertSame(OfferStatus::Accepted, $chosen->fresh()->status);
         $this->assertSame(OfferStatus::Rejected, $other->fresh()->status);

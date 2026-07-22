@@ -6,7 +6,10 @@ use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsContr
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
+use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
@@ -22,8 +25,11 @@ use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
 use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
+use App\Http\Controllers\Api\V1\Payment\MulticardCallbackController;
+use App\Http\Controllers\Api\V1\Payment\PaymentController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
@@ -36,6 +42,9 @@ Route::get('/health', HealthController::class);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);
+
+// Multicard payment webhook — called by Multicard, guarded by source-IP allowlist + SHA1 sign.
+Route::post('/payment/multicard/callback', MulticardCallbackController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
@@ -62,6 +71,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/file-upload', [FileUploadController::class, 'store']);
     Route::patch('/me', [ProfileController::class, 'update']);
     Route::patch('/me/role', [ProfileController::class, 'setRole']);
+    Route::patch('/me/person-type', [ProfileController::class, 'setPersonType']);
+    Route::get('/me/legal-entity', [LegalEntityController::class, 'show']);
+    Route::post('/me/legal-entity', [LegalEntityController::class, 'store']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/clients/{user}', [PublicClientController::class, 'show'])->whereNumber('user');
@@ -74,6 +86,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Completion handshake: client accepts or rejects the delivered work.
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
+
+    // Order payment (Multicard hosted checkout): (re)start checkout + poll status.
+    Route::post('/orders/{order}/pay', [PaymentController::class, 'pay']);
+    Route::get('/orders/{order}/payment', [PaymentController::class, 'show']);
 
     // Community-wide global chat, open to every authenticated user.
     Route::get('/chat/global', [GlobalChatController::class, 'meta']);
@@ -159,8 +175,18 @@ Route::prefix('admin')
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
         Route::get('/orders/{order}/chat', [AdminOrderController::class, 'chat']);
 
+        Route::get('/payments', [AdminPaymentController::class, 'index']);
+        Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);
+
+        // Agent payouts out of escrow — manager reviews + releases (marks paid).
+        Route::get('/payouts', [AdminPayoutController::class, 'index']);
+        Route::patch('/payouts/{payout}/release', [AdminPayoutController::class, 'release']);
+
         Route::get('/reviews', [AdminReviewController::class, 'index']);
         Route::patch('/reviews/{review}/status', [AdminReviewController::class, 'updateStatus']);
+
+        Route::get('/legal-entity-verifications', [AdminLegalEntityController::class, 'index']);
+        Route::patch('/legal-entity-verifications/{legalEntityVerification}/status', [AdminLegalEntityController::class, 'updateStatus']);
 
         // Global chat moderation: feed, rules, bans, settings + pinned announcement.
         Route::get('/global-chat/messages', [AdminGlobalChatController::class, 'messages']);

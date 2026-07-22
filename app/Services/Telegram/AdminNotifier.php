@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Review;
 use App\Models\User;
 
@@ -32,7 +33,7 @@ class AdminNotifier
 
     public function offerSubmitted(Offer $offer): void
     {
-        $offer->loadMissing('order', 'agent.agentProfile');
+        $offer->loadMissing('order', 'agent', 'agentProfile');
 
         $this->send('offer_submitted', implode("\n", [
             "💼 Taklif — buyurtma <b>#{$offer->order_id}</b>",
@@ -42,7 +43,7 @@ class AdminNotifier
 
     public function dealMade(Offer $offer): void
     {
-        $offer->loadMissing('order.client', 'agent.agentProfile');
+        $offer->loadMissing('order.client', 'agent', 'agentProfile');
 
         $this->send('deal', implode("\n", [
             "🤝 <b>Kelishuv — buyurtma #{$offer->order_id}</b>",
@@ -82,15 +83,27 @@ class AdminNotifier
 
     public function reviewSubmitted(Review $review): void
     {
-        $review->loadMissing('agent.agentProfile');
+        $review->loadMissing('agent', 'agentProfile');
 
-        $agency = e($review->agent?->agentProfile?->company_name
+        $agency = e($review->agentProfile?->company_name
             ?? trim(($review->agent?->first_name ?? '').' '.($review->agent?->last_name ?? '')));
 
         $this->send('review', implode("\n", [
             "⭐ Yangi baho — buyurtma <b>#{$review->order_id}</b>",
             "🏢 {$agency} • {$review->rating}/5",
             'Moderatsiya kutilmoqda (admin panel → Reviews).',
+        ]));
+    }
+
+    public function paymentSucceeded(Payment $payment): void
+    {
+        $som = number_format($payment->amountSom(), 0, '.', ' ');
+        $orderId = $payment->payable_id;
+
+        $this->send('payment_success', implode("\n", [
+            "💳 <b>To'lov qabul qilindi — buyurtma #{$orderId}</b>",
+            "💰 {$som} so'm • ".e((string) ($payment->ps ?? '')),
+            'Holat: ish boshlandi (in_progress).',
         ]));
     }
 
@@ -143,7 +156,7 @@ class AdminNotifier
     {
         $agent = $offer->agent;
 
-        return e($agent?->agentProfile?->company_name
+        return e($offer->agentProfile?->company_name
             ?? trim(($agent?->first_name ?? '').' '.($agent?->last_name ?? '')));
     }
 

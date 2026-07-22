@@ -45,6 +45,36 @@ class AgentOrderTest extends TestCase
             ->assertJsonPath('data.0.my_offer', null);
     }
 
+    public function test_offer_binds_to_the_profile_that_serves_the_orders_category(): void
+    {
+        Http::fake();
+
+        // One person running both an agency and a design studio (two profiles).
+        $user = User::factory()->create();
+        $agentCategory = Category::factory()->create();
+        $designerCategory = Category::factory()->designer()->create();
+
+        $agentProfile = AgentProfile::factory()->for($user)->approved()->create();
+        $agentProfile->categories()->attach($agentCategory);
+        $designerProfile = AgentProfile::factory()->for($user)->designer()->approved()->create();
+        $designerProfile->categories()->attach($designerCategory);
+
+        $token = $user->createToken('test')->plainTextToken;
+        $order = Order::factory()->for($designerCategory)->create();
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
+            'price' => 1_200_000,
+            'comment' => 'Design in a week.',
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        // Bound to the DESIGNER profile (order's category type), not the agency.
+        $this->assertDatabaseHas('offers', [
+            'order_id' => $order->id,
+            'agent_id' => $user->id,
+            'agent_profile_id' => $designerProfile->id,
+        ]);
+    }
+
     public function test_agent_can_submit_an_offer(): void
     {
         Http::fake();

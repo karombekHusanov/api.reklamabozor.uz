@@ -23,6 +23,7 @@ class Review extends Model
         'order_id',
         'client_id',
         'agent_id',
+        'agent_profile_id',
         'rating',
         'comment',
         'status',
@@ -31,6 +32,11 @@ class Review extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function agentProfile(): BelongsTo
+    {
+        return $this->belongsTo(AgentProfile::class);
     }
 
     public function client(): BelongsTo

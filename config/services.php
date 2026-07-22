@@ -35,6 +35,27 @@ return [
         ],
     ],
 
+    'multicard' => [
+        // Master switch. When false the marketplace keeps its offline flow
+        // (accept → in_progress directly, no invoice). Enable once credentials
+        // are configured.
+        'enabled' => env('MULTICARD_ENABLED', false),
+        // dev: https://dev-mesh.multicard.uz  •  prod: https://mesh.multicard.uz
+        'base_url' => env('MULTICARD_BASE_URL', 'https://dev-mesh.multicard.uz'),
+        'application_id' => env('MULTICARD_APPLICATION_ID'),
+        'secret' => env('MULTICARD_SECRET'),
+        'store_id' => env('MULTICARD_STORE_ID'),
+        // Where Multicard POSTs payment status changes. Must be the public API URL.
+        'callback_url' => env('MULTICARD_CALLBACK_URL'),
+        // Source IP Multicard sends webhooks from (comma-separated allowlist).
+        'callback_ips' => env('MULTICARD_CALLBACK_IPS', '195.158.26.90'),
+        // Platform commission on order payments, percent (deducted from payouts).
+        'commission_percent' => env('MULTICARD_COMMISSION_PERCENT', 0),
+        // Default advance slice of an agent payout, percent (final = remainder).
+        // A manager can override the amount per payout at release time.
+        'payout_advance_percent' => env('PAYOUT_ADVANCE_PERCENT', 40),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         // HMAC verification of Mini App initData on login. Only disable in
@@ -47,7 +68,7 @@ return [
         // Private ops group where the bot reports marketplace events. Empty = disabled.
         'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
         // Comma-separated event keys to report ("*" = all):
-        // order_placed, offer_submitted, deal, work_submitted, completed, dispute, review
+        // order_placed, offer_submitted, deal, payment_success, work_submitted, completed, dispute, review
         'admin_events' => env('TELEGRAM_ADMIN_EVENTS', '*'),
     ],
 

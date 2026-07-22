@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\AgentProfile;
 use App\Models\Chat;
 use App\Models\Order;
 use App\Models\User;
@@ -36,5 +37,22 @@ class ChatFactory extends Factory
             'client_id' => $order->client_id,
             'agent_id' => $agent->id,
         ]);
+    }
+
+    /**
+     * Link the chat to the agent's provider profile when one exists and the
+     * caller did not set it explicitly (mirrors the production write path).
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Chat $chat): void {
+            if ($chat->agent_profile_id === null) {
+                $profileId = AgentProfile::query()->where('user_id', $chat->agent_id)->value('id');
+
+                if ($profileId !== null) {
+                    $chat->forceFill(['agent_profile_id' => $profileId])->saveQuietly();
+                }
+            }
+        });
     }
 }

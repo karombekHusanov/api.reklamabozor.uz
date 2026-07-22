@@ -118,6 +118,44 @@ class PublicAgentTest extends TestCase
             ->assertJsonPath('data.0.company_name', 'Studio A');
     }
 
+    public function test_provider_type_is_pinned_to_the_profile_not_the_owners_active_role(): void
+    {
+        // An approved agency whose owner later flips their active role to
+        // designer (multirole). The agency profile must still read as 'agent' —
+        // provider_type comes from the profile, not the live role.
+        $owner = User::factory()->create([
+            'role' => 'designer',
+            'roles' => ['client', 'agent', 'designer'],
+        ]);
+        $profile = AgentProfile::factory()->for($owner)->approved()->create();
+
+        $this->getJson("/api/v1/agents/{$profile->id}")
+            ->assertOk()
+            ->assertJsonPath('data.provider_type', 'agent');
+    }
+
+    public function test_agency_stays_visible_as_agent_after_owner_switches_active_role_to_client(): void
+    {
+        // Aziz is an agent; a client is viewing his profile. Aziz switches his
+        // own active role to client. The client must still see him as an agent:
+        // the public profile is keyed on the (approved) profile row, not Aziz's
+        // live active role.
+        $aziz = User::factory()->create(['role' => 'client', 'roles' => ['client', 'agent']]);
+        $profile = AgentProfile::factory()->for($aziz)->approved()->create();
+
+        // Listed in the public marketplace…
+        $this->getJson('/api/v1/agents')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $profile->id)
+            ->assertJsonPath('data.0.provider_type', 'agent');
+
+        // …and reachable by detail, still typed as an agent.
+        $this->getJson("/api/v1/agents/{$profile->id}")
+            ->assertOk()
+            ->assertJsonPath('data.provider_type', 'agent');
+    }
+
     public function test_public_agent_detail_exposes_presentation_fields_and_approved_reviews(): void
     {
         $agentUser = User::factory()->create(['first_name' => 'Bekzod', 'last_name' => 'Aliyev']);

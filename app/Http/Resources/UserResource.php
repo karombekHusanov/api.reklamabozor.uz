@@ -28,6 +28,15 @@ class UserResource extends JsonResource
             'role' => $this->role->value,
             'roles' => $this->allRoles()->map(fn ($role) => $role->value)->all(),
             'role_selected_at' => $this->role_selected_at,
+            // Legal nature: effective type (derived for agents/sellers) + whether
+            // it is confirmed. `person_type_declared` is the raw self-choice, so
+            // the client/designer onboarding can tell "not asked yet" from a pick.
+            'person_type' => $this->effectivePersonType()?->value,
+            'person_type_verified' => $this->isVerifiedLegalEntity(),
+            'person_type_declared' => $this->person_type?->value,
+            // Verification state for the LinkedIn-style badge/CTA: pending /
+            // approved / rejected, or null when nothing has been submitted.
+            'legal_entity_status' => $this->legalEntityStatus()?->value,
             // KYC application status; null = agent-role user who never applied.
             'agent_profile_status' => $this->whenLoaded(
                 'agentProfile',

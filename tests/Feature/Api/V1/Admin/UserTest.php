@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1\Admin;
 
 use App\Enums\Role;
+use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -98,6 +99,50 @@ class UserTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.first_name', 'New')
             ->assertJsonPath('data.phone', '+998901112233');
+    }
+
+    public function test_admin_can_move_a_user_between_provider_groups(): void
+    {
+        // A mis-picked agent who should be a designer. The admin moves them:
+        // the agent role is dropped and designer granted (still a valid set).
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+        ]);
+
+        $this->patchJson("/api/v1/admin/users/{$user->id}", [
+            'role' => 'designer',
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'designer')
+            ->assertJsonPath('data.roles', ['client', 'designer']);
+
+        $fresh = $user->fresh();
+        $this->assertTrue($fresh->hasRole(Role::Designer));
+        $this->assertFalse($fresh->hasRole(Role::Agent));
+    }
+
+    public function test_admin_cannot_move_provider_group_while_an_approved_profile_survives(): void
+    {
+        // A ghost guard: an approved agency profile would still show in the
+        // marketplace, so the admin must reject it before switching the role.
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+        ]);
+        AgentProfile::factory()->for($user)->approved()->create();
+
+        $this->patchJson("/api/v1/admin/users/{$user->id}", [
+            'role' => 'designer',
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['role']);
+
+        $this->assertTrue($user->fresh()->hasRole(Role::Agent));
     }
 
     public function test_admin_can_toggle_user_active_state(): void

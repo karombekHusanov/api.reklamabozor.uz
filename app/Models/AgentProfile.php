@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Enums\ProviderType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +56,7 @@ class AgentProfile extends Model
      */
     protected $fillable = [
         'user_id',
+        'provider_type',
         'company_name',
         'legal_form',
         'company_logo_file_id',
@@ -107,24 +109,24 @@ class AgentProfile extends Model
     }
 
     /**
-     * Accepted offers of this agency that ended in a completed order —
-     * i.e. its successfully delivered jobs. Keyed off the owning user
-     * (offers.agent_id references the user, not the profile).
+     * Accepted offers of this profile that ended in a completed order —
+     * i.e. its successfully delivered jobs. Keyed on agent_profile_id so a
+     * user's separate provider profiles keep independent histories.
      */
     public function completedOrders(): HasMany
     {
-        return $this->hasMany(Offer::class, 'agent_id', 'user_id')
+        return $this->hasMany(Offer::class, 'agent_profile_id')
             ->where('status', OfferStatus::Accepted)
             ->whereHas('order', fn (Builder $query) => $query->where('status', OrderStatus::Completed));
     }
 
     /**
      * Moderated client reviews — the only ones that count publicly.
-     * Keyed off the owning user (reviews.agent_id references the user).
+     * Keyed on agent_profile_id (this profile's reputation only).
      */
     public function approvedReviews(): HasMany
     {
-        return $this->hasMany(Review::class, 'agent_id', 'user_id')->approved();
+        return $this->hasMany(Review::class, 'agent_profile_id')->approved();
     }
 
     /**
@@ -230,6 +232,7 @@ class AgentProfile extends Model
         return [
             'lat' => 'decimal:7',
             'lng' => 'decimal:7',
+            'provider_type' => ProviderType::class,
             'status' => AgentProfileStatus::class,
             'approved_at' => 'datetime',
             'workflow_steps' => 'array',

@@ -20,7 +20,8 @@ class AdminOfferResource extends JsonResource
     public function toArray(Request $request): array
     {
         $agentUser = $this->agent;
-        $profile = $agentUser?->agentProfile;
+        // The specific profile that placed the offer (not just the user's).
+        $profile = $this->agentProfile;
 
         return [
             'id' => $this->id,

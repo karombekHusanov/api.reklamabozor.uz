@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\Role;
 use App\Models\AgentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -45,7 +44,7 @@ class AgentProfileResource extends JsonResource
             'results_text' => $this->results_text,
             'display_name' => $this->company_name
                 ?: trim($this->user->first_name.' '.($this->user->last_name ?? '')),
-            'provider_type' => $this->user->role === Role::Designer ? 'designer' : 'agent',
+            'provider_type' => $this->provider_type->value,
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
             'advantages' => AdvantageResource::collection($this->whenLoaded('advantages')),
             'portfolio' => AgentPortfolioItemResource::collection($this->whenLoaded('portfolioItems')),

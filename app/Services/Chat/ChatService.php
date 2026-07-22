@@ -33,17 +33,12 @@ class ChatService
     {
         $chats = Chat::query()
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
-            ->with(['order.category', 'client', 'agent.agentProfile', 'lastMessage.attachments'])
+            ->when($agentProfileId !== null, fn ($q) => $q->where('agent_profile_id', $agentProfileId))
+            ->with(['order.category', 'client', 'agent', 'agentProfile', 'lastMessage.attachments'])
             ->latest('updated_at')
             ->get();
 
-        if ($agentProfileId === null) {
-            return $chats;
-        }
-
-        return $chats
-            ->filter(fn (Chat $chat) => $chat->otherParticipant($user)->agentProfile?->id === $agentProfileId)
-            ->values();
+        return $chats;
     }
 
     /**
@@ -52,7 +47,7 @@ class ChatService
     public function forOrder(User $user, Order $order): Chat
     {
         /** @var Chat|null $chat */
-        $chat = $order->chat()->with(['client', 'agent.agentProfile', 'order'])->first();
+        $chat = $order->chat()->with(['client', 'agent', 'agentProfile', 'order'])->first();
 
         abort_if($chat === null || ! $chat->isParticipant($user), 404);
 

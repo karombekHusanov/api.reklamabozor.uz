@@ -25,17 +25,12 @@ class DirectChatService
     {
         $chats = DirectChat::query()
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
-            ->with(['client', 'agent.agentProfile', 'lastMessage.attachments'])
+            ->when($agentProfileId !== null, fn ($q) => $q->where('agent_profile_id', $agentProfileId))
+            ->with(['client', 'agent', 'agentProfile', 'lastMessage.attachments'])
             ->latest('updated_at')
             ->get();
 
-        if ($agentProfileId === null) {
-            return $chats;
-        }
-
-        return $chats
-            ->filter(fn (DirectChat $chat) => $chat->otherParticipant($user)->agentProfile?->id === $agentProfileId)
-            ->values();
+        return $chats;
     }
 
     /**
@@ -58,6 +53,7 @@ class DirectChatService
         if ($user->hasRole(Role::Client)) {
             return DirectChat::query()->firstOrCreate(
                 ['client_id' => $user->id, 'agent_id' => $agent->id],
+                ['agent_profile_id' => $agentProfile->id],
             );
         }
 
@@ -70,7 +66,7 @@ class DirectChatService
     {
         abort_if(! $chat->isParticipant($user), 404);
 
-        return $chat->load(['client', 'agent.agentProfile']);
+        return $chat->load(['client', 'agent', 'agentProfile']);
     }
 
     /**

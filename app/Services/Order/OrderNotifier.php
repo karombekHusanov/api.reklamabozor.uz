@@ -84,7 +84,7 @@ class OrderNotifier
      */
     public function notifyNewOffer(Offer $offer): bool
     {
-        $offer->loadMissing('order.client', 'agent.agentProfile');
+        $offer->loadMissing('order.client', 'agent', 'agentProfile');
 
         $this->admin->offerSubmitted($offer);
 
@@ -110,7 +110,7 @@ class OrderNotifier
      */
     public function notifyOfferAccepted(Offer $offer): void
     {
-        $offer->loadMissing('order.client', 'agent.agentProfile');
+        $offer->loadMissing('order.client', 'agent', 'agentProfile');
 
         $order = $offer->order;
 
@@ -246,7 +246,8 @@ class OrderNotifier
     public function notifyNewDirectChatMessage(DirectChat $chat, User $recipient): void
     {
         $sender = $chat->otherParticipant($recipient);
-        $label = $sender->agentProfile?->company_name
+        $agentProfile = $sender->id === $chat->agent_id ? $chat->agentProfile : null;
+        $label = $agentProfile?->company_name
             ?? trim($sender->first_name.' '.($sender->last_name ?? ''));
 
         $this->sendToUser($recipient, implode("\n", [
@@ -289,7 +290,7 @@ class OrderNotifier
     {
         $order = $offer->order;
         $agent = $offer->agent;
-        $company = e($agent?->agentProfile?->company_name
+        $company = e($offer->agentProfile?->company_name
             ?? trim(($agent?->first_name ?? '').' '.($agent?->last_name ?? '')));
         $price = number_format((float) $offer->price, 0, '.', ' ');
         $comment = e(Str::limit($offer->comment, 300));

@@ -62,6 +62,35 @@ class ReviewTest extends TestCase
             && str_contains($request['text'] ?? '', 'baho'));
     }
 
+    public function test_review_is_attributed_to_the_winning_provider_profile(): void
+    {
+        config(['services.telegram.admin_chat_id' => '-100777']);
+        Http::fake();
+
+        $client = User::factory()->create();
+        $agent = User::factory()->create();
+        $profile = AgentProfile::factory()->for($agent)->approved()->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::Completed)->create();
+        Offer::factory()->for($order)->for($agent, 'agent')->accepted()->create();
+
+        $this->postJson("/api/v1/orders/{$order->id}/review", [
+            'rating' => 5,
+            'comment' => 'Great!',
+        ], ['Authorization' => 'Bearer '.$this->token($client)])->assertCreated();
+
+        // Anchored to the profile, not just the user.
+        $this->assertDatabaseHas('reviews', [
+            'order_id' => $order->id,
+            'agent_id' => $agent->id,
+            'agent_profile_id' => $profile->id,
+        ]);
+
+        // Once moderated, it counts toward THIS profile's public rating
+        // (the relation is keyed on agent_profile_id).
+        Review::where('order_id', $order->id)->update(['status' => 'approved']);
+        $this->assertSame(1, $profile->approvedReviews()->count());
+    }
+
     public function test_review_requires_a_completed_order(): void
     {
         $client = User::factory()->create();

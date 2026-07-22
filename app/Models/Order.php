@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Collection;
 
 class Order extends Model
@@ -47,8 +49,9 @@ class Order extends Model
     public const CLIENT_RELATIONS = [
         'category',
         'targetAgent.agentProfile',
-        'offers.agent.agentProfile.companyLogoFile',
+        'offers.agentProfile.companyLogoFile',
         'review',
+        'latestPayment',
     ];
 
     /** Max files a client may attach to one order. */
@@ -142,6 +145,11 @@ class Order extends Model
         return $this->hasMany(OrderView::class);
     }
 
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class);
+    }
+
     public function acceptedOffer(): HasOne
     {
         return $this->hasOne(Offer::class)->where('status', OfferStatus::Accepted);
@@ -155,6 +163,26 @@ class Order extends Model
     public function review(): HasOne
     {
         return $this->hasOne(Review::class);
+    }
+
+    /**
+     * Payment attempts against this order (Multicard hosted checkout).
+     *
+     * @return MorphMany<Payment, $this>
+     */
+    public function payments(): MorphMany
+    {
+        return $this->morphMany(Payment::class, 'payable');
+    }
+
+    /**
+     * The latest order payment (the one the client is settling), if any.
+     *
+     * @return MorphOne<Payment, $this>
+     */
+    public function latestPayment(): MorphOne
+    {
+        return $this->morphOne(Payment::class, 'payable')->latestOfMany();
     }
 
     /**

@@ -24,6 +24,10 @@ class ChatResource extends JsonResource
         $user = $request->user();
         $other = $this->otherParticipant($user);
 
+        // The agency identity belongs to the chat's linked profile, shown only
+        // when the other side is the agent (the client has no provider profile).
+        $agentProfile = $other->id === $this->agent_id ? $this->agentProfile : null;
+
         return [
             'id' => $this->id,
             'type' => 'order',
@@ -39,8 +43,8 @@ class ChatResource extends JsonResource
             'other_participant' => [
                 'id' => $other->id,
                 'name' => trim($other->first_name.' '.($other->last_name ?? '')),
-                'company_name' => $other->agentProfile?->company_name,
-                'agent_profile_id' => $other->agentProfile?->id,
+                'company_name' => $agentProfile?->company_name,
+                'agent_profile_id' => $agentProfile?->id,
             ],
             'last_message' => $this->whenLoaded('lastMessage', fn () => $this->lastMessage
                 ? new ChatMessageResource($this->lastMessage)

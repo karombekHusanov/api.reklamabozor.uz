@@ -18,6 +18,7 @@ class Offer extends Model
     protected $fillable = [
         'order_id',
         'agent_id',
+        'agent_profile_id',
         'price',
         'comment',
         'status',
@@ -26,6 +27,11 @@ class Offer extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function agentProfile(): BelongsTo
+    {
+        return $this->belongsTo(AgentProfile::class);
     }
 
     public function agent(): BelongsTo
