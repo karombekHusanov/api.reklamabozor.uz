@@ -161,7 +161,7 @@ class OrderPaymentTest extends TestCase
             'status' => $status,
             'ps' => 'uzcard',
             'card_pan' => '860030******5959',
-            'sign' => sha1($uuid.$invoiceId.$amount.config('services.multicard.secret')),
+            'sign' => md5(config('services.multicard.store_id').$invoiceId.$amount.config('services.multicard.secret')),
         ];
     }
 }

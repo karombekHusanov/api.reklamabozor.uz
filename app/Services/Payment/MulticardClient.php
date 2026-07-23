@@ -93,28 +93,28 @@ class MulticardClient
      *
      * @param  array<string, mixed>  $payload
      */
-    public function verifyCallbackSign(array $payload): bool
-    {
-        $provided = (string) ($payload['sign'] ?? '');
-
-        if ($provided === '') {
-            return false;
-        }
-
-        return hash_equals($this->expectedCallbackSign($payload), $provided);
-    }
-
     /**
-     * Expected callback signature: sha1(uuid + invoice_id + amount + secret).
+     * Verify a callback signature. Multicard signs with:
+     *   md5(store_id + invoice_id + amount + secret)
+     * using the values from the original invoice. We pass invoice_id + amount
+     * from our own Payment (resolved by the callback's gateway uuid) so
+     * verification never depends on the callback's own field naming.
      *
      * @param  array<string, mixed>  $payload
      */
-    public function expectedCallbackSign(array $payload): string
+    public function verifyCallbackSign(array $payload, string $invoiceId, int $amount): bool
     {
-        return sha1(
-            (string) ($payload['uuid'] ?? '')
-            .(string) ($payload['invoice_id'] ?? '')
-            .(string) ($payload['amount'] ?? '')
+        $provided = (string) ($payload['sign'] ?? '');
+
+        return $provided !== '' && hash_equals($this->callbackSign($invoiceId, $amount), $provided);
+    }
+
+    public function callbackSign(string $invoiceId, int $amount): string
+    {
+        return md5(
+            (string) config('services.multicard.store_id')
+            .$invoiceId
+            .(string) $amount
             .(string) config('services.multicard.secret'),
         );
     }
