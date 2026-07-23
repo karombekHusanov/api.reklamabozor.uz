@@ -86,13 +86,27 @@ class PaymentService
             return; // unknown transaction — nothing to do
         }
 
-        $status = PaymentStatus::fromGateway($payload['status'] ?? null);
+        // The callback merely signals a state change. Its payload shape is
+        // unreliable (status/field naming differs from the API), so fetch the
+        // authoritative record from the gateway and fall back to the callback
+        // fields only if that lookup fails.
+        $gateway = $payload;
+
+        try {
+            $gateway = $this->client->getPayment($uuid) + $payload;
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $status = PaymentStatus::fromGateway(
+            is_string($gateway['status'] ?? null) ? $gateway['status'] : null,
+        );
 
         $payment->fill([
             'status' => $status,
-            'card_pan' => $payload['card_pan'] ?? $payment->card_pan,
-            'ps' => $payload['ps'] ?? $payment->ps,
-            'billing_id' => $payload['billing_id'] ?? $payment->billing_id,
+            'card_pan' => $gateway['card_pan'] ?? $payment->card_pan,
+            'ps' => $gateway['ps'] ?? $payment->ps,
+            'billing_id' => $gateway['billing_id'] ?? $payment->billing_id,
         ]);
 
         if ($status === PaymentStatus::Success && $payment->paid_at === null) {
