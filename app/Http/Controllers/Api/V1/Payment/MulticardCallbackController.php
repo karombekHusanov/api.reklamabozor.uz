@@ -20,13 +20,35 @@ class MulticardCallbackController extends Controller
         MulticardClient $client,
         PaymentService $payments,
     ): JsonResponse {
+        $payload = $request->all();
+
+        // Callback diagnostics (temporary): confirm the exact field names + sign
+        // so we can fix any mismatch. Card/phone omitted from the log.
+        logger()->info('multicard.callback.received', [
+            'ip' => $request->ip(),
+            'keys' => array_keys($payload),
+            'uuid' => $payload['uuid'] ?? null,
+            'invoice_id' => $payload['invoice_id'] ?? null,
+            'store_invoice_id' => $payload['store_invoice_id'] ?? null,
+            'amount' => $payload['amount'] ?? null,
+            'payment_amount' => $payload['payment_amount'] ?? null,
+            'total_amount' => $payload['total_amount'] ?? null,
+            'status' => $payload['status'] ?? null,
+            'sign' => $payload['sign'] ?? null,
+        ]);
+
         if (! $this->ipAllowed($request)) {
+            logger()->warning('multicard.callback.ip_rejected', ['ip' => $request->ip()]);
+
             return response()->json(['success' => false], 403);
         }
 
-        $payload = $request->all();
-
         if (! $client->verifyCallbackSign($payload)) {
+            logger()->warning('multicard.callback.bad_sign', [
+                'expected' => $client->expectedCallbackSign($payload),
+                'provided' => $payload['sign'] ?? null,
+            ]);
+
             return response()->json(['success' => false, 'error' => 'bad_sign'], 403);
         }
 

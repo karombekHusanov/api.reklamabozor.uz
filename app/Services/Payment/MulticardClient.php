@@ -101,14 +101,22 @@ class MulticardClient
             return false;
         }
 
-        $expected = sha1(
+        return hash_equals($this->expectedCallbackSign($payload), $provided);
+    }
+
+    /**
+     * Expected callback signature: sha1(uuid + invoice_id + amount + secret).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function expectedCallbackSign(array $payload): string
+    {
+        return sha1(
             (string) ($payload['uuid'] ?? '')
             .(string) ($payload['invoice_id'] ?? '')
             .(string) ($payload['amount'] ?? '')
             .(string) config('services.multicard.secret'),
         );
-
-        return hash_equals($expected, $provided);
     }
 
     private function authed(): PendingRequest
