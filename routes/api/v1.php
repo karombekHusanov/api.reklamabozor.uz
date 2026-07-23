@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\PublicClientController;
+use App\Http\Controllers\Api\V1\PublicOrderController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -55,6 +56,10 @@ Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
 
 // Public banners for the mini app home slider.
 Route::get('/banners', [PublicBannerController::class, 'index']);
+
+// Public "live orders" showcase for the home carousel (social proof). Declared
+// before the auth group so it wins over the client-only /orders/{order} route.
+Route::get('/orders/showcase', [PublicOrderController::class, 'showcase']);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/telegram', [AuthController::class, 'telegramLogin']);

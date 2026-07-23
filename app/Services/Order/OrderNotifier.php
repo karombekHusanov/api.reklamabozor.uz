@@ -281,9 +281,15 @@ class OrderNotifier
         }
     }
 
+    /**
+     * Provider-facing deep link. Agents don't own the order, so the client
+     * order route (/orders/{id}) 404s for them — they land on their own
+     * workspace instead, which focuses the order (open card to bid, or the
+     * active-deal card once their offer was accepted) via the `order` query.
+     */
     private function agentOrderPath(Order $order): string
     {
-        return '/orders/'.$order->id;
+        return '/offers?order='.$order->id;
     }
 
     private function buildOfferMessage(Offer $offer): string

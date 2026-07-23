@@ -207,10 +207,13 @@ class OrderTest extends TestCase
 
         $order = $client->orders()->latest('id')->first();
 
+        // Providers don't own the order, so the deep link lands them on their
+        // own workspace focused on this order (where they bid), not the
+        // client-only /orders/{id} page (which 404s for them).
         Http::assertSent(function ($request) use ($order) {
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
 
-            return $url === "https://app.test/orders/{$order->id}";
+            return $url === "https://app.test/offers?order={$order->id}";
         });
     }
 

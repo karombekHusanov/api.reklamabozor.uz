@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\CategoryType;
+use App\Enums\ProviderType;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicAgentResource;
 use App\Models\AgentProfile;
@@ -22,6 +23,7 @@ class PublicAgentController extends ApiController
         $validated = $request->validate([
             'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
             'type' => ['nullable', Rule::enum(CategoryType::class)],
+            'provider_type' => ['nullable', Rule::enum(ProviderType::class)],
         ]);
 
         $limit = (int) ($validated['limit'] ?? 12);
@@ -29,6 +31,10 @@ class PublicAgentController extends ApiController
 
         $agents = AgentProfile::query()
             ->approved()
+            ->when(
+                isset($validated['provider_type']),
+                fn ($query) => $query->where('provider_type', $validated['provider_type']),
+            )
             ->when(
                 isset($validated['type']),
                 fn ($query) => $query->whereHas(
