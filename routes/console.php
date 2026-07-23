@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Completion handshake sweep: day-2 reminders + day-3 auto-complete.
 Schedule::command('orders:process-completions')->hourly();
+
+// Settle payments the single Multicard callback left pending (progress→success).
+Schedule::command('payments:reconcile-pending')->everyMinute()->withoutOverlapping();

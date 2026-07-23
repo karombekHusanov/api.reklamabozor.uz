@@ -4,6 +4,7 @@ namespace Tests\Feature\Payment;
 
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Models\Offer;
 use App\Models\Order;
@@ -147,6 +148,36 @@ class OrderPaymentTest extends TestCase
 
         $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
         $this->assertSame(1, $order->chat()->count());
+    }
+
+    public function test_reconcile_pending_settles_a_progress_payment(): void
+    {
+        // Multicard's callback fired at `progress` and never sent a `success`
+        // follow-up — the sweep re-queries the gateway and settles the order.
+        $this->enableGateway();
+
+        Http::fake([
+            '*/auth' => Http::response(['token' => 'tok', 'expiry' => now()->addDay()->toDateTimeString()]),
+            '*/payment/*' => Http::response(['data' => ['status' => 'success', 'ps' => 'uzcard', 'card_pan' => '860030******5959']]),
+        ]);
+
+        $client = User::factory()->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::AwaitingPayment)->create();
+        Offer::factory()->for($order)->create(['status' => OfferStatus::Accepted]);
+        $payment = Payment::factory()->create([
+            'payable_type' => Order::class,
+            'payable_id' => $order->id,
+            'purpose' => PaymentPurpose::Order,
+            'gateway_uuid' => 'gw-recon',
+            'amount' => 200_000,
+            'status' => PaymentStatus::Progress,
+        ]);
+
+        $this->artisan('payments:reconcile-pending')->assertSuccessful();
+
+        $this->assertSame(PaymentStatus::Success, $payment->fresh()->status);
+        $this->assertNotNull($payment->fresh()->paid_at);
+        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
     }
 
     /**
