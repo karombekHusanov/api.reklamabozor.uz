@@ -56,6 +56,11 @@ Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
 
 // Public banners for the mini app home slider.
 Route::get('/banners', [PublicBannerController::class, 'index']);
+// Impression / click tracking — public (guests count too), lightly throttled.
+Route::post('/banners/{banner}/view', [PublicBannerController::class, 'view'])
+    ->middleware('throttle:120,1');
+Route::post('/banners/{banner}/click', [PublicBannerController::class, 'click'])
+    ->middleware('throttle:120,1');
 
 // Public "live orders" showcase for the home carousel (social proof). Declared
 // before the auth group so it wins over the client-only /orders/{order} route.

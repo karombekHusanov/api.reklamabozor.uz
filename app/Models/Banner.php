@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Banner extends Model
 {
@@ -34,6 +35,26 @@ class Banner extends Model
     }
 
     /**
+     * @return HasMany<BannerClick, self>
+     */
+    public function clicks(): HasMany
+    {
+        return $this->hasMany(BannerClick::class);
+    }
+
+    /**
+     * Click-through rate as a percentage (clicks ÷ impressions), rounded to 2dp.
+     */
+    public function clickThroughRate(): float
+    {
+        if ($this->impressions_count <= 0) {
+            return 0.0;
+        }
+
+        return round(($this->clicks_count / $this->impressions_count) * 100, 2);
+    }
+
+    /**
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
@@ -52,6 +73,8 @@ class Banner extends Model
             'target_id' => 'integer',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'impressions_count' => 'integer',
+            'clicks_count' => 'integer',
         ];
     }
 }
