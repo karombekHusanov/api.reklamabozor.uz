@@ -52,7 +52,7 @@ class BannerAdminService
             'title' => $data['title'] ?? null,
             'subtitle' => $data['subtitle'] ?? null,
             'type' => $data['type'],
-            'target_id' => $data['target_id'],
+            'target_id' => $data['target_id'] ?? null,
             'image_file_id' => $data['image_file_id'],
             'link_url' => $data['link_url'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,

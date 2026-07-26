@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Admin;
 
 use App\Enums\BannerType;
+use App\Rules\BannerLinkUrl;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,12 +19,20 @@ class StoreBannerRequest extends FormRequest
      */
     public function rules(): array
     {
-        // Agent banners must point at a real agent profile; product targets are
-        // validated loosely until the products feature exists.
-        $targetRules = ['required', 'integer', 'min:1'];
+        $type = $this->input('type');
+        $isLink = $type === BannerType::Link->value;
 
-        if ($this->input('type') === BannerType::Agent->value) {
-            $targetRules[] = Rule::exists('agent_profiles', 'id');
+        // Entity-backed banners (agent/product) require a target id; agent
+        // targets must point at a real profile. Link banners carry no target —
+        // they navigate via link_url instead.
+        if ($isLink) {
+            $targetRules = ['nullable', 'integer', 'min:1'];
+        } else {
+            $targetRules = ['required', 'integer', 'min:1'];
+
+            if ($type === BannerType::Agent->value) {
+                $targetRules[] = Rule::exists('agent_profiles', 'id');
+            }
         }
 
         return [
@@ -33,7 +42,9 @@ class StoreBannerRequest extends FormRequest
             'target_id' => $targetRules,
             // Admin-managed artwork — any uploaded file may be referenced.
             'image_file_id' => ['required', 'integer', Rule::exists('files', 'id')],
-            'link_url' => ['nullable', 'string', 'max:500', 'url'],
+            // Required for link banners; optional override otherwise. Accepts an
+            // internal deep-link ("/agents/1") or an external URL ("https://…").
+            'link_url' => [$isLink ? 'required' : 'nullable', 'string', 'max:500', BannerLinkUrl::rule()],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ];

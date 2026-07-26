@@ -81,6 +81,69 @@ class BannerTest extends TestCase
             ->assertJsonPath('data.target_id', $profile->id);
     }
 
+    public function test_admin_can_create_external_link_banner_without_target(): void
+    {
+        $file = File::factory()->create();
+
+        $this->postJson('/api/v1/admin/banners', [
+            'title' => 'Visit our site',
+            'type' => 'link',
+            'link_url' => 'https://reklamabozor.uz/promo',
+            'image_file_id' => $file->id,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', 'link')
+            ->assertJsonPath('data.target_id', null)
+            ->assertJsonPath('data.link_url', 'https://reklamabozor.uz/promo');
+    }
+
+    public function test_admin_can_create_internal_link_banner(): void
+    {
+        $file = File::factory()->create();
+
+        $this->postJson('/api/v1/admin/banners', [
+            'type' => 'link',
+            'link_url' => '/agents',
+            'image_file_id' => $file->id,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', 'link')
+            ->assertJsonPath('data.link_url', '/agents');
+    }
+
+    public function test_link_banner_requires_link_url(): void
+    {
+        $file = File::factory()->create();
+
+        $this->postJson('/api/v1/admin/banners', [
+            'type' => 'link',
+            'image_file_id' => $file->id,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['link_url']);
+    }
+
+    public function test_link_banner_rejects_malformed_url(): void
+    {
+        $file = File::factory()->create();
+
+        $this->postJson('/api/v1/admin/banners', [
+            'type' => 'link',
+            'link_url' => 'not a url',
+            'image_file_id' => $file->id,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['link_url']);
+    }
+
     public function test_agent_banner_requires_existing_agent_target(): void
     {
         $file = File::factory()->create();

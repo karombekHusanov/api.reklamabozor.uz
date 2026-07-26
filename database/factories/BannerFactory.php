@@ -43,4 +43,13 @@ class BannerFactory extends Factory
             'type' => BannerType::Product,
         ]);
     }
+
+    public function link(?string $url = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => BannerType::Link,
+            'target_id' => null,
+            'link_url' => $url ?? 'https://example.com',
+        ]);
+    }
 }

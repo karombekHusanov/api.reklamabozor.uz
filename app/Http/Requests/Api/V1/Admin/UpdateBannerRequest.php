@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Admin;
 
 use App\Enums\BannerType;
+use App\Rules\BannerLinkUrl;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,10 +19,17 @@ class UpdateBannerRequest extends FormRequest
      */
     public function rules(): array
     {
-        $targetRules = ['sometimes', 'required', 'integer', 'min:1'];
+        $type = $this->input('type');
 
-        if ($this->input('type') === BannerType::Agent->value) {
-            $targetRules[] = Rule::exists('agent_profiles', 'id');
+        // Link banners carry no target; agent/product still require one when set.
+        if ($type === BannerType::Link->value) {
+            $targetRules = ['nullable', 'integer', 'min:1'];
+        } else {
+            $targetRules = ['sometimes', 'required', 'integer', 'min:1'];
+
+            if ($type === BannerType::Agent->value) {
+                $targetRules[] = Rule::exists('agent_profiles', 'id');
+            }
         }
 
         return [
@@ -30,7 +38,9 @@ class UpdateBannerRequest extends FormRequest
             'type' => ['sometimes', 'required', Rule::enum(BannerType::class)],
             'target_id' => $targetRules,
             'image_file_id' => ['sometimes', 'required', 'integer', Rule::exists('files', 'id')],
-            'link_url' => ['nullable', 'string', 'max:500', 'url'],
+            // Required when switching a banner to the link type; accepts an
+            // internal deep-link or an external http(s) URL.
+            'link_url' => ['required_if:type,'.BannerType::Link->value, 'nullable', 'string', 'max:500', BannerLinkUrl::rule()],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ];
