@@ -3,6 +3,7 @@
 namespace App\Services\Order;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
 use App\Models\AgentProfile;
 use App\Models\Category;
@@ -165,6 +166,30 @@ class OrderService
         } catch (\Throwable $e) {
             report($e);
         }
+
+        return $this->withClientRelations($order);
+    }
+
+    /**
+     * The client cancels their own order — allowed only while no offer has been
+     * accepted yet (the order is still open for offers). Any pending offers are
+     * rejected so bidding agents no longer see a live request.
+     */
+    public function cancelByClient(User $client, Order $order): Order
+    {
+        abort_unless($order->client_id === $client->id, 404);
+
+        if (! $order->status->isOpenForOffers()) {
+            throw ValidationException::withMessages([
+                'order' => ['This order can no longer be cancelled.'],
+            ]);
+        }
+
+        $order->offers()
+            ->where('status', OfferStatus::Pending)
+            ->update(['status' => OfferStatus::Rejected]);
+
+        $order->update(['status' => OrderStatus::Cancelled]);
 
         return $this->withClientRelations($order);
     }

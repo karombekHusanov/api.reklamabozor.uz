@@ -96,6 +96,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Completion handshake: client accepts or rejects the delivered work.
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
+    // Client cancels their own order — only while still open for offers.
+    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
     // Order payment (Multicard hosted checkout): (re)start checkout + poll status.
     Route::post('/orders/{order}/pay', [PaymentController::class, 'pay']);

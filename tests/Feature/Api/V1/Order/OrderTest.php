@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Api\V1\Order;
 
+use App\Enums\OfferStatus;
+use App\Enums\OrderStatus;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\File;
@@ -287,5 +289,57 @@ class OrderTest extends TestCase
 
         $this->getJson("/api/v1/orders/{$foreign->id}", ['Authorization' => 'Bearer '.$token])
             ->assertNotFound();
+    }
+
+    public function test_client_can_cancel_their_open_order(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.status', OrderStatus::Cancelled->value);
+
+        $this->assertSame(OrderStatus::Cancelled, $order->fresh()->status);
+    }
+
+    public function test_cancelling_an_order_rejects_pending_offers(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
+        $offer = Offer::factory()->for($order)->create(['agent_id' => User::factory()->create()->id]);
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertOk();
+
+        $this->assertSame(OfferStatus::Rejected, $offer->fresh()->status);
+    }
+
+    public function test_client_cannot_cancel_once_an_offer_is_accepted(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('order');
+
+        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+    }
+
+    public function test_client_cannot_cancel_another_clients_order(): void
+    {
+        [, $token] = $this->authedUser();
+        $foreign = Order::factory()->status(OrderStatus::New)->create();
+
+        $this->postJson("/api/v1/orders/{$foreign->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertNotFound();
+    }
+
+    public function test_cancelling_an_order_requires_authentication(): void
+    {
+        $order = Order::factory()->create();
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel")->assertUnauthorized();
     }
 }

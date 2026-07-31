@@ -60,4 +60,15 @@ class OrderController extends ApiController
 
         return $this->success(new OrderResource($order), 'We received your report — our team will contact you.');
     }
+
+    /**
+     * Client cancels their own order — only while it is still open for offers
+     * (no offer accepted yet).
+     */
+    public function cancel(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->cancelByClient($request->user(), $order);
+
+        return $this->success(new OrderResource($order), 'Order cancelled.');
+    }
 }
