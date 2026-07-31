@@ -46,6 +46,35 @@ class GlobalChatTest extends TestCase
             ->assertJsonPath('data.0.sender.role', 'client');
     }
 
+    public function test_unread_counts_new_messages_excluding_own(): void
+    {
+        [$a] = $this->client();
+        [$b, $hb] = $this->client();
+
+        // ids 1,2,3 → A, B, A
+        $m1 = GlobalChatMessage::create(['user_id' => $a->id, 'body' => '1']);
+        GlobalChatMessage::create(['user_id' => $b->id, 'body' => '2']);
+        $m3 = GlobalChatMessage::create(['user_id' => $a->id, 'body' => '3']);
+
+        // No cursor yet → nothing counted, but the head id is reported so the
+        // client can seed its cursor without flashing a badge.
+        $this->getJson('/api/v1/chat/global/unread', $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 0)
+            ->assertJsonPath('data.latest_id', $m3->id);
+
+        // Seen up to m1: B has one unread (A's m3) — their own m2 is excluded.
+        $this->getJson("/api/v1/chat/global/unread?after_id={$m1->id}", $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 1)
+            ->assertJsonPath('data.latest_id', $m3->id);
+
+        // Caught up: nothing unread.
+        $this->getJson("/api/v1/chat/global/unread?after_id={$m3->id}", $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+    }
+
     public function test_user_can_attach_a_file(): void
     {
         [$user, $headers] = $this->client();

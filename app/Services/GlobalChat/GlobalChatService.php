@@ -74,6 +74,30 @@ class GlobalChatService
     }
 
     /**
+     * Unread badge state for the home screen. The client keeps its own
+     * last-seen cursor (`afterId`); we count visible messages newer than it,
+     * excluding the caller's own posts. `latest_id` lets a first-time client
+     * initialise the cursor without flashing a spurious badge.
+     *
+     * @return array{count: int, latest_id: int}
+     */
+    public function unread(User $user, ?int $afterId = null): array
+    {
+        $latestId = (int) GlobalChatMessage::query()->visible()->max('id');
+
+        $count = 0;
+        if ($afterId !== null) {
+            $count = GlobalChatMessage::query()
+                ->visible()
+                ->where('id', '>', $afterId)
+                ->where('user_id', '!=', $user->id)
+                ->count();
+        }
+
+        return ['count' => $count, 'latest_id' => $latestId];
+    }
+
+    /**
      * @param  list<int>  $fileIds
      */
     public function post(User $user, ?string $body, array $fileIds = []): GlobalChatMessage

@@ -43,6 +43,21 @@ class GlobalChatController extends ApiController
         return $this->success(GlobalChatMessageResource::collection($messages));
     }
 
+    /**
+     * Unread count for the home badge, relative to the client's last-seen id.
+     */
+    public function unread(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'after_id' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        return $this->success($this->chat->unread(
+            $request->user(),
+            isset($validated['after_id']) ? (int) $validated['after_id'] : null,
+        ));
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([

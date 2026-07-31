@@ -187,14 +187,17 @@ class ChatTest extends TestCase
             ->assertJsonPath('data.0.id', $second->id);
     }
 
-    public function test_chat_is_read_only_once_the_order_is_terminal(): void
+    public function test_chat_stays_open_after_the_order_is_terminal(): void
     {
         [$order, , $client] = $this->deal();
         $order->update(['status' => OrderStatus::Completed]);
 
+        // The conversation stays open — client and agent can keep talking after
+        // the order is completed (e.g. follow-up questions about the work).
         $this->postJson("/api/v1/orders/{$order->id}/chat/messages", ['body' => 'kech qoldim'], [
             'Authorization' => 'Bearer '.$this->token($client),
-        ])->assertUnprocessable();
+        ])->assertCreated()
+            ->assertJsonPath('data.body', 'kech qoldim');
 
         // Reading history still works.
         $this->getJson("/api/v1/orders/{$order->id}/chat", [

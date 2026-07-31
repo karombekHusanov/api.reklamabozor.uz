@@ -2,7 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Enums\OrderStatus;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\Order;
@@ -13,12 +12,6 @@ use Illuminate\Validation\ValidationException;
 
 class ChatService
 {
-    /**
-     * Order statuses in which the conversation is still writable. Terminal
-     * orders keep the chat readable but frozen.
-     */
-    private const WRITABLE_STATUSES = [OrderStatus::InProgress, OrderStatus::WorkSubmitted];
-
     public function __construct(
         private readonly OrderNotifier $notifier,
     ) {}
@@ -86,11 +79,8 @@ class ChatService
     {
         $chat = $this->forOrder($user, $order);
 
-        if (! in_array($order->status, self::WRITABLE_STATUSES, true)) {
-            throw ValidationException::withMessages([
-                'chat' => ['This conversation is closed.'],
-            ]);
-        }
+        // The order conversation stays open for both participants regardless of
+        // order status — client and agent can keep talking after completion.
 
         // File-only messages are allowed; the DB keeps body non-null (empty string).
         $body = $body !== null ? trim($body) : '';
