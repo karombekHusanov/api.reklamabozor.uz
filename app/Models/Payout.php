@@ -23,6 +23,7 @@ class Payout extends Model
      */
     protected $fillable = [
         'order_id',
+        'withdrawal_id',
         'agent_profile_id',
         'agent_id',
         'tranche',
@@ -40,6 +41,11 @@ class Payout extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function withdrawal(): BelongsTo
+    {
+        return $this->belongsTo(Withdrawal::class);
     }
 
     public function agentProfile(): BelongsTo

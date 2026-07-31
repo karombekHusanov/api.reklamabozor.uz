@@ -41,4 +41,24 @@ enum PaymentStatus: string
     {
         return in_array($this, [self::Success, self::Error, self::Revert], true);
     }
+
+    /**
+     * Whether a webhook/reconcile may move this payment to `$next`.
+     *
+     * Final statuses are sticky: Success may only move to Revert (gateway
+     * refund); Error and Revert never move. Same-status updates are allowed
+     * (idempotent retries). Non-final statuses may advance to anything.
+     */
+    public function canTransitionTo(self $next): bool
+    {
+        if ($this === $next) {
+            return true;
+        }
+
+        return match ($this) {
+            self::Success => $next === self::Revert,
+            self::Error, self::Revert => false,
+            default => true,
+        };
+    }
 }

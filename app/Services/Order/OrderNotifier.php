@@ -234,6 +234,44 @@ class OrderNotifier
     }
 
     /**
+     * Client cancelled while the order was still open for offers. Tell every
+     * agent who had a pending bid (so they stop waiting) and mirror to ops.
+     *
+     * @param  list<User>  $biddingAgents
+     */
+    public function notifyOrderCancelled(Order $order, array $biddingAgents): void
+    {
+        $order->loadMissing('category');
+
+        foreach ($biddingAgents as $agent) {
+            $this->sendToUser($agent, implode("\n", [
+                "🚫 Buyurtma <b>#{$order->id}</b> (".e($order->title).') mijoz tomonidan bekor qilindi.',
+                'Taklifingiz yopildi — keyingi buyurtmalarda omad!',
+            ]));
+        }
+
+        $this->admin->orderCancelled($order, count($biddingAgents));
+    }
+
+    /**
+     * Client cancelled after accepting an offer but before paying. Ops is
+     * notified separately by PaymentService; here we only ping the winning agent.
+     */
+    public function notifyAwaitingPaymentCancelled(Order $order, ?User $agent): void
+    {
+        if ($agent === null) {
+            return;
+        }
+
+        $order->loadMissing('category');
+
+        $this->sendToUser($agent, implode("\n", [
+            "🚫 Buyurtma <b>#{$order->id}</b> (".e($order->title).') mijoz to\'lovni yakunlamasdan bekor qildi.',
+            'Deal ochilmadi — keyingi buyurtmalarda omad!',
+        ]));
+    }
+
+    /**
      * Nudge the other side of an order conversation about fresh messages.
      */
     public function notifyNewChatMessage(Order $order, User $recipient): void

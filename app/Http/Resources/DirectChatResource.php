@@ -41,7 +41,7 @@ class DirectChatResource extends JsonResource
             'last_message' => $this->whenLoaded('lastMessage', fn () => $this->lastMessage
                 ? new DirectChatMessageResource($this->lastMessage)
                 : null),
-            'unread_count' => $this->unreadCountFor($user),
+            'unread_count' => (int) $this->unreadCountFor($user),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

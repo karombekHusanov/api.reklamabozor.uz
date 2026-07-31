@@ -47,10 +47,25 @@ return [
         'store_id' => env('MULTICARD_STORE_ID'),
         // Where Multicard POSTs payment status changes. Must be the public API URL.
         'callback_url' => env('MULTICARD_CALLBACK_URL'),
+        // Invoice lifetime, seconds. After this Multicard cancels the invoice,
+        // so we must not reuse its checkout_url — we mint a fresh invoice.
+        // Independent of how long the order may stay in awaiting_payment.
+        'invoice_ttl' => (int) env('MULTICARD_INVOICE_TTL', 3600),
+        // How long an order may stay awaiting_payment before auto-cancel (hours).
+        // Contract-tunable; default 72h = 3 days.
+        'awaiting_payment_timeout_hours' => (int) env('AWAITING_PAYMENT_TIMEOUT_HOURS', 72),
+        // Attach an OFD (fiscal receipt) line to invoices. Off until real MXIK
+        // codes are configured — placeholder OFD breaks checkout on some stands.
+        'ofd_enabled' => (bool) env('MULTICARD_OFD_ENABLED', false),
         // Source IP Multicard sends webhooks from (comma-separated allowlist).
         'callback_ips' => env('MULTICARD_CALLBACK_IPS', '195.158.26.90'),
+        // Callback signature algorithm (docs.multicard.uz callback-webhooks):
+        //   sha1 — sha1(uuid + invoice_id + amount + secret)  ← docs
+        //   md5  — md5(store_id + invoice_id + amount + secret) ← real stand often
+        //   both — accept either (default — avoids prod/dev sign mismatch)
+        'callback_sign' => env('MULTICARD_CALLBACK_SIGN', 'both'),
         // Platform commission on order payments, percent (deducted from payouts).
-        'commission_percent' => env('MULTICARD_COMMISSION_PERCENT', 0),
+        'commission_percent' => env('MULTICARD_COMMISSION_PERCENT', 7),
         // Default advance slice of an agent payout, percent (final = remainder).
         // A manager can override the amount per payout at release time.
         'payout_advance_percent' => env('PAYOUT_ADVANCE_PERCENT', 40),
@@ -68,7 +83,8 @@ return [
         // Private ops group where the bot reports marketplace events. Empty = disabled.
         'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
         // Comma-separated event keys to report ("*" = all):
-        // order_placed, offer_submitted, deal, payment_success, work_submitted, completed, dispute, review
+        // order_placed, offer_submitted, deal, payment_success, payment_refunded,
+        // payment_timeout, payment_awaiting_cancelled, work_submitted, completed, dispute, review, order_cancelled
         'admin_events' => env('TELEGRAM_ADMIN_EVENTS', '*'),
     ],
 

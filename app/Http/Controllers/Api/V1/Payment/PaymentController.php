@@ -32,7 +32,14 @@ class PaymentController extends ApiController
             return $this->error('This order is not awaiting payment.', 422);
         }
 
-        $payment = $this->payments->startOrderPayment($order);
+        try {
+            $payment = $this->payments->startOrderPayment($order);
+        } catch (\Throwable $e) {
+            // Gateway unreachable / errored — surface a retryable error, not a 500.
+            report($e);
+
+            return $this->error('Payment service is temporarily unavailable. Please try again.', 503);
+        }
 
         return $this->success(new PaymentResource($payment), 'Checkout ready');
     }

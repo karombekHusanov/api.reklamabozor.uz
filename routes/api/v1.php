@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\V1\AdvantageController;
 use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
 use App\Http\Controllers\Api\V1\Agent\AgentPortfolioController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
+use App\Http\Controllers\Api\V1\Agent\PayoutController as AgentPayoutController;
+use App\Http\Controllers\Api\V1\Agent\WithdrawalController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
@@ -96,7 +98,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Completion handshake: client accepts or rejects the delivered work.
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
-    // Client cancels their own order — only while still open for offers.
+    // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
     // Order payment (Multicard hosted checkout): (re)start checkout + poll status.
@@ -150,6 +152,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
+
+        // Earnings: escrow payouts owed/paid + withdrawable balance.
+        Route::get('/payouts', [AgentPayoutController::class, 'index']);
+
+        // On-demand cash-out to card (Multicard hosted form → credit → OTP).
+        Route::post('/withdrawals', [WithdrawalController::class, 'store']);
+        Route::get('/withdrawals/{withdrawal}', [WithdrawalController::class, 'show']);
+        Route::post('/withdrawals/{withdrawal}/confirm', [WithdrawalController::class, 'confirm']);
+        Route::post('/withdrawals/{withdrawal}/cancel', [WithdrawalController::class, 'cancel']);
     });
 });
 
@@ -191,6 +202,7 @@ Route::prefix('admin')
 
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);
+        Route::post('/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
 
         // Agent payouts out of escrow — manager reviews + releases (marks paid).
         Route::get('/payouts', [AdminPayoutController::class, 'index']);

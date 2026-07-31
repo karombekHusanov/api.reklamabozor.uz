@@ -180,7 +180,10 @@ class OfferService
             $offer->update(['status' => OfferStatus::Accepted]);
 
             if ($paymentEnabled) {
-                $order->update(['status' => OrderStatus::AwaitingPayment]);
+                $order->update([
+                    'status' => OrderStatus::AwaitingPayment,
+                    'awaiting_payment_at' => now(),
+                ]);
             } else {
                 $this->activateInTransaction($order, $offer);
             }

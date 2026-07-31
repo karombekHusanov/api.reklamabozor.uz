@@ -85,6 +85,23 @@ class User extends Authenticatable
     }
 
     /**
+     * Escrow releases owed to / paid to this user as a provider (advance /
+     * final / adjustment). Drives the agent's earnings + withdrawable balance.
+     */
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class, 'agent_id');
+    }
+
+    /**
+     * On-demand cash-outs of this user's escrow balance to their card.
+     */
+    public function withdrawals(): HasMany
+    {
+        return $this->hasMany(Withdrawal::class, 'agent_id');
+    }
+
+    /**
      * The approved provider profile eligible to serve the given category —
      * the one whose category set contains it. Determines which of the user's
      * profiles bids on an order. Null when the user serves no such category.

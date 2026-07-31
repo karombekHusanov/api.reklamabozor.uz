@@ -104,6 +104,30 @@ class PayoutService
     }
 
     /**
+     * Void unpaid payouts for an order (e.g. after a gateway refund). Pending
+     * and in-flight (processing) rows become cancelled; already-paid amounts
+     * are left alone — ops must recover those manually. Returns how many rows
+     * were cancelled and how much tiyin was already paid out.
+     *
+     * @return array{cancelled: int, paid_tiyin: int}
+     */
+    public function cancelUnpaidForOrder(Order $order): array
+    {
+        $cancelled = $order->payouts()
+            ->whereIn('status', [PayoutStatus::Pending->value, PayoutStatus::Processing->value])
+            ->update([
+                'status' => PayoutStatus::Cancelled->value,
+                'withdrawal_id' => null,
+            ]);
+
+        $paidTiyin = (int) $order->payouts()
+            ->where('status', PayoutStatus::Paid->value)
+            ->sum('amount');
+
+        return ['cancelled' => $cancelled, 'paid_tiyin' => $paidTiyin];
+    }
+
+    /**
      * Release a payout to the agent. v1: a manager marks it paid manually
      * (optionally overriding the amount and recording a bank reference). The
      * automated Multicard credit flow will branch on `method` here later.
@@ -124,6 +148,33 @@ class PayoutService
         $payout->save();
 
         return $payout->refresh();
+    }
+
+    /**
+     * The agent's earnings summary, in tiyin. `available` is what the agent may
+     * withdraw right now (pending payouts); `processing` is a withdrawal in
+     * flight; `paid` is already transferred. Cancelled payouts are excluded.
+     *
+     * @return array{available: int, processing: int, paid: int, total: int}
+     */
+    public function balanceFor(User $agent): array
+    {
+        $sums = $agent->payouts()
+            ->where('status', '!=', PayoutStatus::Cancelled->value)
+            ->selectRaw('status, COALESCE(SUM(amount), 0) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $available = (int) ($sums[PayoutStatus::Pending->value] ?? 0);
+        $processing = (int) ($sums[PayoutStatus::Processing->value] ?? 0);
+        $paid = (int) ($sums[PayoutStatus::Paid->value] ?? 0);
+
+        return [
+            'available' => $available,
+            'processing' => $processing,
+            'paid' => $paid,
+            'total' => $available + $processing + $paid,
+        ];
     }
 
     private function escrowFunded(): bool

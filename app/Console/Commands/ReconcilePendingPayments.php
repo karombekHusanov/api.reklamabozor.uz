@@ -7,6 +7,7 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\Payment\MulticardClient;
 use App\Services\Payment\PaymentService;
 use Illuminate\Console\Command;
 
@@ -23,7 +24,7 @@ class ReconcilePendingPayments extends Command
 
     protected $description = 'Re-query Multicard for pending order payments and settle awaiting_payment orders';
 
-    public function handle(PaymentService $payments): int
+    public function handle(PaymentService $payments, MulticardClient $client): int
     {
         if (! config('services.multicard.enabled')) {
             return self::SUCCESS;
@@ -42,7 +43,19 @@ class ReconcilePendingPayments extends Command
 
         foreach ($pending as $payment) {
             try {
-                $payments->handleCallback(['uuid' => $payment->gateway_uuid]);
+                // No webhook to trust here — the gateway record IS the source
+                // of truth. Fetch it and feed its status through the same
+                // settlement path as a callback.
+                $gateway = $client->getPayment((string) $payment->gateway_uuid);
+                $rawStatus = $gateway['status'] ?? null;
+
+                // Empty/unknown payloads must not push Draft over a real state
+                // via PaymentStatus::fromGateway(null).
+                if (! is_string($rawStatus) || $rawStatus === '') {
+                    continue;
+                }
+
+                $payments->handleCallback(['uuid' => $payment->gateway_uuid] + $gateway);
 
                 if ($payment->fresh()?->status === PaymentStatus::Success) {
                     $settled++;

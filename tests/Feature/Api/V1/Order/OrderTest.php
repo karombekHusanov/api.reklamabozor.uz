@@ -230,6 +230,23 @@ class OrderTest extends TestCase
             ->assertJsonCount(2, 'data');
     }
 
+    public function test_client_list_hides_cancelled_orders(): void
+    {
+        [$client, $token] = $this->authedUser();
+        Order::factory()->for($client, 'client')->status(OrderStatus::New)->create();
+        $cancelled = Order::factory()->for($client, 'client')->status(OrderStatus::Cancelled)->create();
+
+        $ids = $this->getJson('/api/v1/orders', ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->json('data.*.id');
+
+        $this->assertNotContains($cancelled->id, $ids);
+
+        $this->getJson("/api/v1/orders/{$cancelled->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertNotFound();
+    }
+
     public function test_client_can_view_their_order_with_offers(): void
     {
         [$client, $token] = $this->authedUser();
@@ -291,7 +308,19 @@ class OrderTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_client_can_cancel_their_open_order(): void
+    public function test_client_can_cancel_a_new_order(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::New)->create();
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.status', OrderStatus::Cancelled->value);
+
+        $this->assertSame(OrderStatus::Cancelled, $order->fresh()->status);
+    }
+
+    public function test_client_can_cancel_an_order_while_offers_are_open(): void
     {
         [$client, $token] = $this->authedUser();
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
@@ -325,6 +354,20 @@ class OrderTest extends TestCase
             ->assertJsonValidationErrors('order');
 
         $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+    }
+
+    public function test_client_can_cancel_while_awaiting_payment(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::AwaitingPayment)->create();
+        Offer::factory()->for($order)->create(['status' => OfferStatus::Accepted]);
+
+        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.status', OrderStatus::Cancelled->value);
+
+        $this->assertSame(OrderStatus::Cancelled, $order->fresh()->status);
+        $this->assertSame(OfferStatus::Accepted, $order->offers()->first()->status);
     }
 
     public function test_client_cannot_cancel_another_clients_order(): void

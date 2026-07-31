@@ -9,8 +9,10 @@ use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class OrderService
@@ -18,6 +20,7 @@ class OrderService
     public function __construct(
         private readonly OrderNotifier $notifier,
         private readonly PayoutService $payouts,
+        private readonly PaymentService $payments,
     ) {}
 
     /**
@@ -82,7 +85,10 @@ class OrderService
      */
     public function listForClient(User $client): Collection
     {
+        // Cancelled orders stay in the DB / admin panel only — clients never
+        // see them in their request list again.
         $orders = $client->orders()
+            ->where('status', '!=', OrderStatus::Cancelled)
             ->with(['category', 'targetAgent.agentProfile'])
             ->withCount(['offers', 'views'])
             ->latest()
@@ -96,6 +102,7 @@ class OrderService
     public function findForClient(User $client, Order $order): Order
     {
         abort_unless($order->client_id === $client->id, 404);
+        abort_if($order->status === OrderStatus::Cancelled, 404);
 
         return $this->withClientRelations($order)->loadCount(['offers', 'views']);
     }
@@ -171,13 +178,31 @@ class OrderService
     }
 
     /**
-     * The client cancels their own order — allowed only while no offer has been
-     * accepted yet (the order is still open for offers). Any pending offers are
-     * rejected so bidding agents no longer see a live request.
+     * The client cancels their own order — while still open for offers
+     * (`new` / `offers_sent`) or while awaiting unpaid checkout
+     * (`awaiting_payment`). Once paid / in progress, cancel is refused.
      */
     public function cancelByClient(User $client, Order $order): Order
     {
         abort_unless($order->client_id === $client->id, 404);
+
+        if ($order->status === OrderStatus::AwaitingPayment) {
+            $acceptedAgent = $order->offers()
+                ->where('status', OfferStatus::Accepted)
+                ->with('agent')
+                ->first()
+                ?->agent;
+
+            $this->payments->cancelAwaitingPayment($order, 'client');
+
+            try {
+                $this->notifier->notifyAwaitingPaymentCancelled($order->fresh(), $acceptedAgent);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
+            return $this->withClientRelations($order->fresh());
+        }
 
         if (! $order->status->isOpenForOffers()) {
             throw ValidationException::withMessages([
@@ -185,13 +210,31 @@ class OrderService
             ]);
         }
 
-        $order->offers()
+        $biddingAgents = $order->offers()
             ->where('status', OfferStatus::Pending)
-            ->update(['status' => OfferStatus::Rejected]);
+            ->with('agent')
+            ->get()
+            ->pluck('agent')
+            ->filter()
+            ->unique('id')
+            ->values()
+            ->all();
 
-        $order->update(['status' => OrderStatus::Cancelled]);
+        DB::transaction(function () use ($order): void {
+            $order->offers()
+                ->where('status', OfferStatus::Pending)
+                ->update(['status' => OfferStatus::Rejected]);
 
-        return $this->withClientRelations($order);
+            $order->update(['status' => OrderStatus::Cancelled]);
+        });
+
+        try {
+            $this->notifier->notifyOrderCancelled($order->fresh(), $biddingAgents);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->withClientRelations($order->fresh());
     }
 
     /**

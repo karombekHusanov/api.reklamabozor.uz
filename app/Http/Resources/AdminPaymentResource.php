@@ -38,6 +38,7 @@ class AdminPaymentResource extends JsonResource
             'billing_id' => $this->billing_id,
             'paid_at' => $this->paid_at,
             'refunded_at' => $this->refunded_at,
+            'refund_source' => is_array($this->meta) ? ($this->meta['refund_source'] ?? null) : null,
             'created_at' => $this->created_at,
         ];
     }

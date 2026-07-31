@@ -34,7 +34,14 @@ class OfferController extends ApiController
         $payment = null;
 
         if ($accepted->order->status === OrderStatus::AwaitingPayment) {
-            $payment = $this->payments->startOrderPayment($accepted->order);
+            try {
+                $payment = $this->payments->startOrderPayment($accepted->order);
+            } catch (\Throwable $e) {
+                // The acceptance is already committed; a gateway hiccup (e.g.
+                // Multicard unreachable) must not fail it with a 500. The order
+                // stays awaiting_payment and the client retries via /orders/{id}/pay.
+                report($e);
+            }
         }
 
         return $this->success([

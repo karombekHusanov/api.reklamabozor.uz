@@ -14,6 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Nginx terminates TLS in front of php-fpm; without this, $request->ip()
+        // is 127.0.0.1 and the Multicard callback IP allowlist rejects real webhooks.
+        $middleware->trustProxies(at: '*');
         $middleware->throttleApi();
         $middleware->alias([
             'admin' => EnsureAdmin::class,

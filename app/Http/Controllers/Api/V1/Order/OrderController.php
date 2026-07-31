@@ -62,8 +62,8 @@ class OrderController extends ApiController
     }
 
     /**
-     * Client cancels their own order — only while it is still open for offers
-     * (no offer accepted yet).
+     * Client cancels their own order — while open for offers, or while
+     * awaiting unpaid checkout (awaiting_payment).
      */
     public function cancel(Request $request, Order $order): JsonResponse
     {

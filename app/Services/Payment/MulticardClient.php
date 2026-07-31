@@ -89,34 +89,191 @@ class MulticardClient
     }
 
     /**
-     * Verify a callback signature: sha1(uuid + invoice_id + amount + secret).
-     *
-     * @param  array<string, mixed>  $payload
+     * Cancel an unpaid hosted-checkout invoice. No-op-ish on already-paid
+     * invoices (gateway returns 400) — callers treat failures as best-effort.
      */
-    /**
-     * Verify a callback signature. Multicard signs with:
-     *   md5(store_id + invoice_id + amount + secret)
-     * using the values from the original invoice. We pass invoice_id + amount
-     * from our own Payment (resolved by the callback's gateway uuid) so
-     * verification never depends on the callback's own field naming.
-     *
-     * @param  array<string, mixed>  $payload
-     */
-    public function verifyCallbackSign(array $payload, string $invoiceId, int $amount): bool
+    public function cancelInvoice(string $uuid): void
     {
-        $provided = (string) ($payload['sign'] ?? '');
+        $response = $this->authed()->delete($this->baseUrl().'/payment/invoice/'.$uuid);
 
-        return $provided !== '' && hash_equals($this->callbackSign($invoiceId, $amount), $provided);
+        if (! $response->successful()) {
+            throw new RuntimeException('Multicard invoice cancel failed: '.$response->body());
+        }
     }
 
-    public function callbackSign(string $invoiceId, int $amount): string
+    /**
+     * Full refund of a settled payment (docs: DELETE /payment/{uuid}).
+     * Gateway moves the payment to status `revert`.
+     *
+     * @return array<string, mixed>
+     */
+    public function refundPayment(string $uuid): array
     {
-        return md5(
-            (string) config('services.multicard.store_id')
-            .$invoiceId
-            .(string) $amount
-            .(string) config('services.multicard.secret'),
-        );
+        $response = $this->authed()
+            ->withBody('{}', 'application/json')
+            ->delete($this->baseUrl().'/payment/'.$uuid);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('Multicard refund failed: '.$response->body());
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = $response->json('data') ?? $response->json() ?? [];
+
+        return is_array($data) ? $data : [];
+    }
+
+    // --- Card payouts (agent cash-out): hosted bind form → credit → OTP ---
+
+    /**
+     * Open a hosted card-entry form. The cardholder types their Uzcard/Humo
+     * number on Multicard's page (never on ours), so we stay out of PCI scope.
+     * Returns { session_id, form_url }.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function bindCardForm(array $payload): array
+    {
+        $response = $this->authed()->post($this->baseUrl().'/payment/card/bind', $payload);
+
+        if (! $response->successful() || $response->json('success') !== true) {
+            throw new RuntimeException('Multicard card-bind form failed: '.$response->body());
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = $response->json('data') ?? [];
+
+        return $data;
+    }
+
+    /**
+     * Poll a bind session for its result. Once the card is entered the response
+     * carries `card_token` and `status` = active. Returns the `data` payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function getCardBinding(string $sessionId): array
+    {
+        $response = $this->authed()->get($this->baseUrl().'/payment/card/bind/'.$sessionId);
+
+        /** @var array<string, mixed> $data */
+        $data = $response->json('data') ?? [];
+
+        return $data;
+    }
+
+    /**
+     * Create a payout (credit) to a bound card. With `confirmable` the gateway
+     * returns a draft transaction that must be confirmed with an OTP. Returns
+     * the `data` payload (uuid, status, card_pan, ps, ...).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function createCardPayout(array $payload): array
+    {
+        $response = $this->authed()->post($this->baseUrl().'/payment/credit', $payload);
+
+        if (! $response->successful() || $response->json('success') !== true) {
+            throw new RuntimeException('Multicard credit failed: '.$response->body());
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = $response->json('data') ?? [];
+
+        return $data;
+    }
+
+    /**
+     * Confirm a payout with the OTP the cardholder received. Returns the `data`
+     * payload with the final status (success | error).
+     *
+     * @return array<string, mixed>
+     */
+    public function confirmCardPayout(string $uuid, string $otp): array
+    {
+        $response = $this->authed()->put($this->baseUrl().'/payment/credit/'.$uuid, ['otp' => $otp]);
+
+        if (! $response->successful() || $response->json('success') !== true) {
+            throw new RuntimeException('Multicard credit confirm failed: '.$response->body());
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = $response->json('data') ?? [];
+
+        return $data;
+    }
+
+    /**
+     * Discard a one-time card token after a payout so no card reference is kept.
+     * Best-effort — failures here must not break the withdrawal.
+     */
+    public function annulCardToken(string $token): void
+    {
+        try {
+            $this->authed()->delete($this->baseUrl().'/payment/card/'.$token);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Verify a Multicard callback signature.
+     *
+     * Docs (`callback-webhooks`): sha1(uuid + invoice_id + amount + secret).
+     * Legacy (older stand):      md5(store_id + invoice_id + amount + secret).
+     *
+     * Mode is `services.multicard.callback_sign`: sha1 | md5 | both (default both).
+     * Callers must already have confirmed invoice_id / amount match our Payment.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{ok: bool, alg: string|null} alg = which algorithm matched (for logs)
+     */
+    public function verifyCallbackSign(array $payload, string $uuid, string $invoiceId, int $amount): array
+    {
+        $provided = strtolower(trim((string) ($payload['sign'] ?? '')));
+
+        if ($provided === '') {
+            return ['ok' => false, 'alg' => null];
+        }
+
+        $mode = strtolower((string) config('services.multicard.callback_sign', 'both'));
+        $candidates = match ($mode) {
+            'md5' => ['md5'],
+            'sha1' => ['sha1'],
+            default => ['sha1', 'md5'], // both / unknown → accept either
+        };
+
+        foreach ($candidates as $alg) {
+            $expected = $this->callbackSign($alg, $uuid, $invoiceId, $amount);
+
+            if (hash_equals($expected, $provided)) {
+                return ['ok' => true, 'alg' => $alg];
+            }
+        }
+
+        return ['ok' => false, 'alg' => null];
+    }
+
+    /**
+     * Compute a callback signature for the given algorithm.
+     *
+     * @param  'sha1'|'md5'  $alg
+     */
+    public function callbackSign(string $alg, string $uuid, string $invoiceId, int $amount): string
+    {
+        $secret = (string) config('services.multicard.secret');
+
+        return match ($alg) {
+            'md5' => md5(
+                (string) config('services.multicard.store_id')
+                .$invoiceId
+                .(string) $amount
+                .$secret,
+            ),
+            default => sha1($uuid.$invoiceId.(string) $amount.$secret),
+        };
     }
 
     private function authed(): PendingRequest

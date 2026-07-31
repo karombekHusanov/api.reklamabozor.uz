@@ -49,7 +49,7 @@ class ChatResource extends JsonResource
             'last_message' => $this->whenLoaded('lastMessage', fn () => $this->lastMessage
                 ? new ChatMessageResource($this->lastMessage)
                 : null),
-            'unread_count' => $this->unreadCountFor($user),
+            'unread_count' => (int) $this->unreadCountFor($user),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
