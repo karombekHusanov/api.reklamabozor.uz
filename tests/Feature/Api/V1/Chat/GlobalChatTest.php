@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Api\V1\Chat;
 
+use App\Enums\Role;
+use App\Models\AgentProfile;
 use App\Models\File;
 use App\Models\GlobalChatBan;
 use App\Models\GlobalChatMessage;
@@ -46,31 +48,92 @@ class GlobalChatTest extends TestCase
             ->assertJsonPath('data.0.sender.role', 'client');
     }
 
+    public function test_sender_avatar_prefers_company_logo_then_personal_photo(): void
+    {
+        [$viewer, $headers] = $this->client();
+
+        $logo = File::factory()->create();
+        $personal = File::factory()->create();
+
+        $agent = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client->value, Role::Agent->value],
+            'avatar_file_id' => $personal->id,
+        ]);
+        AgentProfile::factory()->for($agent)->approved()->create([
+            'company_name' => 'MIRON',
+            'company_logo_file_id' => $logo->id,
+        ]);
+
+        GlobalChatMessage::create(['user_id' => $agent->id, 'body' => 'promo']);
+
+        $this->getJson('/api/v1/chat/global/messages', $headers)
+            ->assertOk()
+            ->assertJsonPath('data.0.sender.company_name', 'MIRON')
+            ->assertJsonPath('data.0.sender.avatar_url', $logo->url())
+            ->assertJsonPath('data.0.sender.agent_profile_id', AgentProfile::query()->where('user_id', $agent->id)->value('id'));
+
+        // No studio logo → personal avatar.
+        $client = User::factory()->create(['avatar_file_id' => $personal->id]);
+        GlobalChatMessage::create(['user_id' => $client->id, 'body' => 'salom']);
+
+        $this->getJson('/api/v1/chat/global/messages', $headers)
+            ->assertOk()
+            ->assertJsonPath('data.1.sender.avatar_url', $personal->url());
+
+        unset($viewer);
+    }
+
+    public function test_unread_counts_messages_before_first_home_visit(): void
+    {
+        [$a] = $this->client();
+        [$b, $hb] = $this->client();
+
+        // Agent posts before the client ever hits Home /unread.
+        GlobalChatMessage::create(['user_id' => $a->id, 'body' => 'promo']);
+
+        // GET /unread must NOT mark anything read — client still sees 1.
+        $this->getJson('/api/v1/chat/global/unread', $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 1);
+
+        $this->assertDatabaseMissing('global_chat_reads', ['user_id' => $b->id]);
+    }
+
     public function test_unread_counts_new_messages_excluding_own(): void
     {
         [$a] = $this->client();
         [$b, $hb] = $this->client();
 
         // ids 1,2,3 → A, B, A
-        $m1 = GlobalChatMessage::create(['user_id' => $a->id, 'body' => '1']);
+        GlobalChatMessage::create(['user_id' => $a->id, 'body' => '1']);
         GlobalChatMessage::create(['user_id' => $b->id, 'body' => '2']);
         $m3 = GlobalChatMessage::create(['user_id' => $a->id, 'body' => '3']);
 
-        // No cursor yet → nothing counted, but the head id is reported so the
-        // client can seed its cursor without flashing a badge.
+        // B never opened the feed: A's messages (1 + 3) count; B's own does not.
         $this->getJson('/api/v1/chat/global/unread', $hb)
             ->assertOk()
-            ->assertJsonPath('data.count', 0)
+            ->assertJsonPath('data.count', 2)
             ->assertJsonPath('data.latest_id', $m3->id);
 
-        // Seen up to m1: B has one unread (A's m3) — their own m2 is excluded.
-        $this->getJson("/api/v1/chat/global/unread?after_id={$m1->id}", $hb)
+        // Opening the feed marks it read.
+        $this->postJson('/api/v1/chat/global/read', ['message_id' => $m3->id], $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+
+        // A posts again → B has one unread.
+        $m4 = GlobalChatMessage::create(['user_id' => $a->id, 'body' => '4']);
+
+        $this->getJson('/api/v1/chat/global/unread', $hb)
             ->assertOk()
             ->assertJsonPath('data.count', 1)
-            ->assertJsonPath('data.latest_id', $m3->id);
+            ->assertJsonPath('data.latest_id', $m4->id);
 
-        // Caught up: nothing unread.
-        $this->getJson("/api/v1/chat/global/unread?after_id={$m3->id}", $hb)
+        $this->postJson('/api/v1/chat/global/read', ['message_id' => $m4->id], $hb)
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+
+        $this->getJson('/api/v1/chat/global/unread', $hb)
             ->assertOk()
             ->assertJsonPath('data.count', 0);
     }

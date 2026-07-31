@@ -44,17 +44,25 @@ class GlobalChatController extends ApiController
     }
 
     /**
-     * Unread count for the home badge, relative to the client's last-seen id.
+     * Unread count for the home badge (server-tracked last-seen cursor).
      */
     public function unread(Request $request): JsonResponse
     {
+        return $this->success($this->chat->unread($request->user()));
+    }
+
+    /**
+     * Mark the global feed read up to `message_id` (or the current head).
+     */
+    public function markSeen(Request $request): JsonResponse
+    {
         $validated = $request->validate([
-            'after_id' => ['nullable', 'integer', 'min:0'],
+            'message_id' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        return $this->success($this->chat->unread(
+        return $this->success($this->chat->markSeen(
             $request->user(),
-            isset($validated['after_id']) ? (int) $validated['after_id'] : null,
+            isset($validated['message_id']) ? (int) $validated['message_id'] : null,
         ));
     }
 

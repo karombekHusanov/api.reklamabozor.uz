@@ -106,6 +106,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Community-wide global chat, open to every authenticated user.
     Route::get('/chat/global', [GlobalChatController::class, 'meta']);
     Route::get('/chat/global/unread', [GlobalChatController::class, 'unread']);
+    Route::post('/chat/global/read', [GlobalChatController::class, 'markSeen']);
     Route::get('/chat/global/messages', [GlobalChatController::class, 'messages']);
     // Tight flood guard on top of the cooldown rules.
     Route::post('/chat/global/messages', [GlobalChatController::class, 'store'])

@@ -5,6 +5,7 @@ namespace App\Services\GlobalChat;
 use App\Enums\Role;
 use App\Models\GlobalChatBan;
 use App\Models\GlobalChatMessage;
+use App\Models\GlobalChatRead;
 use App\Models\GlobalChatRule;
 use App\Models\GlobalChatSetting;
 use App\Models\User;
@@ -59,7 +60,7 @@ class GlobalChatService
     {
         $query = GlobalChatMessage::query()
             ->visible()
-            ->with(['user.agentProfile', 'attachments']);
+            ->with(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'attachments']);
 
         if ($afterId !== null) {
             return $query->where('id', '>', $afterId)->oldest('id')->limit($limit)->get();
@@ -74,27 +75,54 @@ class GlobalChatService
     }
 
     /**
-     * Unread badge state for the home screen. The client keeps its own
-     * last-seen cursor (`afterId`); we count visible messages newer than it,
-     * excluding the caller's own posts. `latest_id` lets a first-time client
-     * initialise the cursor without flashing a spurious badge.
+     * Unread badge for the home screen.
+     *
+     * Important: this endpoint is read-only. Seeding / advancing the cursor
+     * happens only in {@see markSeen()} when the user actually opens the feed.
+     * (Auto-seeding on GET used to mark brand-new messages as already read the
+     * moment Home polled `/unread`.)
      *
      * @return array{count: int, latest_id: int}
      */
-    public function unread(User $user, ?int $afterId = null): array
+    public function unread(User $user): array
     {
         $latestId = (int) GlobalChatMessage::query()->visible()->max('id');
+        $read = GlobalChatRead::query()->where('user_id', $user->id)->first();
+        $afterId = (int) ($read?->last_seen_message_id ?? 0);
 
-        $count = 0;
-        if ($afterId !== null) {
-            $count = GlobalChatMessage::query()
-                ->visible()
-                ->where('id', '>', $afterId)
-                ->where('user_id', '!=', $user->id)
-                ->count();
+        $query = GlobalChatMessage::query()
+            ->visible()
+            ->where('id', '>', $afterId)
+            ->where('user_id', '!=', $user->id);
+
+        // Never opened the feed: ignore history from before this account existed
+        // so a brand-new user isn't hit with the entire community backlog.
+        if ($read === null) {
+            $query->where('created_at', '>=', $user->created_at);
         }
 
-        return ['count' => $count, 'latest_id' => $latestId];
+        return [
+            'count' => $query->count(),
+            'latest_id' => $latestId,
+        ];
+    }
+
+    /**
+     * Advance the caller's last-seen cursor (opening the feed / polling).
+     * When `$maxId` is null, catch up to the current head.
+     *
+     * @return array{count: int, latest_id: int}
+     */
+    public function markSeen(User $user, ?int $maxId = null): array
+    {
+        $latestId = (int) GlobalChatMessage::query()->visible()->max('id');
+        $target = $maxId !== null ? min(max(0, $maxId), $latestId) : $latestId;
+
+        $read = GlobalChatRead::query()->firstOrNew(['user_id' => $user->id]);
+        $read->last_seen_message_id = max((int) $read->last_seen_message_id, $target);
+        $read->save();
+
+        return ['count' => 0, 'latest_id' => $latestId];
     }
 
     /**
@@ -144,7 +172,7 @@ class GlobalChatService
 
             MessageAttachments::attach($message->attachments(), $files);
 
-            return $message->load(['user.agentProfile', 'attachments']);
+            return $message->load(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'attachments']);
         });
     }
 
