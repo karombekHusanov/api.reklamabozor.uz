@@ -31,15 +31,18 @@ class OrderNotifier
         $order->loadMissing('category');
         Order::hydrateAttachmentFiles($order);
 
+        $broadcast = $order->target_agent_id === null
+            && ($order->category?->shouldBroadcastToAllProviders() ?? false);
+
         $recipients = User::query()
             ->whereNotNull('telegram_id')
-            ->whereHas('agentProfile', function ($query) use ($order): void {
+            ->whereHas('agentProfile', function ($query) use ($order, $broadcast): void {
                 $query->where('status', AgentProfileStatus::Approved);
 
-                // Broadcast order → every approved provider serving the category.
-                // Directed order → only the chosen agency (filtered by id below),
-                // so the category constraint is skipped here.
-                if ($order->target_agent_id === null) {
+                // Directed order → only the chosen agency (filtered by id below).
+                // Broadcast ("Other" or empty category) → every approved provider.
+                // Otherwise → only providers who listed this category.
+                if ($order->target_agent_id === null && ! $broadcast) {
                     $query->whereHas('categories', fn ($c) => $c->where('categories.id', $order->category_id));
                 }
             })

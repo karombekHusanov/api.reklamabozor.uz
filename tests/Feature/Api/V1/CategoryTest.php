@@ -27,6 +27,7 @@ class CategoryTest extends TestCase
         Category::factory()->inactive()->create();
         Category::factory()->designer()->create();
 
+        // Migration seeds one agent "Boshqa" catch-all → 3 factory + 1 seeded.
         $response = $this->getJson('/api/v1/categories?type=agent', [
             'Authorization' => 'Bearer '.$this->userToken(),
         ]);
@@ -34,12 +35,17 @@ class CategoryTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonCount(3, 'data');
+            ->assertJsonCount(4, 'data');
 
         foreach ($response->json('data') as $category) {
             $this->assertSame('agent', $category['type']);
             $this->assertTrue($category['is_active']);
+            $this->assertArrayHasKey('is_other', $category);
         }
+
+        $this->assertTrue(
+            collect($response->json('data'))->contains(fn (array $c) => $c['is_other'] === true),
+        );
     }
 
     public function test_filters_by_designer_type(): void
@@ -47,12 +53,13 @@ class CategoryTest extends TestCase
         Category::factory()->count(2)->create();
         Category::factory()->designer()->create();
 
+        // Migration seeds one designer "Boshqa" → 1 factory + 1 seeded.
         $this->getJson('/api/v1/categories?type=designer', [
             'Authorization' => 'Bearer '.$this->userToken(),
         ])
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.type', 'designer');
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.1.type', 'designer');
     }
 
     public function test_rejects_invalid_type(): void

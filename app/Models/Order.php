@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\OrderStatus;
+use App\Enums\ReviewDirection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -40,6 +41,7 @@ class Order extends Model
         'completion_reminder_sent_at',
         'completed_at',
         'auto_completed',
+        'disputed_at',
     ];
 
     /**
@@ -51,7 +53,9 @@ class Order extends Model
         'category',
         'targetAgent.agentProfile',
         'offers.agentProfile.companyLogoFile',
+        'acceptedOffer.agentProfile',
         'review',
+        'providerReview',
         'latestPayment',
     ];
 
@@ -161,9 +165,30 @@ class Order extends Model
         return $this->hasOne(Chat::class);
     }
 
+    /**
+     * The client's review of the provider (backward-compat single review).
+     */
     public function review(): HasOne
     {
-        return $this->hasOne(Review::class);
+        return $this->hasOne(Review::class)
+            ->where('direction', ReviewDirection::ClientToProvider);
+    }
+
+    /**
+     * The provider's review of the client.
+     */
+    public function providerReview(): HasOne
+    {
+        return $this->hasOne(Review::class)
+            ->where('direction', ReviewDirection::ProviderToClient);
+    }
+
+    /**
+     * Both reviews on this order (client→provider and provider→client).
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class);
     }
 
     /**
@@ -253,6 +278,7 @@ class Order extends Model
             'completion_reminder_sent_at' => 'datetime',
             'completed_at' => 'datetime',
             'auto_completed' => 'boolean',
+            'disputed_at' => 'datetime',
         ];
     }
 }

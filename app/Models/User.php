@@ -115,6 +115,41 @@ class User extends Authenticatable
     }
 
     /**
+     * Fallback profile for bidding on a broadcast order ("Other" category or
+     * a normal category with no approved providers). Prefers a profile whose
+     * provider_type matches the order category type; otherwise any approved
+     * profile. Null when the order is not a broadcast or the user has none.
+     */
+    public function providerProfileForBroadcastOrder(Order $order): ?AgentProfile
+    {
+        $order->loadMissing('category');
+
+        if ($order->category === null || ! $order->category->shouldBroadcastToAllProviders()) {
+            return null;
+        }
+
+        $matchingType = ProviderType::tryFrom($order->category->type->value);
+
+        $profiles = $this->providerProfiles()
+            ->where('status', AgentProfileStatus::Approved)
+            ->get();
+
+        if ($profiles->isEmpty()) {
+            return null;
+        }
+
+        if ($matchingType !== null) {
+            $typed = $profiles->firstWhere('provider_type', $matchingType);
+
+            if ($typed !== null) {
+                return $typed;
+            }
+        }
+
+        return $profiles->first();
+    }
+
+    /**
      * The profile representing the user where there is no order/offer context
      * (global chat, admin user list): the agency profile if any, else the
      * first provider profile.

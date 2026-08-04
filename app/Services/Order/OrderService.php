@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
@@ -166,7 +167,10 @@ class OrderService
             'status' => OrderStatus::InProgress,
             'work_submitted_at' => null,
             'completion_reminder_sent_at' => null,
+            'disputed_at' => now(),
         ]);
+
+        $this->dispatchRatingRecompute($order);
 
         try {
             $this->notifier->notifyDisputeOpened($order);
@@ -228,6 +232,8 @@ class OrderService
             $order->update(['status' => OrderStatus::Cancelled]);
         });
 
+        RecalculateRating::dispatch($client->id);
+
         try {
             $this->notifier->notifyOrderCancelled($order->fresh(), $biddingAgents);
         } catch (\Throwable $e) {
@@ -253,10 +259,25 @@ class OrderService
         // advance (gateway flow only). A manager releases it later.
         $this->payouts->planFinal($order);
 
+        $this->dispatchRatingRecompute($order);
+
         try {
             $this->notifier->notifyOrderCompleted($order, $auto);
         } catch (\Throwable $e) {
             report($e);
+        }
+    }
+
+    /**
+     * Queue a rating recompute for both sides of a deal.
+     */
+    private function dispatchRatingRecompute(Order $order): void
+    {
+        RecalculateRating::dispatch($order->client_id);
+
+        $agentId = $order->acceptedOffer()->value('agent_id');
+        if ($agentId !== null) {
+            RecalculateRating::dispatch($agentId);
         }
     }
 

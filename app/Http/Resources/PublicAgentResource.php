@@ -45,11 +45,22 @@ class PublicAgentResource extends JsonResource
             'results_text' => $this->results_text,
             'completion_percent' => $this->completionPercent(),
             'completed_orders_count' => (int) ($this->completed_orders_count ?? 0),
-            // Moderated review aggregates (avg is null until the first approved review).
-            'rating_avg' => $this->approved_reviews_avg_rating !== null
-                ? round((float) $this->approved_reviews_avg_rating, 1)
-                : null,
-            'rating_count' => (int) ($this->approved_reviews_count ?? 0),
+            // Stars/Grade from the user_ratings cache (falls back to legacy aggregates).
+            'stars' => $this->cachedRating?->stars !== null
+                ? (float) $this->cachedRating->stars
+                : ($this->approved_reviews_avg_rating !== null
+                    ? round((float) $this->approved_reviews_avg_rating, 1)
+                    : null),
+            'stars_count' => $this->cachedRating?->stars_count ?? (int) ($this->approved_reviews_count ?? 0),
+            'grade' => $this->cachedRating?->grade ?? 50,
+            'listing_boost' => $this->cachedRating?->listing_boost ?? 0,
+            // Backward-compat aliases.
+            'rating_avg' => $this->cachedRating?->stars_count > 0
+                ? (float) $this->cachedRating->stars
+                : ($this->approved_reviews_avg_rating !== null
+                    ? round((float) $this->approved_reviews_avg_rating, 1)
+                    : null),
+            'rating_count' => $this->cachedRating?->stars_count ?? (int) ($this->approved_reviews_count ?? 0),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
             'reviews' => PublicReviewResource::collection($this->whenLoaded('approvedReviews')),
             'advantages' => AdvantageResource::collection($this->whenLoaded('advantages')),

@@ -17,9 +17,13 @@ class ReviewResource extends JsonResource
         return [
             'id' => $this->id,
             'order_id' => $this->order_id,
-            'rating' => $this->rating,
+            'direction' => $this->direction->value,
+            'rating' => (float) $this->rating,
+            'criteria' => $this->criteria,
             'comment' => $this->comment,
             'status' => $this->status->value,
+            'reviewer_id' => $this->reviewer_id,
+            'reviewee_id' => $this->reviewee_id,
             'created_at' => $this->created_at,
         ];
     }

@@ -32,6 +32,7 @@ class CategorySeeder extends Seeder
                 [
                     'name_ru' => $category['name_ru'],
                     'is_active' => true,
+                    'is_other' => false,
                     'sort_order' => $index,
                 ],
             );
@@ -50,7 +51,22 @@ class CategorySeeder extends Seeder
                 [
                     'name_ru' => $category['name_ru'],
                     'is_active' => true,
+                    'is_other' => false,
                     'sort_order' => $index,
+                ],
+            );
+        }
+
+        // Catch-all: orders here (and empty normal categories) notify every
+        // approved provider. Kept last via sort_order.
+        foreach ([CategoryType::Agent, CategoryType::Designer] as $type) {
+            Category::updateOrCreate(
+                ['name_uz' => 'Boshqa', 'type' => $type],
+                [
+                    'name_ru' => 'Другое',
+                    'is_active' => true,
+                    'is_other' => true,
+                    'sort_order' => 999,
                 ],
             );
         }

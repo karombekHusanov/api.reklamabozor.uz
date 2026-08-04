@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ReviewDirection;
 use App\Models\Offer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -18,6 +19,12 @@ class AgentOfferResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $myReview = null;
+        if ($this->relationLoaded('order') && $this->order?->relationLoaded('reviews')) {
+            $myReview = $this->order->reviews
+                ->first(fn ($r) => $r->direction === ReviewDirection::ProviderToClient);
+        }
+
         return [
             'id' => $this->id,
             'price' => $this->price,
@@ -31,6 +38,7 @@ class AgentOfferResource extends JsonResource
                     ? new CategoryResource($this->order->category)
                     : null,
             ],
+            'my_review' => $myReview ? new ReviewResource($myReview) : null,
             'created_at' => $this->created_at,
         ];
     }

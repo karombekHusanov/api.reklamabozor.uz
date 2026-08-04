@@ -30,6 +30,11 @@ class PublicOrderResource extends JsonResource
             'status' => $this->status->value,
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
+            'client' => $this->whenLoaded('client', fn () => [
+                'id' => $this->client->id,
+                'first_name' => $this->client->first_name,
+                'avatar' => $this->client->avatarFile?->url(),
+            ]),
             'created_at' => $this->created_at,
         ];
     }

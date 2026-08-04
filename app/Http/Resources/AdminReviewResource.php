@@ -7,8 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * A review as shown in the admin moderation queue: rating + comment plus
- * who wrote it and which agency it targets.
+ * A review as shown in the admin moderation queue: rating + criteria + comment
+ * plus who wrote it and who received it.
  *
  * @mixin Review
  */
@@ -22,9 +22,19 @@ class AdminReviewResource extends JsonResource
         return [
             'id' => $this->id,
             'order_id' => $this->order_id,
-            'rating' => $this->rating,
+            'direction' => $this->direction->value,
+            'rating' => (float) $this->rating,
+            'criteria' => $this->criteria,
             'comment' => $this->comment,
             'status' => $this->status->value,
+            'reviewer' => [
+                'id' => $this->reviewer?->id,
+                'name' => trim(($this->reviewer?->first_name ?? '').' '.($this->reviewer?->last_name ?? '')),
+            ],
+            'reviewee' => [
+                'id' => $this->reviewee?->id,
+                'name' => trim(($this->reviewee?->first_name ?? '').' '.($this->reviewee?->last_name ?? '')),
+            ],
             'client' => [
                 'id' => $this->client?->id,
                 'name' => trim(($this->client?->first_name ?? '').' '.($this->client?->last_name ?? '')),

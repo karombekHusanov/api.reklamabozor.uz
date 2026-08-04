@@ -176,6 +176,11 @@ class OrderTest extends TestCase
         $otherCategory = Category::factory()->create();
         $file = File::factory()->create(['uploaded_by' => $client->id]);
 
+        // Matching agent so the category is NOT empty (empty → broadcast-all).
+        $insider = User::factory()->create(['telegram_id' => 111222333]);
+        AgentProfile::factory()->for($insider)->approved()->create()
+            ->categories()->attach($orderCategory);
+
         $outsider = User::factory()->create(['telegram_id' => 999888777]);
         AgentProfile::factory()->for($outsider)->approved()->create()
             ->categories()->attach($otherCategory);
@@ -186,7 +191,55 @@ class OrderTest extends TestCase
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
+        Http::assertSent(fn ($request) => ($request['chat_id'] ?? null) === 111222333);
         Http::assertNotSent(fn ($request) => ($request['chat_id'] ?? null) === 999888777);
+    }
+
+    public function test_empty_category_notifies_all_approved_agents(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $emptyCategory = Category::factory()->create();
+        $servedCategory = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $agentA = User::factory()->create(['telegram_id' => 101010101]);
+        AgentProfile::factory()->for($agentA)->approved()->create()
+            ->categories()->attach($servedCategory);
+
+        $agentB = User::factory()->create(['telegram_id' => 202020202]);
+        AgentProfile::factory()->for($agentB)->approved()->create()
+            ->categories()->attach($servedCategory);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $emptyCategory->id,
+            'description' => 'No one serves this category yet.',
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        Http::assertSent(fn ($request) => ($request['chat_id'] ?? null) === 101010101);
+        Http::assertSent(fn ($request) => ($request['chat_id'] ?? null) === 202020202);
+    }
+
+    public function test_other_category_notifies_all_approved_agents(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $other = Category::query()->where('is_other', true)->where('type', 'agent')->firstOrFail();
+        $servedCategory = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $agent = User::factory()->create(['telegram_id' => 303030303]);
+        AgentProfile::factory()->for($agent)->approved()->create()
+            ->categories()->attach($servedCategory);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $other->id,
+            'description' => 'Something custom outside the list.',
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        Http::assertSent(fn ($request) => ($request['chat_id'] ?? null) === 303030303);
     }
 
     public function test_new_order_notification_deep_links_to_the_order(): void

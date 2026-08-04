@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
+use App\Enums\ReviewDirection;
 use App\Models\AgentProfile;
 use App\Models\Chat;
 use App\Models\Offer;
@@ -24,8 +25,10 @@ class OfferService
     ) {}
 
     /**
-     * Orders an approved agent may bid on: open for offers, in one of the
-     * agent's categories. Each order carries the agent's own offer (if any).
+     * Orders an approved agent may bid on: open for offers, and either in one
+     * of the agent's categories or a broadcast order ("Other" / empty category
+     * with no approved providers). Each order carries the agent's own offer
+     * (if any).
      *
      * @return Collection<int, Order>
      */
@@ -47,7 +50,22 @@ class OfferService
             ->values();
 
         $orders = Order::query()
-            ->whereIn('category_id', $categoryIds)
+            ->where(function ($query) use ($categoryIds): void {
+                $query->whereIn('category_id', $categoryIds)
+                    ->orWhereHas('category', function ($categoryQuery): void {
+                        // Catch-all "Boshqa" always open to every approved provider.
+                        $categoryQuery->where('is_other', true);
+                    })
+                    ->orWhereHas('category', function ($categoryQuery): void {
+                        // Normal category with nobody approved to serve it yet.
+                        $categoryQuery
+                            ->where('is_other', false)
+                            ->whereDoesntHave(
+                                'agentProfiles',
+                                fn ($profileQuery) => $profileQuery->where('status', AgentProfileStatus::Approved),
+                            );
+                    });
+            })
             // Broadcast orders (no target) are open to all; a directed order only
             // ever shows to the single agency it was addressed to.
             ->where(fn ($q) => $q->whereNull('target_agent_id')->orWhere('target_agent_id', $agent->id))
@@ -55,7 +73,7 @@ class OfferService
             ->withCount(['views', 'offers'])
             ->with([
                 'category',
-                'client',
+                'client.avatarFile',
                 'offers' => fn ($query) => $query->where('agent_id', $agent->id),
             ])
             ->latest()
@@ -97,9 +115,12 @@ class OfferService
      */
     public function submitOffer(User $agent, Order $order, array $data): Offer
     {
-        // The approved profile whose categories include this order's — i.e. the
-        // one bidding. Null means no eligible profile (unapproved or off-category).
-        $profile = $agent->providerProfileForCategory($order->category_id);
+        $order->loadMissing('category');
+
+        // Prefer the profile that lists this category; for broadcast orders
+        // ("Other" / empty category) fall back to any approved profile.
+        $profile = $agent->providerProfileForCategory($order->category_id)
+            ?? $agent->providerProfileForBroadcastOrder($order);
 
         if ($profile === null) {
             throw ValidationException::withMessages([
@@ -148,7 +169,11 @@ class OfferService
     {
         return Offer::query()
             ->where('agent_id', $agent->id)
-            ->with('order.category')
+            ->with([
+                'order.category',
+                'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
+                    ->where('reviewer_id', $agent->id),
+            ])
             ->latest()
             ->get();
     }

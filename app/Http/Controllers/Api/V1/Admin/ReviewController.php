@@ -2,29 +2,37 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Enums\ReviewDirection;
 use App\Enums\ReviewStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\AdminReviewResource;
 use App\Models\Review;
+use App\Services\Review\ReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class ReviewController extends ApiController
 {
+    public function __construct(
+        private readonly ReviewService $reviews,
+    ) {}
+
     /**
-     * Moderation queue — filterable by status, newest first.
+     * Moderation queue — filterable by status and direction, newest first.
      */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'status' => ['nullable', Rule::enum(ReviewStatus::class)],
+            'direction' => ['nullable', Rule::enum(ReviewDirection::class)],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         $paginator = Review::query()
-            ->with(['client', 'agent', 'agentProfile'])
+            ->with(['client', 'agent', 'agentProfile', 'reviewer', 'reviewee'])
             ->when($validated['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->when($validated['direction'] ?? null, fn ($q, $dir) => $q->where('direction', $dir))
             ->latest()
             ->paginate($validated['per_page'] ?? 15);
 
@@ -40,8 +48,7 @@ class ReviewController extends ApiController
     }
 
     /**
-     * Approve or reject a review. Approving makes it public and counts it
-     * into the agency's average rating.
+     * Approve or reject a review. Approving triggers a rating recompute.
      */
     public function updateStatus(Request $request, Review $review): JsonResponse
     {
@@ -49,10 +56,11 @@ class ReviewController extends ApiController
             'status' => ['required', Rule::in([ReviewStatus::Approved->value, ReviewStatus::Rejected->value])],
         ]);
 
-        $review->update(['status' => ReviewStatus::from($validated['status'])]);
+        $status = ReviewStatus::from($validated['status']);
+        $review = $this->reviews->moderate($review, $status);
 
         return $this->success(
-            new AdminReviewResource($review->load(['client', 'agent', 'agentProfile'])),
+            new AdminReviewResource($review->load(['client', 'agent', 'agentProfile', 'reviewer', 'reviewee'])),
             'Review status updated',
         );
     }

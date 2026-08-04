@@ -26,6 +26,7 @@ class OfferResource extends JsonResource
             'agent' => [
                 'id' => $this->agent_id,
                 'profile_id' => $profile?->id,
+                'provider_type' => $profile?->provider_type?->value,
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
                 'location_label' => $profile?->location_label,

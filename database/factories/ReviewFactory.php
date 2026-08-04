@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\ReviewDirection;
 use App\Enums\ReviewStatus;
 use App\Models\AgentProfile;
 use App\Models\Order;
@@ -21,11 +22,17 @@ class ReviewFactory extends Factory
      */
     public function definition(): array
     {
+        $client = User::factory();
+        $agent = User::factory();
+
         return [
             'order_id' => Order::factory(),
-            'client_id' => User::factory(),
-            'agent_id' => User::factory(),
-            'rating' => fake()->numberBetween(1, 5),
+            'direction' => ReviewDirection::ClientToProvider,
+            'client_id' => $client,
+            'agent_id' => $agent,
+            'reviewer_id' => $client,
+            'reviewee_id' => $agent,
+            'rating' => fake()->randomFloat(2, 1, 5),
             'comment' => fake()->sentence(),
             'status' => ReviewStatus::Pending,
         ];
@@ -34,6 +41,20 @@ class ReviewFactory extends Factory
     public function approved(): static
     {
         return $this->state(fn (array $attributes) => ['status' => ReviewStatus::Approved]);
+    }
+
+    public function clientToProvider(): static
+    {
+        return $this->state(fn (array $attributes) => ['direction' => ReviewDirection::ClientToProvider]);
+    }
+
+    public function providerToClient(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'direction' => ReviewDirection::ProviderToClient,
+            'reviewer_id' => $attributes['agent_id'] ?? User::factory(),
+            'reviewee_id' => $attributes['client_id'] ?? User::factory(),
+        ]);
     }
 
     /**

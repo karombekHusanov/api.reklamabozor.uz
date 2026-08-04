@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
+use App\Http\Controllers\Api\V1\Admin\RatingController as AdminRatingController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\AdvantageController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\PublicClientController;
 use App\Http\Controllers\Api\V1\PublicOrderController;
+use App\Http\Controllers\Api\V1\Rating\RatingController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -80,12 +82,18 @@ Route::prefix('auth')->group(function (): void {
 
 // Authenticated mini app surface (any logged-in user).
 Route::middleware('auth:sanctum')->group(function (): void {
+    // Showcase detail — full order view for authenticated users (providers see
+    // can_offer + my_offer). Placed before /orders/{order} to avoid conflict.
+    Route::get('/orders/showcase/{order}', [PublicOrderController::class, 'show']);
+
     Route::post('/file-upload', [FileUploadController::class, 'store']);
     Route::patch('/me', [ProfileController::class, 'update']);
     Route::patch('/me/role', [ProfileController::class, 'setRole']);
     Route::patch('/me/person-type', [ProfileController::class, 'setPersonType']);
     Route::get('/me/legal-entity', [LegalEntityController::class, 'show']);
     Route::post('/me/legal-entity', [LegalEntityController::class, 'store']);
+
+    Route::get('/me/rating', [RatingController::class, 'me']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/clients/{user}', [PublicClientController::class, 'show'])->whereNumber('user');
@@ -140,6 +148,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Client rates the agency once the order is completed (moderated).
     Route::post('/orders/{order}/review', [ReviewController::class, 'store']);
+    Route::get('/orders/{order}/reviews', [ReviewController::class, 'index']);
+
+    // Rating criteria definitions per role (public list for the review form).
+    Route::get('/review-criteria', [ReviewController::class, 'criteria']);
 
     Route::prefix('agent')->group(function (): void {
         Route::get('/profile', [AgentProfileController::class, 'show']);
@@ -151,6 +163,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/orders', [AgentOrderController::class, 'index']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
+        Route::post('/orders/{order}/review', [AgentOrderController::class, 'storeReview']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
 
         // Earnings: escrow payouts owed/paid + withdrawable balance.
@@ -207,6 +220,8 @@ Route::prefix('admin')
         // Agent payouts out of escrow — manager reviews + releases (marks paid).
         Route::get('/payouts', [AdminPayoutController::class, 'index']);
         Route::patch('/payouts/{payout}/release', [AdminPayoutController::class, 'release']);
+
+        Route::get('/users/{user}/rating', [AdminRatingController::class, 'show']);
 
         Route::get('/reviews', [AdminReviewController::class, 'index']);
         Route::patch('/reviews/{review}/status', [AdminReviewController::class, 'updateStatus']);

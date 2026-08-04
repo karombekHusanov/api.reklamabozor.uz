@@ -6,12 +6,14 @@ use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProviderType;
+use App\Enums\ReviewDirection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AgentProfile extends Model
 {
@@ -121,12 +123,15 @@ class AgentProfile extends Model
     }
 
     /**
-     * Moderated client reviews — the only ones that count publicly.
+     * Moderated client→provider reviews — the only ones that count publicly.
      * Keyed on agent_profile_id (this profile's reputation only).
+     * Excludes provider→client reviews that also store agent_profile_id.
      */
     public function approvedReviews(): HasMany
     {
-        return $this->hasMany(Review::class, 'agent_profile_id')->approved();
+        return $this->hasMany(Review::class, 'agent_profile_id')
+            ->where('direction', ReviewDirection::ClientToProvider)
+            ->approved();
     }
 
     /**
@@ -140,6 +145,15 @@ class AgentProfile extends Model
     public function portfolioItems(): HasMany
     {
         return $this->hasMany(AgentPortfolioItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Cached Stars/Grade row for this profile.
+     * One row per profile_id (role matched to provider_type at recompute time).
+     */
+    public function cachedRating(): HasOne
+    {
+        return $this->hasOne(UserRating::class, 'agent_profile_id');
     }
 
     /**

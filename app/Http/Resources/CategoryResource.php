@@ -20,6 +20,7 @@ class CategoryResource extends JsonResource
             'name_ru' => $this->name_ru,
             'type' => $this->type->value,
             'is_active' => $this->is_active,
+            'is_other' => (bool) $this->is_other,
             'sort_order' => $this->sort_order,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

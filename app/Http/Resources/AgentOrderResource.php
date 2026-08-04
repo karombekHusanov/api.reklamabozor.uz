@@ -36,7 +36,9 @@ class AgentOrderResource extends JsonResource
             'views_count' => $this->whenCounted('views'),
             'offers_count' => $this->whenCounted('offers'),
             'client' => [
+                'id' => $this->client?->id,
                 'first_name' => $this->client?->first_name,
+                'avatar' => $this->client?->avatarFile?->url(),
             ],
             'my_offer' => $myOffer ? [
                 'id' => $myOffer->id,

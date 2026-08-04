@@ -23,6 +23,7 @@ class CategoryFactory extends Factory
             'name_ru' => fake()->words(2, true),
             'type' => CategoryType::Agent,
             'is_active' => true,
+            'is_other' => false,
             'sort_order' => fake()->numberBetween(0, 100),
         ];
     }
@@ -38,6 +39,16 @@ class CategoryFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
+        ]);
+    }
+
+    public function other(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'name_uz' => 'Boshqa',
+            'name_ru' => 'Другое',
+            'is_other' => true,
+            'sort_order' => 999,
         ]);
     }
 }

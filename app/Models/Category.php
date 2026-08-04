@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AgentProfileStatus;
 use App\Enums\CategoryType;
 use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +24,7 @@ class Category extends Model
         'name_ru',
         'type',
         'is_active',
+        'is_other',
         'sort_order',
     ];
 
@@ -35,6 +37,31 @@ class Category extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    /**
+     * True when new orders in this category should be offered to every
+     * approved provider (not only those who listed the category): the
+     * catch-all "Boshqa/Other" row, or a normal category with nobody
+     * approved to serve it yet.
+     */
+    public function shouldBroadcastToAllProviders(): bool
+    {
+        if ($this->is_other) {
+            return true;
+        }
+
+        return ! $this->hasApprovedProviders();
+    }
+
+    /**
+     * Whether at least one approved provider profile lists this category.
+     */
+    public function hasApprovedProviders(): bool
+    {
+        return $this->agentProfiles()
+            ->where('status', AgentProfileStatus::Approved)
+            ->exists();
     }
 
     /**
@@ -65,6 +92,17 @@ class Category extends Model
     }
 
     /**
+     * Catch-all "Other / Boshqa" categories that always broadcast.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOther(Builder $query): Builder
+    {
+        return $query->where('is_other', true);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -72,6 +110,7 @@ class Category extends Model
         return [
             'type' => CategoryType::class,
             'is_active' => 'boolean',
+            'is_other' => 'boolean',
             'sort_order' => 'integer',
         ];
     }

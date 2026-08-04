@@ -50,6 +50,7 @@ class OrderResource extends JsonResource
                 fn () => $this->latestPayment ? new PaymentResource($this->latestPayment) : null,
             ),
             'review' => new ReviewResource($this->whenLoaded('review')),
+            'provider_review' => new ReviewResource($this->whenLoaded('providerReview')),
             'offers' => OfferResource::collection($this->whenLoaded('offers')),
             'offers_count' => $this->whenCounted('offers'),
             'views_count' => $this->whenCounted('views'),

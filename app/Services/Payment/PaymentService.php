@@ -8,6 +8,7 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\WithdrawalStatus;
+use App\Jobs\RecalculateRating;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Payment;
@@ -347,6 +348,8 @@ class PaymentService
         }
 
         $order->update(['status' => OrderStatus::Cancelled]);
+
+        RecalculateRating::dispatch($order->client_id);
 
         try {
             if ($reason === 'client') {

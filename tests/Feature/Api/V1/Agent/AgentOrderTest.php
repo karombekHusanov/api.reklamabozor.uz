@@ -35,7 +35,13 @@ class AgentOrderTest extends TestCase
         $category = Category::factory()->create();
         [, $token] = $this->approvedAgent($category);
 
-        Order::factory()->for(Category::factory()->create())->create(); // other category
+        // Foreign category with its own approved provider → not a broadcast order.
+        $foreign = Category::factory()->create();
+        $otherAgent = User::factory()->create();
+        AgentProfile::factory()->for($otherAgent)->approved()->create()
+            ->categories()->attach($foreign);
+        Order::factory()->for($foreign)->create();
+
         $relevant = Order::factory()->for($category)->create();
 
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
@@ -43,6 +49,22 @@ class AgentOrderTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $relevant->id)
             ->assertJsonPath('data.0.my_offer', null);
+    }
+
+    public function test_agent_order_includes_client_id_and_avatar(): void
+    {
+        $category = Category::factory()->create();
+        [, $token] = $this->approvedAgent($category);
+        $client = User::factory()->create(['first_name' => 'Aziz']);
+        Order::factory()->for($category)->for($client, 'client')->create();
+
+        $response = $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
+            ->assertOk();
+
+        $clientData = $response->json('data.0.client');
+        $this->assertSame($client->id, $clientData['id']);
+        $this->assertSame('Aziz', $clientData['first_name']);
+        $this->assertArrayHasKey('avatar', $clientData);
     }
 
     public function test_offer_binds_to_the_profile_that_serves_the_orders_category(): void
@@ -145,7 +167,14 @@ class AgentOrderTest extends TestCase
     {
         $category = Category::factory()->create();
         [, $token] = $this->approvedAgent($category);
-        $foreignOrder = Order::factory()->for(Category::factory()->create())->create();
+
+        // Foreign category that HAS another approved provider → not a broadcast.
+        $foreign = Category::factory()->create();
+        $otherAgent = User::factory()->create();
+        AgentProfile::factory()->for($otherAgent)->approved()->create()
+            ->categories()->attach($foreign);
+
+        $foreignOrder = Order::factory()->for($foreign)->create();
 
         $this->postJson("/api/v1/agent/orders/{$foreignOrder->id}/offers", [
             'price' => 1_000_000,
@@ -153,6 +182,50 @@ class AgentOrderTest extends TestCase
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['order']);
+    }
+
+    public function test_agent_sees_and_can_offer_on_other_category_orders(): void
+    {
+        Http::fake();
+        $served = Category::factory()->create();
+        [$agent, $token] = $this->approvedAgent($served);
+        $other = Category::query()->where('is_other', true)->where('type', 'agent')->firstOrFail();
+        $order = Order::factory()->for($other)->create();
+
+        $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id);
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
+            'price' => 1_500_000,
+            'comment' => 'We can handle custom work.',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'pending');
+
+        $this->assertDatabaseHas('offers', [
+            'order_id' => $order->id,
+            'agent_id' => $agent->id,
+        ]);
+    }
+
+    public function test_agent_sees_and_can_offer_on_empty_category_orders(): void
+    {
+        Http::fake();
+        $served = Category::factory()->create();
+        [$agent, $token] = $this->approvedAgent($served);
+        $empty = Category::factory()->create(); // nobody attached
+        $order = Order::factory()->for($empty)->create();
+
+        $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id);
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
+            'price' => 900_000,
+            'comment' => 'Happy to take this on.',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated();
     }
 
     public function test_pending_agent_cannot_submit_offers(): void

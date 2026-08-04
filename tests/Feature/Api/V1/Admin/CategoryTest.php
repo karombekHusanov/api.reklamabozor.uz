@@ -27,14 +27,15 @@ class CategoryTest extends TestCase
         Category::factory()->count(2)->create();
         Category::factory()->designer()->create();
 
+        // Migration seeds agent + designer "Boshqa" → 3 factory + 2 seeded.
         $response = $this->getJson('/api/v1/admin/categories', [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('data.meta.total', 3)
-            ->assertJsonCount(3, 'data.items');
+            ->assertJsonPath('data.meta.total', 5)
+            ->assertJsonCount(5, 'data.items');
     }
 
     public function test_admin_can_filter_categories_by_type(): void
@@ -42,11 +43,12 @@ class CategoryTest extends TestCase
         Category::factory()->count(2)->create(['type' => CategoryType::Agent]);
         Category::factory()->designer()->create();
 
+        // Designer filter: 1 factory + 1 seeded "Boshqa".
         $this->getJson('/api/v1/admin/categories?type=designer', [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])
             ->assertOk()
-            ->assertJsonPath('data.meta.total', 1)
+            ->assertJsonPath('data.meta.total', 2)
             ->assertJsonPath('data.items.0.type', 'designer');
     }
 
@@ -109,6 +111,32 @@ class CategoryTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseMissing('categories', ['id' => $category->id]);
+    }
+
+    public function test_admin_cannot_delete_or_deactivate_other_category(): void
+    {
+        $token = $this->adminToken();
+        $other = Category::query()->where('is_other', true)->where('type', CategoryType::Agent)->firstOrFail();
+
+        $this->deleteJson("/api/v1/admin/categories/{$other->id}", [], [
+            'Authorization' => 'Bearer '.$token,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category']);
+
+        $this->patchJson("/api/v1/admin/categories/{$other->id}/active", [
+            'is_active' => false,
+        ], [
+            'Authorization' => 'Bearer '.$token,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category']);
+
+        $this->assertDatabaseHas('categories', [
+            'id' => $other->id,
+            'is_other' => true,
+            'is_active' => true,
+        ]);
     }
 
     public function test_non_admin_cannot_access_category_routes(): void

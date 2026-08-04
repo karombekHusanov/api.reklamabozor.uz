@@ -28,6 +28,7 @@ class CategoryController extends ApiController
                 isset($validated['type']),
                 fn ($query) => $query->where('type', $validated['type']),
             )
+            ->orderBy('is_other') // catch-all "Boshqa" last
             ->orderBy('sort_order')
             ->orderBy('name_uz')
             ->get();

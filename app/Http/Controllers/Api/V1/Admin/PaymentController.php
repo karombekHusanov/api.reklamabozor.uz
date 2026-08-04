@@ -6,6 +6,8 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\AdminPaymentResource;
+use App\Jobs\RecalculateRating;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\JsonResponse;
@@ -76,6 +78,15 @@ class PaymentController extends ApiController
             report($e);
 
             return $this->error('Refund failed at the payment gateway. Please try again.', 503);
+        }
+
+        if ($payment->payable instanceof Order) {
+            $order = $payment->payable;
+            RecalculateRating::dispatch($order->client_id);
+            $agentId = $order->acceptedOffer()?->value('agent_id');
+            if ($agentId) {
+                RecalculateRating::dispatch($agentId);
+            }
         }
 
         return $this->success(
