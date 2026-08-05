@@ -106,6 +106,28 @@ class AgentWithdrawalTest extends TestCase
         $this->assertSame(1, $agent->payouts()->where('status', PayoutStatus::Paid->value)->count());
     }
 
+    public function test_credit_gateway_failure_settles_to_failed_and_releases_funds(): void
+    {
+        // The gateway rejects the credit. The poll must not re-throw (a 500 on every
+        // tick spams the client); it settles the withdrawal to `failed` once and
+        // returns the reserved payouts to the available balance.
+        Http::fake([
+            'gw.test/payment/credit' => Http::response(['success' => false, 'error' => 'nope'], 400),
+        ]);
+
+        [$agent, $headers] = $this->actingAgent();
+        Payout::factory()->create(['agent_id' => $agent->id, 'amount' => 200_000_000]);
+
+        $id = $this->postJson('/api/v1/agent/withdrawals', [], $headers)->json('data.id');
+
+        $this->getJson("/api/v1/agent/withdrawals/{$id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'failed');
+
+        $this->assertSame(1, $agent->payouts()->where('status', PayoutStatus::Pending->value)->count());
+        $this->assertSame(0, $agent->payouts()->where('status', PayoutStatus::Processing->value)->count());
+    }
+
     public function test_start_fails_with_no_available_balance(): void
     {
         [, $headers] = $this->actingAgent();

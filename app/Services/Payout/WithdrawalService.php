@@ -119,13 +119,35 @@ class WithdrawalService
             ]);
         }
 
-        $credit = $this->client->createCardPayout($payload);
-        $creditStatus = $credit['status'] ?? null;
-
+        // Persist the bound-card details up front so a gateway failure below still
+        // records what we know (and never re-attempts the bind).
         $withdrawal->update([
             'card_token' => $token,
             'card_pan' => $binding['card_pan'] ?? null,
             'ps' => $binding['ps'] ?? null,
+        ]);
+
+        // Create the gateway credit. A gateway/HTTP failure here must NOT leave the
+        // withdrawal in card_pending — otherwise every poll (every few seconds) would
+        // re-attempt the credit and return a 500, spamming the client. Fail it once,
+        // release the reserved payouts, and let the poll settle on a terminal state.
+        try {
+            $credit = $this->client->createCardPayout($payload);
+        } catch (\Throwable $e) {
+            report($e);
+
+            $withdrawal->update([
+                'status' => WithdrawalStatus::Failed,
+                'failure_reason' => 'credit_request_failed',
+            ]);
+            $this->releaseReservation($withdrawal);
+
+            return $withdrawal->refresh();
+        }
+
+        $creditStatus = $credit['status'] ?? null;
+
+        $withdrawal->update([
             'gateway_uuid' => $credit['uuid'] ?? null,
             // Default to the OTP fallback; overwritten below on a decisive result.
             'status' => WithdrawalStatus::OtpRequired,
