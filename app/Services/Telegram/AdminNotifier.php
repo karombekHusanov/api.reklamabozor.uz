@@ -35,6 +35,15 @@ class AdminNotifier
     {
         $offer->loadMissing('order', 'agent', 'agentProfile');
 
+        if (! $offer->hasPrice()) {
+            $this->send('offer_submitted', implode("\n", [
+                "🙋 Otklik — buyurtma <b>#{$offer->order_id}</b>",
+                '🏢 '.$this->agencyLabel($offer),
+            ]));
+
+            return;
+        }
+
         $this->send('offer_submitted', implode("\n", [
             "💼 Taklif — buyurtma <b>#{$offer->order_id}</b>",
             '🏢 '.$this->agencyLabel($offer)." • 💰 {$this->price($offer)} so'm",

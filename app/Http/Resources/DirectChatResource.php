@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\DirectChat;
+use App\Models\Offer;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -10,10 +11,26 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * Client ↔ agency direct conversation as seen by one participant.
  *
+ * Marketplace DM: order_id / order are null.
+ * Order-scoped negotiation: order_id + nested order summary are set.
+ *
  * @mixin DirectChat
  */
 class DirectChatResource extends JsonResource
 {
+    /** Optional pending-offer context for the thread detail screen. */
+    protected ?Offer $activeOffer = null;
+
+    protected bool $includeActiveOffer = false;
+
+    public function withActiveOffer(?Offer $offer): static
+    {
+        $this->activeOffer = $offer;
+        $this->includeActiveOffer = true;
+
+        return $this;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -27,11 +44,20 @@ class DirectChatResource extends JsonResource
         // when the other side is the agent (the client has no provider profile).
         $agentProfile = $other->id === $this->agent_id ? $this->agentProfile : null;
 
-        return [
+        $order = $this->relationLoaded('order') ? $this->order : null;
+
+        $data = [
             'id' => $this->id,
             'type' => 'direct',
-            'order_id' => null,
-            'order' => null,
+            'order_id' => $this->order_id,
+            'order' => $this->order_id !== null ? [
+                'id' => $order?->id ?? $this->order_id,
+                'title' => $order?->title,
+                'status' => $order?->status?->value,
+                'category' => $order?->relationLoaded('category') && $order->category
+                    ? new CategoryResource($order->category)
+                    : null,
+            ] : null,
             'other_participant' => [
                 'id' => $other->id,
                 'name' => trim($other->first_name.' '.($other->last_name ?? '')),
@@ -42,8 +68,28 @@ class DirectChatResource extends JsonResource
                 ? new DirectChatMessageResource($this->lastMessage)
                 : null),
             'unread_count' => (int) $this->unreadCountFor($user),
+            'blocked_at' => $this->blocked_at,
+            'blocked_by' => $this->blocked_by,
+            'can_write' => $this->canWrite($user),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+
+        if ($this->includeActiveOffer) {
+            $offer = $this->activeOffer;
+            $data['active_offer'] = $offer ? [
+                'id' => $offer->id,
+                'order_id' => $offer->order_id,
+                'order_title' => $offer->order?->title,
+                'price' => $offer->price,
+                'status' => $offer->status->value,
+                'is_interest' => $offer->isInterest(),
+                'can_edit_price' => $offer->canEditPrice(),
+                'price_edits_remaining' => $offer->priceEditsRemaining(),
+                'max_price_edits' => Offer::MAX_PRICE_EDITS,
+            ] : null;
+        }
+
+        return $data;
     }
 }

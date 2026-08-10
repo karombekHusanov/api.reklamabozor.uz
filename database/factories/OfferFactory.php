@@ -30,6 +30,14 @@ class OfferFactory extends Factory
         ];
     }
 
+    public function interest(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'price' => null,
+            'comment' => null,
+        ]);
+    }
+
     public function accepted(): static
     {
         return $this->state(fn (array $attributes) => ['status' => OfferStatus::Accepted]);

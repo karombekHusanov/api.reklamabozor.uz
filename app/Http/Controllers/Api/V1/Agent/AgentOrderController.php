@@ -3,14 +3,20 @@
 namespace App\Http\Controllers\Api\V1\Agent;
 
 use App\Http\Controllers\ApiController;
+use App\Http\Requests\Api\V1\Agent\SetOfferPricelistRequest;
 use App\Http\Requests\Api\V1\Agent\StoreOfferRequest;
+use App\Http\Requests\Api\V1\Agent\UpdateOfferPriceRequest;
 use App\Http\Requests\Api\V1\Review\StoreReviewRequest;
+use App\Http\Resources\AgentOfferDetailResource;
 use App\Http\Resources\AgentOfferResource;
 use App\Http\Resources\AgentOrderResource;
+use App\Http\Resources\DirectChatResource;
 use App\Http\Resources\OfferResource;
 use App\Http\Resources\OrderResource;
 use App\Http\Resources\ReviewResource;
+use App\Models\Offer;
 use App\Models\Order;
+use App\Services\Chat\DirectChatService;
 use App\Services\Order\OfferService;
 use App\Services\Order\OrderService;
 use App\Services\Review\ReviewService;
@@ -23,6 +29,7 @@ class AgentOrderController extends ApiController
         private readonly OfferService $offers,
         private readonly OrderService $orders,
         private readonly ReviewService $reviews,
+        private readonly DirectChatService $directChats,
     ) {}
 
     /**
@@ -36,6 +43,16 @@ class AgentOrderController extends ApiController
     }
 
     /**
+     * Single open opportunity for the agent (detail / bid page).
+     */
+    public function showOrder(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->offers->findAvailableForAgent($request->user(), $order);
+
+        return $this->success(new AgentOrderResource($order));
+    }
+
+    /**
      * The agent's own offers across all orders.
      */
     public function myOffers(Request $request): JsonResponse
@@ -43,6 +60,51 @@ class AgentOrderController extends ApiController
         $offers = $this->offers->listForAgent($request->user());
 
         return $this->success(AgentOfferResource::collection($offers));
+    }
+
+    /**
+     * Single offer belonging to the authenticated agent (detail page).
+     */
+    public function showOffer(Request $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->offers->findForAgent($request->user(), $offer);
+
+        return $this->success(new AgentOfferDetailResource($offer));
+    }
+
+    /**
+     * Open (or return) the direct chat with the order's client from a pending offer.
+     */
+    public function openOfferChat(Request $request, Offer $offer): JsonResponse
+    {
+        $chat = $this->directChats->openForOffer($request->user(), $offer);
+        $chat->load(['client', 'agent', 'agentProfile', 'order.category', 'lastMessage.attachments']);
+
+        return $this->success(
+            (new DirectChatResource($chat))->withActiveOffer(
+                $this->directChats->activeOfferForPair($chat),
+            ),
+        );
+    }
+
+    /**
+     * Adjust a pending offer's price (hard cap: Offer::MAX_PRICE_EDITS).
+     */
+    public function updateOffer(UpdateOfferPriceRequest $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->offers->updatePrice($request->user(), $offer, $request->validated());
+
+        return $this->success(new AgentOfferDetailResource($offer), 'Offer price updated');
+    }
+
+    /**
+     * Send (or replace) the pricelist on a pending offer — the priced contract step.
+     */
+    public function setPricelist(SetOfferPricelistRequest $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->offers->setPricelist($request->user(), $offer, $request->validated()['items']);
+
+        return $this->success(new AgentOfferDetailResource($offer), 'Pricelist sent');
     }
 
     /**

@@ -3,14 +3,19 @@
 namespace App\Models;
 
 use App\Enums\OfferStatus;
+use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Offer extends Model
 {
     use HasFactory;
+
+    /** Hard cap on price edits while the offer is still pending. */
+    public const MAX_PRICE_EDITS = 5;
 
     /**
      * @var list<string>
@@ -22,6 +27,8 @@ class Offer extends Model
         'price',
         'comment',
         'status',
+        'price_updated_at',
+        'price_edit_count',
     ];
 
     public function order(): BelongsTo
@@ -34,9 +41,98 @@ class Offer extends Model
         return $this->belongsTo(AgentProfile::class);
     }
 
+    /**
+     * Pricelist lines the agent sent for this offer (ordered).
+     *
+     * @return HasMany<OfferItem, $this>
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(OfferItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Recompute and persist `price` as the sum of the pricelist line totals.
+     * A pricelist with no rows leaves the offer as an interest (price = null).
+     */
+    public function recomputeTotal(): void
+    {
+        $items = $this->relationLoaded('items') ? $this->items : $this->items()->get();
+
+        if ($items->isEmpty()) {
+            $this->update(['price' => null]);
+
+            return;
+        }
+
+        $total = $items->reduce(
+            fn (string $carry, OfferItem $item): string => bcadd($carry, $item->lineTotal(), 2),
+            '0',
+        );
+
+        $this->update(['price' => $total]);
+    }
+
     public function agent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'agent_id');
+    }
+
+    /**
+     * Otklik / interest stub — no price attached yet (Faza 1).
+     */
+    public function isInterest(): bool
+    {
+        return $this->price === null;
+    }
+
+    public function hasPrice(): bool
+    {
+        return $this->price !== null;
+    }
+
+    /**
+     * Client may accept only a priced, pending offer while the order is still
+     * awaiting selection (new / offers_sent).
+     */
+    public function canAccept(): bool
+    {
+        if (! $this->hasPrice() || $this->status !== OfferStatus::Pending) {
+            return false;
+        }
+
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+
+        if ($order === null) {
+            return false;
+        }
+
+        return in_array($order->status, [OrderStatus::New, OrderStatus::OffersSent], true);
+    }
+
+    public function canEditPrice(): bool
+    {
+        // Interests cannot be priced via PATCH — contract / priced path comes later.
+        if (! $this->hasPrice()) {
+            return false;
+        }
+
+        if ($this->status !== OfferStatus::Pending) {
+            return false;
+        }
+
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+
+        if ($order === null || ! $order->status->isOpenForOffers()) {
+            return false;
+        }
+
+        return (int) $this->price_edit_count < self::MAX_PRICE_EDITS;
+    }
+
+    public function priceEditsRemaining(): int
+    {
+        return max(0, self::MAX_PRICE_EDITS - (int) $this->price_edit_count);
     }
 
     /**
@@ -65,6 +161,8 @@ class Offer extends Model
         return [
             'price' => 'decimal:2',
             'status' => OfferStatus::class,
+            'price_updated_at' => 'datetime',
+            'price_edit_count' => 'integer',
         ];
     }
 }

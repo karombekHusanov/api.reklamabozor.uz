@@ -40,6 +40,8 @@ class User extends Authenticatable
         'role_selected_at',
         'person_type',
         'person_type_selected_at',
+        'accepted_terms_version',
+        'accepted_terms_at',
         'avatar_file_id',
         'is_active',
     ];
@@ -217,6 +219,33 @@ class User extends Authenticatable
         return $this->role === $role || $this->allRoles()->contains($role);
     }
 
+    /** The platform public offer version currently in force. */
+    public static function currentTermsVersion(): string
+    {
+        return (string) config('legal.terms_version');
+    }
+
+    /**
+     * Whether the user has accepted the public offer version currently in force.
+     * Admins are provisioned out of band and never gated on it.
+     */
+    public function hasAcceptedCurrentTerms(): bool
+    {
+        if ($this->role === Role::Admin) {
+            return true;
+        }
+
+        return $this->accepted_terms_version === self::currentTermsVersion();
+    }
+
+    /** Record acceptance of the current public offer version. */
+    public function acceptCurrentTerms(): void
+    {
+        $this->accepted_terms_version = self::currentTermsVersion();
+        $this->accepted_terms_at = now();
+        $this->save();
+    }
+
     /**
      * Whether the user may take on this role under the coexistence matrix
      * ({@see Role::conflictingRoles()}). Client and already-held roles are
@@ -341,6 +370,7 @@ class User extends Authenticatable
             'role_selected_at' => 'datetime',
             'person_type' => PersonType::class,
             'person_type_selected_at' => 'datetime',
+            'accepted_terms_at' => 'datetime',
             'is_active' => 'boolean',
             'password' => 'hashed',
         ];

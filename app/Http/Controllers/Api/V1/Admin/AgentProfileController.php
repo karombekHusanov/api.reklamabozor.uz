@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Enums\AgentProfileStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Admin\IndexAgentProfilesRequest;
+use App\Http\Requests\Api\V1\Admin\RejectAgentContractRequest;
 use App\Http\Requests\Api\V1\Admin\StoreAgentRequest;
 use App\Http\Requests\Api\V1\Admin\UpdateAgentProfileStatusRequest;
 use App\Http\Resources\AdminAgentProfileResource;
@@ -76,5 +77,19 @@ class AgentProfileController extends ApiController
         };
 
         return $this->success(new AdminAgentProfileResource($updated), $message);
+    }
+
+    /**
+     * Manager rejects the uploaded signed agreement (bad scan / missing stamp)
+     * without rejecting the whole KYC — the agent re-uploads.
+     */
+    public function rejectContract(RejectAgentContractRequest $request, AgentProfile $agentProfile): JsonResponse
+    {
+        $updated = $this->agentAdminService->rejectContract(
+            $agentProfile->load('user'),
+            $request->validated()['reason'],
+        );
+
+        return $this->success(new AdminAgentProfileResource($updated), 'Signed agreement rejected');
     }
 }

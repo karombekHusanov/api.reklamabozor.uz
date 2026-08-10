@@ -20,12 +20,18 @@ class OrderResource extends JsonResource
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
+            'region' => new RegionResource($this->whenLoaded('region')),
+            'district' => new RegionResource($this->whenLoaded('district')),
+            'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
             'attachment_file_ids' => $this->allAttachmentFileIds(),
             'attachment_files' => FileResource::collection(
                 $this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [],
             ),
             'budget_min' => $this->budget_min,
             'budget_max' => $this->budget_max,
+            'lat' => $this->lat,
+            'lng' => $this->lng,
+            'location_label' => $this->location_label,
             'status' => $this->status->value,
             // Client's legal nature — present when the client is loaded (provider
             // views), for billing context (can they be issued a VAT invoice).
@@ -51,6 +57,11 @@ class OrderResource extends JsonResource
             ),
             'review' => new ReviewResource($this->whenLoaded('review')),
             'provider_review' => new ReviewResource($this->whenLoaded('providerReview')),
+            // Per-order service contract (present once the deal started).
+            'contract' => $this->whenLoaded(
+                'contract',
+                fn () => $this->contract ? new ContractResource($this->contract) : null,
+            ),
             'offers' => OfferResource::collection($this->whenLoaded('offers')),
             'offers_count' => $this->whenCounted('offers'),
             'views_count' => $this->whenCounted('views'),

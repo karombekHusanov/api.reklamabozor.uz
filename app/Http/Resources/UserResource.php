@@ -28,6 +28,11 @@ class UserResource extends JsonResource
             'role' => $this->role->value,
             'roles' => $this->allRoles()->map(fn ($role) => $role->value)->all(),
             'role_selected_at' => $this->role_selected_at,
+            // Public offer (Terms of Use) acceptance. `needs_terms` is the gate:
+            // true when the accepted version no longer matches the one in force.
+            'accepted_terms_version' => $this->accepted_terms_version,
+            'terms_version' => User::currentTermsVersion(),
+            'needs_terms' => ! $this->hasAcceptedCurrentTerms(),
             // Legal nature: effective type (derived for agents/sellers) + whether
             // it is confirmed. `person_type_declared` is the raw self-choice, so
             // the client/designer onboarding can tell "not asked yet" from a pick.

@@ -16,7 +16,9 @@ class PublicAgentController extends ApiController
 {
     /**
      * Public list of approved agents for the marketplace / home slider,
-     * ranked by profile completeness. `?limit` caps the result (default 12).
+     * ranked by profile completeness. Optional filters: `q`, `category_ids`
+     * (comma-separated), `type`, `provider_type`. `?limit` caps the result
+     * (default 12, max 50).
      */
     public function index(Request $request): JsonResponse
     {
@@ -24,24 +26,52 @@ class PublicAgentController extends ApiController
             'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
             'type' => ['nullable', Rule::enum(CategoryType::class)],
             'provider_type' => ['nullable', Rule::enum(ProviderType::class)],
+            'q' => ['nullable', 'string', 'max:100'],
+            'category_ids' => ['nullable', 'string', 'max:500', 'regex:/^\d+(,\d+)*$/'],
         ]);
 
         $limit = (int) ($validated['limit'] ?? 12);
         $limit = max(1, min($limit, 50));
 
-        $agents = AgentProfile::query()
+        $query = AgentProfile::query()
             ->approved()
             ->when(
                 isset($validated['provider_type']),
-                fn ($query) => $query->where('provider_type', $validated['provider_type']),
+                fn ($q) => $q->where('provider_type', $validated['provider_type']),
             )
             ->when(
                 isset($validated['type']),
-                fn ($query) => $query->whereHas(
+                fn ($q) => $q->whereHas(
                     'categories',
                     fn ($categoryQuery) => $categoryQuery->where('type', $validated['type']),
                 ),
-            )
+            );
+
+        $search = trim((string) ($validated['q'] ?? ''));
+        if ($search !== '') {
+            $likeTerm = '%'.mb_strtolower($search).'%';
+
+            $query->where(function ($builder) use ($likeTerm): void {
+                $builder
+                    ->whereRaw('LOWER(company_name) LIKE ?', [$likeTerm])
+                    ->orWhereRaw('LOWER(location_label) LIKE ?', [$likeTerm])
+                    ->orWhereHas('user', function ($userQuery) use ($likeTerm): void {
+                        $userQuery
+                            ->whereRaw('LOWER(first_name) LIKE ?', [$likeTerm])
+                            ->orWhereRaw('LOWER(last_name) LIKE ?', [$likeTerm]);
+                    });
+            });
+        }
+
+        $categoryIds = $this->parseCsvIds($validated['category_ids'] ?? null);
+        if ($categoryIds !== []) {
+            $query->whereHas(
+                'categories',
+                fn ($categoryQuery) => $categoryQuery->whereIn('categories.id', $categoryIds),
+            );
+        }
+
+        $agents = $query
             ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'cachedRating'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')
@@ -131,5 +161,24 @@ class PublicAgentController extends ApiController
             + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
 
         return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
+    }
+
+    /**
+     * Parse a comma-separated id list (`1,3,5`) into unique positive ints.
+     *
+     * @return list<int>
+     */
+    private function parseCsvIds(?string $raw): array
+    {
+        if ($raw === null || trim($raw) === '') {
+            return [];
+        }
+
+        return collect(explode(',', $raw))
+            ->map(fn ($id) => (int) trim((string) $id))
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

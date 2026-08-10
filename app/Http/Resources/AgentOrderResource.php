@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Order;
+use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -27,11 +28,17 @@ class AgentOrderResource extends JsonResource
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
+            'region' => new RegionResource($this->whenLoaded('region')),
+            'district' => new RegionResource($this->whenLoaded('district')),
+            'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
             'attachment_files' => FileResource::collection(
                 $this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [],
             ),
             'budget_min' => $this->budget_min,
             'budget_max' => $this->budget_max,
+            'lat' => $this->lat,
+            'lng' => $this->lng,
+            'location_label' => $this->location_label,
             'status' => $this->status->value,
             'views_count' => $this->whenCounted('views'),
             'offers_count' => $this->whenCounted('offers'),
@@ -45,6 +52,10 @@ class AgentOrderResource extends JsonResource
                 'price' => $myOffer->price,
                 'comment' => $myOffer->comment,
                 'status' => $myOffer->status->value,
+                'is_interest' => $myOffer->isInterest(),
+                'can_accept' => $myOffer->canAccept(),
+                'items' => OfferItemResource::collection($myOffer->relationLoaded('items') ? $myOffer->items : []),
+                'chat_id' => app(DirectChatService::class)->findForOffer($myOffer)?->id,
             ] : null,
             'created_at' => $this->created_at,
         ];

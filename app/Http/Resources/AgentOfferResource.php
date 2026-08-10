@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Enums\ReviewDirection;
 use App\Models\Offer;
+use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -30,6 +31,15 @@ class AgentOfferResource extends JsonResource
             'price' => $this->price,
             'comment' => $this->comment,
             'status' => $this->status->value,
+            'is_interest' => $this->isInterest(),
+            'can_accept' => $this->canAccept(),
+            'items' => OfferItemResource::collection($this->whenLoaded('items')),
+            'price_updated_at' => $this->price_updated_at,
+            'price_edit_count' => (int) $this->price_edit_count,
+            'price_edits_remaining' => $this->priceEditsRemaining(),
+            'max_price_edits' => Offer::MAX_PRICE_EDITS,
+            'can_edit_price' => $this->canEditPrice(),
+            'chat_id' => app(DirectChatService::class)->findForOffer($this->resource)?->id,
             'order' => [
                 'id' => $this->order?->id,
                 'title' => $this->order?->title,
@@ -37,6 +47,9 @@ class AgentOfferResource extends JsonResource
                 'category' => $this->order?->category
                     ? new CategoryResource($this->order->category)
                     : null,
+                'hashtags' => HashtagResource::collection(
+                    $this->order?->relationLoaded('hashtags') ? $this->order->hashtags : [],
+                ),
             ],
             'my_review' => $myReview ? new ReviewResource($myReview) : null,
             'created_at' => $this->created_at,

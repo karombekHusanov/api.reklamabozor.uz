@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\AgentContractStatus;
 use App\Enums\AgentProfileStatus;
 use App\Enums\ProviderType;
 use App\Enums\Role;
@@ -69,11 +70,30 @@ class AgentAdminService
             ]);
         }
 
+        // An agent cannot be activated until they have uploaded a signed
+        // agreement for the manager to review (designers are exempt).
+        if (
+            $status === AgentProfileStatus::Approved
+            && $profile->requiresContract()
+            && $profile->contract_status !== AgentContractStatus::UnderReview
+            && $profile->contract_status !== AgentContractStatus::Approved
+        ) {
+            throw ValidationException::withMessages([
+                'contract' => ['The agent has not uploaded a signed agreement yet.'],
+            ]);
+        }
+
         $profile->status = $status;
 
         if ($status === AgentProfileStatus::Approved) {
             $profile->approved_at = now();
             $profile->rejection_reason = null;
+
+            // Approving the agent also approves the signed agreement.
+            if ($profile->requiresContract()) {
+                $profile->contract_status = AgentContractStatus::Approved;
+                $profile->contract_rejection_reason = null;
+            }
 
             // Multirole: agent is granted on top of whatever the user already
             // holds (e.g. client) and becomes the active role.
@@ -106,6 +126,25 @@ class AgentAdminService
     }
 
     /**
+     * Manager rejects the uploaded signed agreement (e.g. missing signature or
+     * stamp, unreadable scan) without rejecting the KYC — the agent re-uploads.
+     */
+    public function rejectContract(AgentProfile $profile, string $reason): AgentProfile
+    {
+        if ($profile->contract_status !== AgentContractStatus::UnderReview) {
+            throw ValidationException::withMessages([
+                'contract' => ['There is no signed agreement awaiting review.'],
+            ]);
+        }
+
+        $profile->contract_status = AgentContractStatus::Rejected;
+        $profile->contract_rejection_reason = $reason;
+        $profile->save();
+
+        return $profile->load(['user', ...AgentProfile::PROFILE_RELATIONS]);
+    }
+
+    /**
      * Manager-created agent: a new agent user plus an approved KYC profile.
      * No Telegram identity yet — it links up when the person first opens the
      * mini app with the same phone number.
@@ -132,6 +171,8 @@ class AgentAdminService
                 'provider_type' => ProviderType::Agent,
                 'status' => AgentProfileStatus::Approved,
                 'approved_at' => now(),
+                // Manager vouches for this agent — no self-sign handshake needed.
+                'contract_status' => AgentContractStatus::Approved,
             ]);
 
             return $profile->load(['user', ...AgentProfile::PROFILE_RELATIONS]);

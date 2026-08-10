@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -33,8 +34,14 @@ class Order extends Model
         'deadline',
         'tz_file_id',
         'attachment_file_ids',
+        'show_files_in_showcase',
         'budget_min',
         'budget_max',
+        'lat',
+        'lng',
+        'location_label',
+        'region_id',
+        'district_id',
         'status',
         'awaiting_payment_at',
         'work_submitted_at',
@@ -51,16 +58,24 @@ class Order extends Model
      */
     public const CLIENT_RELATIONS = [
         'category',
+        'region',
+        'district',
+        'hashtags',
         'targetAgent.agentProfile',
         'offers.agentProfile.companyLogoFile',
+        'offers.items',
         'acceptedOffer.agentProfile',
         'review',
         'providerReview',
         'latestPayment',
+        'contract.pdfFile',
     ];
 
     /** Max files a client may attach to one order. */
     public const MAX_ATTACHMENTS = 5;
+
+    /** Max hashtags a client may attach to one order. */
+    public const MAX_HASHTAGS = 5;
 
     public function client(): BelongsTo
     {
@@ -79,6 +94,21 @@ class Order extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function region(): BelongsTo
+    {
+        return $this->belongsTo(Region::class, 'region_id');
+    }
+
+    public function district(): BelongsTo
+    {
+        return $this->belongsTo(Region::class, 'district_id');
+    }
+
+    public function hashtags(): BelongsToMany
+    {
+        return $this->belongsToMany(Hashtag::class, 'order_hashtag')->withTimestamps();
     }
 
     public function tzFile(): BelongsTo
@@ -163,6 +193,14 @@ class Order extends Model
     public function chat(): HasOne
     {
         return $this->hasOne(Chat::class);
+    }
+
+    /**
+     * The generated per-order service contract (present once the deal started).
+     */
+    public function contract(): HasOne
+    {
+        return $this->hasOne(Contract::class);
     }
 
     /**
@@ -270,9 +308,12 @@ class Order extends Model
         return [
             'budget_min' => 'decimal:2',
             'budget_max' => 'decimal:2',
+            'lat' => 'decimal:7',
+            'lng' => 'decimal:7',
             'status' => OrderStatus::class,
             'deadline' => OrderDeadline::class,
             'attachment_file_ids' => 'array',
+            'show_files_in_showcase' => 'boolean',
             'awaiting_payment_at' => 'datetime',
             'work_submitted_at' => 'datetime',
             'completion_reminder_sent_at' => 'datetime',

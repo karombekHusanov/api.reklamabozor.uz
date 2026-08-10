@@ -9,7 +9,9 @@ use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
+use App\Models\Region;
 use App\Models\User;
+use App\Services\Hashtag\HashtagService;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,12 +24,14 @@ class OrderService
         private readonly OrderNotifier $notifier,
         private readonly PayoutService $payouts,
         private readonly PaymentService $payments,
+        private readonly HashtagService $hashtags,
     ) {}
 
     /**
-     * Place a B2C order. The title is derived from the category. A normal order
-     * is broadcast to every approved provider serving that category; a directed
-     * order (agent_profile_id) reaches only the chosen agency.
+     * Place a B2C order. Title is the client project name (falls back to the
+     * category label). A normal order is broadcast to every approved provider
+     * serving that category; a directed order (agent_profile_id) reaches only
+     * the chosen agency.
      *
      * @param  array<string, mixed>  $data
      */
@@ -38,16 +42,40 @@ class OrderService
 
         $targetAgentId = $this->resolveTargetAgent($data['agent_profile_id'] ?? null, $category);
 
+        $title = trim((string) ($data['title'] ?? ''));
+        if ($title === '') {
+            $title = $category->name_uz;
+        }
+
+        $regionId = isset($data['region_id']) ? (int) $data['region_id'] : null;
+        $districtId = isset($data['district_id']) ? (int) $data['district_id'] : null;
+
+        $locationLabel = isset($data['location_label'])
+            ? (trim((string) $data['location_label']) ?: null)
+            : null;
+
+        if ($locationLabel === null && $regionId !== null) {
+            $locationLabel = $this->locationLabelFromRegion($regionId, $districtId);
+        }
+
         /** @var Order $order */
         $order = $client->orders()->create([
             'category_id' => $category->id,
             'target_agent_id' => $targetAgentId,
-            'title' => $category->name_uz,
+            'title' => $title,
             'description' => $data['description'],
             'deadline' => $data['deadline'] ?? null,
             'attachment_file_ids' => $data['attachment_file_ids'],
+            'show_files_in_showcase' => $data['show_files_in_showcase'] ?? true,
+            'lat' => $data['lat'],
+            'lng' => $data['lng'],
+            'location_label' => $locationLabel,
+            'region_id' => $regionId,
+            'district_id' => $districtId,
             'status' => OrderStatus::New,
         ]);
+
+        $this->hashtags->syncForOrder($order, $data['hashtags'] ?? []);
 
         try {
             $this->notifier->notifyNewOrder($order);
@@ -90,7 +118,7 @@ class OrderService
         // see them in their request list again.
         $orders = $client->orders()
             ->where('status', '!=', OrderStatus::Cancelled)
-            ->with(['category', 'targetAgent.agentProfile'])
+            ->with(['category', 'region', 'district', 'targetAgent.agentProfile'])
             ->withCount(['offers', 'views'])
             ->latest()
             ->get();
@@ -296,5 +324,27 @@ class OrderService
         Order::hydrateAttachmentFiles($order);
 
         return $order;
+    }
+
+    /**
+     * Display fallback when the client omits location_label but picked a region.
+     */
+    private function locationLabelFromRegion(int $regionId, ?int $districtId): ?string
+    {
+        $region = Region::query()->find($regionId);
+        if ($region === null) {
+            return null;
+        }
+
+        $parts = [$region->name_uz];
+
+        if ($districtId !== null) {
+            $district = Region::query()->find($districtId);
+            if ($district !== null) {
+                array_unshift($parts, $district->name_uz);
+            }
+        }
+
+        return implode(', ', $parts);
     }
 }

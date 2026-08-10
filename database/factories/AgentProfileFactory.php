@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\AgentContractStatus;
 use App\Enums\AgentProfileStatus;
 use App\Enums\ProviderType;
 use App\Models\AgentProfile;
@@ -61,6 +62,17 @@ class AgentProfileFactory extends Factory
             'status' => AgentProfileStatus::Approved,
             'approved_at' => now(),
             'rejection_reason' => null,
+            // Approved agents have an approved agreement (designers: harmless).
+            'contract_status' => AgentContractStatus::Approved,
+        ]);
+    }
+
+    /** Agent has uploaded the signed agreement and it is awaiting manager review. */
+    public function contractUnderReview(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'contract_status' => AgentContractStatus::UnderReview,
+            'contract_signed_at' => now(),
         ]);
     }
 

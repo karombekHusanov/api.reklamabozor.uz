@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Offer;
+use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -23,6 +24,10 @@ class OfferResource extends JsonResource
             'price' => $this->price,
             'comment' => $this->comment,
             'status' => $this->status->value,
+            'is_interest' => $this->isInterest(),
+            'can_accept' => $this->canAccept(),
+            'items' => OfferItemResource::collection($this->whenLoaded('items')),
+            'price_updated_at' => $this->price_updated_at,
             'agent' => [
                 'id' => $this->agent_id,
                 'profile_id' => $profile?->id,
@@ -33,6 +38,7 @@ class OfferResource extends JsonResource
                 'person_type' => $this->agent?->effectivePersonType()?->value,
                 'person_type_verified' => (bool) $this->agent?->isVerifiedLegalEntity(),
             ],
+            'chat_id' => app(DirectChatService::class)->findForOffer($this->resource)?->id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

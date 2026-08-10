@@ -9,8 +9,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * One-to-one conversation between a client and an agency, opened from the
- * agent's public profile — not tied to any order.
+ * One-to-one conversation between a client and an agency.
+ *
+ * Marketplace DM: order_id IS NULL (one per client↔agent pair).
+ * Order-scoped negotiation: order_id set (one per client↔agent↔order).
  */
 class DirectChat extends Model
 {
@@ -23,6 +25,9 @@ class DirectChat extends Model
         'client_id',
         'agent_id',
         'agent_profile_id',
+        'order_id',
+        'blocked_at',
+        'blocked_by',
     ];
 
     public function client(): BelongsTo
@@ -38,6 +43,16 @@ class DirectChat extends Model
     public function agent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'agent_id');
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    public function blockedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'blocked_by');
     }
 
     public function messages(): HasMany
@@ -60,11 +75,31 @@ class DirectChat extends Model
         return $user->id === $this->client_id ? $this->agent : $this->client;
     }
 
+    public function isBlocked(): bool
+    {
+        return $this->blocked_at !== null;
+    }
+
+    public function canWrite(User $user): bool
+    {
+        return $this->isParticipant($user) && ! $this->isBlocked();
+    }
+
     public function unreadCountFor(User $user): int
     {
         return $this->messages()
             ->where('sender_id', '!=', $user->id)
             ->whereNull('read_at')
             ->count();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'blocked_at' => 'datetime',
+        ];
     }
 }

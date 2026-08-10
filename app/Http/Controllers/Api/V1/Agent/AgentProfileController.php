@@ -7,7 +7,10 @@ use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Agent\StoreAgentProfileRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileDetailsRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileRequest;
+use App\Http\Requests\Api\V1\Agent\UploadSignedContractRequest;
 use App\Http\Resources\AgentProfileResource;
+use App\Models\File;
+use App\Services\Agent\AgentContractService;
 use App\Services\Agent\AgentProfileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +19,7 @@ class AgentProfileController extends ApiController
 {
     public function __construct(
         private readonly AgentProfileService $agentProfiles,
+        private readonly AgentContractService $contracts,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -69,5 +73,24 @@ class AgentProfileController extends ApiController
         $updated = $this->agentProfiles->updateDetails($profile, $request->validated());
 
         return $this->success(new AgentProfileResource($updated), 'Profile updated');
+    }
+
+    /**
+     * Agent uploads their signed (wet-signature + stamp) agreement scan.
+     */
+    public function uploadSignedContract(UploadSignedContractRequest $request): JsonResponse
+    {
+        $profile = $this->agentProfiles->findForUser($request->user());
+
+        if ($profile === null) {
+            return $this->error('You have no agent profile yet.', 404);
+        }
+
+        /** @var File $file */
+        $file = File::findOrFail($request->validated()['file_id']);
+
+        $updated = $this->contracts->uploadSigned($profile, $file);
+
+        return $this->success(new AgentProfileResource($updated), 'Signed agreement uploaded');
     }
 }

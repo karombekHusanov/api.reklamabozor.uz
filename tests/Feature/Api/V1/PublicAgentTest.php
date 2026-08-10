@@ -118,6 +118,50 @@ class PublicAgentTest extends TestCase
             ->assertJsonPath('data.0.company_name', 'Studio A');
     }
 
+    public function test_public_agents_search_matches_company_name_and_location(): void
+    {
+        AgentProfile::factory()->approved()->create([
+            'company_name' => 'MIRON Media',
+            'location_label' => 'Samarqand',
+        ]);
+        AgentProfile::factory()->approved()->create([
+            'company_name' => 'Other Agency',
+            'location_label' => 'Tashkent',
+        ]);
+
+        $this->getJson('/api/v1/agents?q=miron')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.company_name', 'MIRON Media');
+
+        $this->getJson('/api/v1/agents?q=tashkent')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.company_name', 'Other Agency');
+    }
+
+    public function test_public_agents_filter_by_csv_category_ids(): void
+    {
+        $first = Category::factory()->create();
+        $second = Category::factory()->create();
+        $other = Category::factory()->create();
+
+        $a = AgentProfile::factory()->approved()->create(['company_name' => 'A']);
+        $a->categories()->attach($first);
+        $b = AgentProfile::factory()->approved()->create(['company_name' => 'B']);
+        $b->categories()->attach($second);
+        $c = AgentProfile::factory()->approved()->create(['company_name' => 'C']);
+        $c->categories()->attach($other);
+
+        $ids = $this->getJson(
+            '/api/v1/agents?category_ids='.$first->id.','.$second->id.'&limit=20'
+        )
+            ->assertOk()
+            ->json('data.*.id');
+
+        $this->assertEqualsCanonicalizing([$a->id, $b->id], $ids);
+    }
+
     public function test_provider_type_is_pinned_to_the_profile_not_the_owners_active_role(): void
     {
         // An approved agency whose owner later flips their active role to

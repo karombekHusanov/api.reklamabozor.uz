@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class AgentProfileService
 {
+    public function __construct(private readonly AgentContractService $contracts) {}
+
     public function findForUser(User $user): ?AgentProfile
     {
         return $user->agentProfile()->with(AgentProfile::PROFILE_RELATIONS)->first();
@@ -36,6 +38,10 @@ class AgentProfileService
             'status' => AgentProfileStatus::Pending,
         ]);
 
+        // Generate the platform agreement from the KYC data — the agent must
+        // sign + re-upload it before they can be activated.
+        $this->contracts->generateFor($profile);
+
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }
 
@@ -58,6 +64,10 @@ class AgentProfileService
         $profile->status = AgentProfileStatus::Pending;
         $profile->rejection_reason = null;
         $profile->save();
+
+        // KYC data changed — regenerate the agreement and require a fresh
+        // signature (any previously signed scan is invalidated).
+        $this->contracts->generateFor($profile);
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }

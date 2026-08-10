@@ -17,7 +17,9 @@ class DirectChatMessageResource extends JsonResource
         return [
             'id' => $this->id,
             'sender_id' => $this->sender_id,
+            'type' => $this->type ?? 'text',
             'body' => $this->body,
+            'meta' => $this->meta,
             'attachments' => FileResource::collection($this->attachments),
             'read_at' => $this->read_at,
             'created_at' => $this->created_at,

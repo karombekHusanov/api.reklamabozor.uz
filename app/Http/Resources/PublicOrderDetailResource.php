@@ -4,13 +4,15 @@ namespace App\Http\Resources;
 
 use App\Enums\AgentProfileStatus;
 use App\Models\Order;
+use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Full order detail for the public showcase — authenticated viewers see the
- * complete description, attachment files, and (for providers) their own offer
- * status + whether they can submit one.
+ * complete description, and (for providers) their own offer status + whether
+ * they can submit one. Attachment files are included only when the order's
+ * `show_files_in_showcase` flag is true; otherwise the key is an empty array.
  *
  * @mixin Order
  */
@@ -24,15 +26,20 @@ class PublicOrderDetailResource extends JsonResource
         $user = $request->user();
         $myOffer = $this->relationLoaded('offers') ? $this->offers->first() : null;
 
+        $attachmentFiles = ($this->show_files_in_showcase ?? true)
+            ? ($this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [])
+            : [];
+
         return [
             'id' => $this->id,
             'title' => $this->title,
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
             'category' => new CategoryResource($this->whenLoaded('category')),
-            'attachment_files' => FileResource::collection(
-                $this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [],
-            ),
+            'region' => new RegionResource($this->whenLoaded('region')),
+            'district' => new RegionResource($this->whenLoaded('district')),
+            'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
+            'attachment_files' => FileResource::collection($attachmentFiles),
             'status' => $this->status->value,
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
@@ -46,6 +53,9 @@ class PublicOrderDetailResource extends JsonResource
                 'price' => $myOffer->price,
                 'comment' => $myOffer->comment,
                 'status' => $myOffer->status->value,
+                'is_interest' => $myOffer->isInterest(),
+                'can_accept' => $myOffer->canAccept(),
+                'chat_id' => app(DirectChatService::class)->findForOffer($myOffer)?->id,
             ] : null,
             'can_offer' => $this->resolveCanOffer($user),
             'created_at' => $this->created_at,

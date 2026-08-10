@@ -6,12 +6,14 @@ use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsContr
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
+use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagController;
 use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
 use App\Http\Controllers\Api\V1\Admin\RatingController as AdminRatingController;
+use App\Http\Controllers\Api\V1\Admin\RegionController as AdminRegionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\AdvantageController;
@@ -27,18 +29,21 @@ use App\Http\Controllers\Api\V1\Chat\DirectChatController;
 use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
 use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
+use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Payment\MulticardCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
+use App\Http\Controllers\Api\V1\Profile\ActivityController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
 use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\PublicClientController;
 use App\Http\Controllers\Api\V1\PublicOrderController;
 use App\Http\Controllers\Api\V1\Rating\RatingController;
+use App\Http\Controllers\Api\V1\RegionController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -70,6 +75,9 @@ Route::post('/banners/{banner}/click', [PublicBannerController::class, 'click'])
 // before the auth group so it wins over the client-only /orders/{order} route.
 Route::get('/orders/showcase', [PublicOrderController::class, 'showcase']);
 
+// Public hashtag suggest (active catalog) for order wizard autocomplete / filters.
+Route::get('/hashtags', [HashtagController::class, 'index']);
+
 Route::prefix('auth')->group(function (): void {
     Route::post('/telegram', [AuthController::class, 'telegramLogin']);
     Route::post('/admin/login', [AuthController::class, 'adminLogin']);
@@ -90,12 +98,16 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::patch('/me', [ProfileController::class, 'update']);
     Route::patch('/me/role', [ProfileController::class, 'setRole']);
     Route::patch('/me/person-type', [ProfileController::class, 'setPersonType']);
+    Route::post('/me/accept-terms', [ProfileController::class, 'acceptTerms']);
     Route::get('/me/legal-entity', [LegalEntityController::class, 'show']);
     Route::post('/me/legal-entity', [LegalEntityController::class, 'store']);
 
     Route::get('/me/rating', [RatingController::class, 'me']);
+    Route::get('/me/activity', [ActivityController::class, 'show']);
+    Route::post('/me/activity/live-orders/seen', [ActivityController::class, 'markLiveOrdersSeen']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
+    Route::get('/regions', [RegionController::class, 'index']);
     Route::get('/clients/{user}', [PublicClientController::class, 'show'])->whereNumber('user');
 
     // B2C client orders + selecting a winning offer.
@@ -103,6 +115,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::post('/offers/{offer}/accept', [OfferController::class, 'accept']);
+    Route::post('/offers/{offer}/chat', [OfferController::class, 'openChat'])
+        ->middleware('throttle:20,1');
     // Completion handshake: client accepts or rejects the delivered work.
     Route::post('/orders/{order}/complete', [OrderController::class, 'confirmCompletion']);
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
@@ -130,6 +144,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Direct client ↔ agency chat (opened from an agent profile, no order required).
     Route::post('/agents/{agentProfile}/direct-chat', [DirectChatController::class, 'open']);
+    Route::get('/direct-chats/{directChat}', [DirectChatController::class, 'show']);
+    Route::get('/direct-chats/{directChat}/messages', [DirectChatController::class, 'messages']);
+    Route::post('/direct-chats/{directChat}/messages', [DirectChatController::class, 'store']);
+    Route::post('/direct-chats/{directChat}/block', [DirectChatController::class, 'block']);
+    Route::delete('/direct-chats/{directChat}/block', [DirectChatController::class, 'unblock']);
 
     // Advantages catalog (active) — providers pick from it in the profile editor.
     Route::get('/advantages', [AdvantageController::class, 'index']);
@@ -142,9 +161,6 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/agent/portfolio', [AgentPortfolioController::class, 'store']);
     Route::patch('/agent/portfolio/{portfolioItem}', [AgentPortfolioController::class, 'update']);
     Route::delete('/agent/portfolio/{portfolioItem}', [AgentPortfolioController::class, 'destroy']);
-    Route::get('/direct-chats/{directChat}', [DirectChatController::class, 'show']);
-    Route::get('/direct-chats/{directChat}/messages', [DirectChatController::class, 'messages']);
-    Route::post('/direct-chats/{directChat}/messages', [DirectChatController::class, 'store']);
 
     // Client rates the agency once the order is completed (moderated).
     Route::post('/orders/{order}/review', [ReviewController::class, 'store']);
@@ -158,13 +174,23 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/profile', [AgentProfileController::class, 'store']);
         Route::put('/profile', [AgentProfileController::class, 'update']);
         Route::patch('/profile', [AgentProfileController::class, 'updateDetails']);
+        // Upload the signed (wet-signature + stamp) platform agreement scan.
+        Route::post('/profile/contract', [AgentProfileController::class, 'uploadSignedContract']);
 
         // Order opportunities + the agent's offers.
         Route::get('/orders', [AgentOrderController::class, 'index']);
+        Route::get('/orders/{order}', [AgentOrderController::class, 'showOrder']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
         Route::post('/orders/{order}/review', [AgentOrderController::class, 'storeReview']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
+        Route::get('/offers/{offer}', [AgentOrderController::class, 'showOffer']);
+        Route::post('/offers/{offer}/chat', [AgentOrderController::class, 'openOfferChat'])
+            ->middleware('throttle:20,1');
+        Route::patch('/offers/{offer}', [AgentOrderController::class, 'updateOffer'])
+            ->middleware('throttle:10,1');
+        Route::put('/offers/{offer}/pricelist', [AgentOrderController::class, 'setPricelist'])
+            ->middleware('throttle:20,1');
 
         // Earnings: escrow payouts owed/paid + withdrawable balance.
         Route::get('/payouts', [AgentPayoutController::class, 'index']);
@@ -195,16 +221,32 @@ Route::prefix('admin')
         Route::patch('/categories/{category}/active', [AdminCategoryController::class, 'toggleActive']);
         Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
 
+        Route::get('/regions', [AdminRegionController::class, 'index']);
+        Route::post('/regions', [AdminRegionController::class, 'store']);
+        Route::get('/regions/{region}', [AdminRegionController::class, 'show']);
+        Route::patch('/regions/{region}', [AdminRegionController::class, 'update']);
+        Route::patch('/regions/{region}/active', [AdminRegionController::class, 'toggleActive']);
+        Route::delete('/regions/{region}', [AdminRegionController::class, 'destroy']);
+
         Route::get('/agents', [AdminAgentProfileController::class, 'index']);
         Route::post('/agents', [AdminAgentProfileController::class, 'store']);
         Route::get('/agents/{agentProfile}', [AdminAgentProfileController::class, 'show']);
         Route::patch('/agents/{agentProfile}/status', [AdminAgentProfileController::class, 'updateStatus']);
+        Route::post('/agents/{agentProfile}/contract/reject', [AdminAgentProfileController::class, 'rejectContract']);
 
         // Advantages catalog CRUD + portfolio takedown.
         Route::get('/advantages', [AdminAdvantageController::class, 'index']);
         Route::post('/advantages', [AdminAdvantageController::class, 'store']);
         Route::patch('/advantages/{advantage}', [AdminAdvantageController::class, 'update']);
         Route::delete('/advantages/{advantage}', [AdminAdvantageController::class, 'destroy']);
+
+        // Order hashtag catalog CRUD + merge.
+        Route::get('/hashtags', [AdminHashtagController::class, 'index']);
+        Route::post('/hashtags', [AdminHashtagController::class, 'store']);
+        Route::patch('/hashtags/{hashtag}', [AdminHashtagController::class, 'update']);
+        Route::post('/hashtags/{hashtag}/merge', [AdminHashtagController::class, 'merge']);
+        Route::delete('/hashtags/{hashtag}', [AdminHashtagController::class, 'destroy']);
+
         Route::get('/agents/{agentProfile}/portfolio', [PortfolioModerationController::class, 'index']);
         Route::patch('/portfolio-items/{portfolioItem}/visibility', [PortfolioModerationController::class, 'setVisibility']);
 

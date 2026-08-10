@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\File;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\Region;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -28,6 +29,20 @@ class OrderTest extends TestCase
         return [$user, $user->createToken('test')->plainTextToken];
     }
 
+    /**
+     * Default client location for create-order payloads.
+     *
+     * @return array{lat: float, lng: float, location_label: string}
+     */
+    private function locationPayload(): array
+    {
+        return [
+            'lat' => 41.311081,
+            'lng' => 69.279716,
+            'location_label' => 'Toshkent',
+        ];
+    }
+
     public function test_creating_an_order_requires_authentication(): void
     {
         $this->postJson('/api/v1/orders', [])->assertUnauthorized();
@@ -43,7 +58,9 @@ class OrderTest extends TestCase
 
         $response = $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Metro banner campaign',
             'description' => 'Need a banner campaign across Tashkent metro.',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token]);
 
@@ -51,16 +68,82 @@ class OrderTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.status', 'new')
             ->assertJsonPath('data.category.id', $category->id)
-            ->assertJsonPath('data.title', $category->name_uz)
+            ->assertJsonPath('data.title', 'Metro banner campaign')
             ->assertJsonPath('data.attachment_file_ids', [$file->id])
-            ->assertJsonCount(1, 'data.attachment_files');
+            ->assertJsonCount(1, 'data.attachment_files')
+            ->assertJsonPath('data.location_label', 'Toshkent')
+            ->assertJsonPath('data.lat', '41.3110810')
+            ->assertJsonPath('data.lng', '69.2797160');
 
         $this->assertDatabaseHas('orders', [
             'client_id' => $client->id,
             'category_id' => $category->id,
             'tz_file_id' => null,
             'status' => 'new',
+            'location_label' => 'Toshkent',
+            'show_files_in_showcase' => true,
         ]);
+    }
+
+    public function test_client_can_set_show_files_in_showcase_false(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Private attachments',
+            'description' => 'Hide files on showcase.',
+            ...$this->locationPayload(),
+            'attachment_file_ids' => [$file->id],
+            'show_files_in_showcase' => false,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('orders', [
+            'client_id' => $client->id,
+            'show_files_in_showcase' => false,
+        ]);
+    }
+
+    public function test_omitting_show_files_in_showcase_defaults_to_true(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Default showcase files',
+            'description' => 'Flag omitted.',
+            ...$this->locationPayload(),
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('orders', [
+            'client_id' => $client->id,
+            'show_files_in_showcase' => true,
+        ]);
+    }
+
+    public function test_client_order_detail_still_returns_files_when_showcase_flag_false(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $order = Order::factory()->for($client, 'client')->create([
+            'attachment_file_ids' => [$file->id],
+            'show_files_in_showcase' => false,
+        ]);
+
+        $this->getJson("/api/v1/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonCount(1, 'data.attachment_files')
+            ->assertJsonPath('data.attachment_files.0.id', $file->id)
+            ->assertJsonPath('data.attachment_file_ids', [$file->id]);
     }
 
     public function test_client_can_place_an_order_with_deadline_and_multiple_attachments(): void
@@ -74,7 +157,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Test project',
             'description' => 'Urgent outdoor campaign.',
+            ...$this->locationPayload(),
             'deadline' => 'today_tomorrow',
             'attachment_file_ids' => [$file1->id, $file2->id, $file3->id],
         ], ['Authorization' => 'Bearer '.$token])
@@ -100,7 +185,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Test project',
             'description' => 'x',
+            ...$this->locationPayload(),
             'deadline' => 'next_year',
             'attachment_file_ids' => [$stranger->id],
         ], ['Authorization' => 'Bearer '.$token])
@@ -114,7 +201,107 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['category_id', 'description', 'attachment_file_ids']);
+            ->assertJsonValidationErrors(['category_id', 'title', 'description', 'lat', 'lng', 'attachment_file_ids']);
+    }
+
+    public function test_client_can_place_an_order_without_region(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Nationwide campaign',
+            'description' => 'All Uzbekistan.',
+            ...$this->locationPayload(),
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.region', null)
+            ->assertJsonPath('data.district', null);
+
+        $this->assertDatabaseHas('orders', [
+            'client_id' => $client->id,
+            'region_id' => null,
+            'district_id' => null,
+        ]);
+    }
+
+    public function test_client_can_place_an_order_with_region_and_district(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $city = Region::query()->where('code', 'toshkent-shahri')->firstOrFail();
+        $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Chilonzor campaign',
+            'description' => 'Local work.',
+            ...$this->locationPayload(),
+            'region_id' => $city->id,
+            'district_id' => $district->id,
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.region.id', $city->id)
+            ->assertJsonPath('data.region.code', 'toshkent-shahri')
+            ->assertJsonPath('data.district.id', $district->id)
+            ->assertJsonPath('data.district.code', 'chilonzor');
+
+        $this->assertDatabaseHas('orders', [
+            'client_id' => $client->id,
+            'region_id' => $city->id,
+            'district_id' => $district->id,
+        ]);
+    }
+
+    public function test_order_rejects_district_not_child_of_region(): void
+    {
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $andijon = Region::query()->where('code', 'andijon')->firstOrFail();
+        $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Mismatch',
+            'description' => 'Bad district.',
+            ...$this->locationPayload(),
+            'region_id' => $andijon->id,
+            'district_id' => $district->id,
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['district_id']);
+    }
+
+    public function test_order_derives_location_label_from_region_when_empty(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $city = Region::query()->where('code', 'toshkent-shahri')->firstOrFail();
+        $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
+
+        $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'title' => 'Derived label',
+            'description' => 'No map label.',
+            'lat' => 41.311081,
+            'lng' => 69.279716,
+            'region_id' => $city->id,
+            'district_id' => $district->id,
+            'attachment_file_ids' => [$file->id],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.location_label', 'Chilonzor, Toshkent shahri');
     }
 
     public function test_attachment_files_must_belong_to_the_client(): void
@@ -125,7 +312,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Test project',
             'description' => 'x',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$strangerFile->id],
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
@@ -145,7 +334,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Test project',
             'description' => 'Need outdoor billboards.',
+            ...$this->locationPayload(),
             'deadline' => 'this_week',
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
@@ -187,7 +378,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $orderCategory->id,
+            'title' => 'Test project',
             'description' => 'Only my category should hear about this.',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
@@ -213,7 +406,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $emptyCategory->id,
+            'title' => 'Test project',
             'description' => 'No one serves this category yet.',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
@@ -235,7 +430,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $other->id,
+            'title' => 'Test project',
             'description' => 'Something custom outside the list.',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
@@ -256,7 +453,9 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/v1/orders', [
             'category_id' => $category->id,
+            'title' => 'Test project',
             'description' => 'Need a launch campaign.',
+            ...$this->locationPayload(),
             'attachment_file_ids' => [$file->id],
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 

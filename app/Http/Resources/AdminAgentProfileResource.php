@@ -50,6 +50,19 @@ class AdminAgentProfileResource extends JsonResource
             'status' => $this->status->value,
             'rejection_reason' => $this->rejection_reason,
             'approved_at' => $this->approved_at,
+
+            // Platform agreement — manager reviews the signed scan here.
+            'contract' => $this->requiresContract() ? [
+                'status' => $this->contract_status?->value,
+                'version' => $this->contract_version,
+                'file' => $this->contractFile?->url(),
+                'signed_file' => $this->signedContractFile?->url(),
+                'rejection_reason' => $this->contract_rejection_reason,
+                'generated_at' => $this->contract_generated_at,
+                'signed_at' => $this->contract_signed_at,
+                'approved' => $this->contractApproved(),
+            ] : null,
+
             'user' => new UserResource($this->whenLoaded('user')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

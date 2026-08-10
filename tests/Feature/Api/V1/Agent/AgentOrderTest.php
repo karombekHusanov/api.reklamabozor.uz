@@ -51,6 +51,44 @@ class AgentOrderTest extends TestCase
             ->assertJsonPath('data.0.my_offer', null);
     }
 
+    public function test_agent_can_view_open_order_detail(): void
+    {
+        $category = Category::factory()->create();
+        [, $token] = $this->approvedAgent($category);
+        $order = Order::factory()->for($category)->create([
+            'description' => 'Need outdoor ads in Tashkent.',
+        ]);
+
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.description', 'Need outdoor ads in Tashkent.')
+            ->assertJsonPath('data.my_offer', null)
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'description',
+                    'client' => ['id', 'first_name', 'avatar'],
+                    'attachment_files',
+                ],
+            ]);
+    }
+
+    public function test_agent_cannot_view_order_outside_their_feed(): void
+    {
+        $category = Category::factory()->create();
+        [, $token] = $this->approvedAgent($category);
+
+        $foreign = Category::factory()->create();
+        $otherAgent = User::factory()->create();
+        AgentProfile::factory()->for($otherAgent)->approved()->create()
+            ->categories()->attach($foreign);
+        $order = Order::factory()->for($foreign)->create();
+
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertNotFound();
+    }
+
     public function test_agent_order_includes_client_id_and_avatar(): void
     {
         $category = Category::factory()->create();
@@ -267,5 +305,48 @@ class AgentOrderTest extends TestCase
         $this->getJson('/api/v1/agent/offers', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonCount(2, 'data');
+    }
+
+    public function test_agent_can_view_own_offer_detail(): void
+    {
+        $category = Category::factory()->create();
+        [$agent, $token] = $this->approvedAgent($category);
+        $offer = Offer::factory()->for($agent, 'agent')->create([
+            'price' => 2_500_000,
+            'comment' => 'Full campaign package.',
+        ]);
+
+        $this->getJson("/api/v1/agent/offers/{$offer->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.id', $offer->id)
+            ->assertJsonPath('data.price', '2500000.00')
+            ->assertJsonPath('data.comment', 'Full campaign package.')
+            ->assertJsonPath('data.order.id', $offer->order_id)
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'price',
+                    'comment',
+                    'status',
+                    'order' => [
+                        'id',
+                        'title',
+                        'description',
+                        'status',
+                        'client' => ['id', 'first_name', 'avatar'],
+                        'attachment_files',
+                    ],
+                ],
+            ]);
+    }
+
+    public function test_agent_cannot_view_another_agents_offer(): void
+    {
+        $category = Category::factory()->create();
+        [, $token] = $this->approvedAgent($category);
+        $foreign = Offer::factory()->create();
+
+        $this->getJson("/api/v1/agent/offers/{$foreign->id}", ['Authorization' => 'Bearer '.$token])
+            ->assertNotFound();
     }
 }

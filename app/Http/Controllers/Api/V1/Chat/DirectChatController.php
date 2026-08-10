@@ -25,16 +25,17 @@ class DirectChatController extends ApiController
     {
         $chat = $this->chats->open($request->user(), $agentProfile);
 
-        return $this->success(new DirectChatResource($chat->load(['client', 'agent', 'agentProfile', 'lastMessage.attachments'])));
+        return $this->success(new DirectChatResource($chat->load(['client', 'agent', 'agentProfile', 'order.category', 'lastMessage.attachments'])));
     }
 
     public function show(Request $request, DirectChat $directChat): JsonResponse
     {
         $chat = $this->chats->forChat($request->user(), $directChat);
         $messages = $this->chats->messages($request->user(), $directChat);
+        $activeOffer = $this->chats->activeOfferForPair($chat);
 
         return $this->success([
-            'chat' => new DirectChatResource($chat),
+            'chat' => (new DirectChatResource($chat))->withActiveOffer($activeOffer),
             'messages' => DirectChatMessageResource::collection($messages),
         ]);
     }
@@ -61,5 +62,31 @@ class DirectChatController extends ApiController
         );
 
         return $this->success(new DirectChatMessageResource($message), 'Message sent', 201);
+    }
+
+    /**
+     * End the conversation (soft block) — both sides become read-only.
+     */
+    public function block(Request $request, DirectChat $directChat): JsonResponse
+    {
+        $chat = $this->chats->block($request->user(), $directChat);
+
+        return $this->success(
+            (new DirectChatResource($chat))->withActiveOffer($this->chats->activeOfferForPair($chat)),
+            'Conversation ended',
+        );
+    }
+
+    /**
+     * Reopen — only the participant who ended the chat.
+     */
+    public function unblock(Request $request, DirectChat $directChat): JsonResponse
+    {
+        $chat = $this->chats->unblock($request->user(), $directChat);
+
+        return $this->success(
+            (new DirectChatResource($chat))->withActiveOffer($this->chats->activeOfferForPair($chat)),
+            'Conversation reopened',
+        );
     }
 }

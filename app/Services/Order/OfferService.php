@@ -8,10 +8,12 @@ use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
 use App\Models\AgentProfile;
 use App\Models\Chat;
+use App\Models\DirectChatMessage;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderView;
 use App\Models\User;
+use App\Services\Chat\DirectChatService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +24,8 @@ class OfferService
     public function __construct(
         private readonly OrderNotifier $notifier,
         private readonly PayoutService $payouts,
+        private readonly DirectChatService $directChats,
+        private readonly OrderContractService $contracts,
     ) {}
 
     /**
@@ -30,9 +34,10 @@ class OfferService
      * with no approved providers). Each order carries the agent's own offer
      * (if any).
      *
+     * @param  int|null  $orderId  When set, return at most that one opportunity.
      * @return Collection<int, Order>
      */
-    public function availableForAgent(User $agent): Collection
+    public function availableForAgent(User $agent, ?int $orderId = null): Collection
     {
         // Categories served by any of the agent's approved provider profiles.
         $profiles = $agent->providerProfiles()
@@ -70,11 +75,15 @@ class OfferService
             // ever shows to the single agency it was addressed to.
             ->where(fn ($q) => $q->whereNull('target_agent_id')->orWhere('target_agent_id', $agent->id))
             ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::openForOffers()))
+            ->when($orderId !== null, fn ($q) => $q->whereKey($orderId))
             ->withCount(['views', 'offers'])
             ->with([
                 'category',
+                'region',
+                'district',
+                'hashtags',
                 'client.avatarFile',
-                'offers' => fn ($query) => $query->where('agent_id', $agent->id),
+                'offers' => fn ($query) => $query->where('agent_id', $agent->id)->with('items'),
             ])
             ->latest()
             ->get();
@@ -83,6 +92,18 @@ class OfferService
         Order::hydrateAttachmentFiles($orders);
 
         return $orders;
+    }
+
+    /**
+     * Single open opportunity the agent may bid on (404 if outside their feed).
+     */
+    public function findAvailableForAgent(User $agent, Order $order): Order
+    {
+        $found = $this->availableForAgent($agent, $order->id)->first();
+
+        abort_unless($found !== null, 404);
+
+        return $found;
     }
 
     /**
@@ -144,13 +165,23 @@ class OfferService
         $offer = $order->offers()->create([
             'agent_id' => $agent->id,
             'agent_profile_id' => $profile->id,
-            'price' => $data['price'],
-            'comment' => $data['comment'],
+            'price' => $data['price'] ?? null,
+            'comment' => $data['comment'] ?? null,
             'status' => OfferStatus::Pending,
         ]);
 
         if ($order->status === OrderStatus::New) {
             $order->update(['status' => OrderStatus::OffersSent]);
+        }
+
+        // Eager-open the order-scoped thread for interests so the client notify
+        // can deep-link into chat (priced offers still open chat on demand).
+        if ($offer->isInterest()) {
+            try {
+                $this->directChats->openForOffer($agent, $offer);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         try {
@@ -159,7 +190,7 @@ class OfferService
             report($e);
         }
 
-        return $offer->load(['agent', 'agentProfile.companyLogoFile']);
+        return $offer->load(['agent', 'agentProfile.companyLogoFile', 'order']);
     }
 
     /**
@@ -170,12 +201,203 @@ class OfferService
         return Offer::query()
             ->where('agent_id', $agent->id)
             ->with([
+                'items',
                 'order.category',
+                'order.region',
+                'order.district',
+                'order.hashtags',
                 'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
                     ->where('reviewer_id', $agent->id),
             ])
             ->latest()
             ->get();
+    }
+
+    /**
+     * Single offer owned by the agent, with full order context for the detail page.
+     */
+    public function findForAgent(User $agent, Offer $offer): Offer
+    {
+        abort_unless($offer->agent_id === $agent->id, 404);
+
+        $offer->load([
+            'items',
+            'order.category',
+            'order.region',
+            'order.district',
+            'order.hashtags',
+            'order.client.avatarFile',
+            'order.contract.pdfFile',
+            'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
+                ->where('reviewer_id', $agent->id),
+        ]);
+
+        if ($offer->order) {
+            $offer->order->loadCount(['views', 'offers']);
+            Order::hydrateAttachmentFiles($offer->order);
+        }
+
+        return $offer;
+    }
+
+    /**
+     * Agent adjusts the bid while it is still pending (max {@see Offer::MAX_PRICE_EDITS}).
+     *
+     * @param  array{price: float|int|string, comment?: string|null}  $data
+     */
+    public function updatePrice(User $agent, Offer $offer, array $data): Offer
+    {
+        abort_unless($offer->agent_id === $agent->id, 404);
+
+        $offer->loadMissing('order');
+
+        if ($offer->isInterest()) {
+            throw ValidationException::withMessages([
+                'price' => ['Interest responses cannot be priced via edit.'],
+            ]);
+        }
+
+        if (! $offer->canEditPrice()) {
+            if ($offer->status !== OfferStatus::Pending) {
+                throw ValidationException::withMessages([
+                    'price' => ['This offer can no longer be edited.'],
+                ]);
+            }
+
+            if ((int) $offer->price_edit_count >= Offer::MAX_PRICE_EDITS) {
+                throw ValidationException::withMessages([
+                    'price' => ['Price edit limit reached ('.Offer::MAX_PRICE_EDITS.').'],
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'price' => ['This order is no longer open for negotiation.'],
+            ]);
+        }
+
+        $newPrice = (string) $data['price'];
+        $oldPrice = (string) $offer->price;
+
+        if (bccomp($newPrice, $oldPrice, 2) === 0) {
+            throw ValidationException::withMessages([
+                'price' => ['Enter a different price.'],
+            ]);
+        }
+
+        if (isset($data['comment']) && $data['comment'] !== null) {
+            $comment = trim((string) $data['comment']);
+            if ($comment === '') {
+                throw ValidationException::withMessages([
+                    'comment' => ['Comment cannot be empty.'],
+                ]);
+            }
+        } else {
+            $comment = $offer->comment;
+        }
+
+        $offer->update([
+            'price' => $newPrice,
+            'comment' => $comment,
+            'price_updated_at' => now(),
+            'price_edit_count' => (int) $offer->price_edit_count + 1,
+        ]);
+
+        $order = $offer->order;
+        $chat = $this->directChats->findPair($order->client_id, $agent->id, $order->id)
+            ?? $this->directChats->openForOffer($agent, $offer->fresh());
+
+        $this->directChats->postEvent(
+            $chat,
+            $agent,
+            DirectChatMessage::TYPE_OFFER_PRICE_CHANGED,
+            'Offer price updated',
+            [
+                'order_id' => $order->id,
+                'offer_id' => $offer->id,
+                'old_price' => $oldPrice,
+                'new_price' => $newPrice,
+            ],
+        );
+
+        try {
+            $this->notifier->notifyOfferPriceChanged($offer->fresh(['order', 'agent']));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->findForAgent($agent, $offer->fresh());
+    }
+
+    /**
+     * Agent sends (or replaces) the pricelist on their pending offer — the
+     * priced step after negotiating in the order chat. Replaces every line,
+     * recomputes the cached total (interest → priced), posts an event into the
+     * order-scoped thread, and notifies the client.
+     *
+     * @param  array<int, array{name: string, unit?: string|null, quantity: float|int|string, unit_price: float|int|string}>  $items
+     */
+    public function setPricelist(User $agent, Offer $offer, array $items): Offer
+    {
+        abort_unless($offer->agent_id === $agent->id, 404);
+
+        $offer->loadMissing('order');
+        $order = $offer->order;
+
+        if ($order === null) {
+            throw ValidationException::withMessages([
+                'order' => ['This order is no longer available.'],
+            ]);
+        }
+
+        if ($offer->status !== OfferStatus::Pending || ! $order->status->isOpenForOffers()) {
+            throw ValidationException::withMessages([
+                'offer' => ['This offer can no longer be priced.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($offer, $items): void {
+            $offer->items()->delete();
+
+            foreach (array_values($items) as $index => $item) {
+                $offer->items()->create([
+                    'name' => trim((string) $item['name']),
+                    'unit' => isset($item['unit']) && trim((string) $item['unit']) !== ''
+                        ? trim((string) $item['unit'])
+                        : 'dona',
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['unit_price'],
+                    'sort_order' => $index,
+                ]);
+            }
+
+            $offer->load('items');
+            $offer->recomputeTotal();
+            $offer->update(['price_updated_at' => now()]);
+        });
+
+        $chat = $this->directChats->findForOffer($offer)
+            ?? $this->directChats->openForOffer($agent, $offer->fresh());
+
+        $this->directChats->postEvent(
+            $chat,
+            $agent,
+            DirectChatMessage::TYPE_OFFER_PRICELIST_SENT,
+            'Pricelist sent',
+            [
+                'order_id' => $order->id,
+                'offer_id' => $offer->id,
+                'total' => (string) $offer->fresh()->price,
+                'item_count' => count($items),
+            ],
+        );
+
+        try {
+            $this->notifier->notifyOfferPricelistSent($offer->fresh(['order.client', 'agent', 'agentProfile']));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->findForAgent($agent, $offer->fresh());
     }
 
     /**
@@ -192,6 +414,12 @@ class OfferService
 
         abort_unless($order->client_id === $client->id, 404);
 
+        if (! $offer->hasPrice()) {
+            throw ValidationException::withMessages([
+                'offer' => ['This response has no price yet and cannot be accepted.'],
+            ]);
+        }
+
         if (! in_array($order->status, [OrderStatus::New, OrderStatus::OffersSent], true)) {
             throw ValidationException::withMessages([
                 'order' => ['This order is not awaiting a selection.'],
@@ -200,9 +428,26 @@ class OfferService
 
         $paymentEnabled = (bool) config('services.multicard.enabled');
 
-        DB::transaction(function () use ($order, $offer, $paymentEnabled): void {
+        DB::transaction(function () use ($order, $offer, $paymentEnabled, $client): void {
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
+
+            // Accepting is explicit consent — reopen a previously ended order thread.
+            $pair = $this->directChats->findPair($order->client_id, $offer->agent_id, $order->id);
+            if ($pair !== null) {
+                $this->directChats->clearBlock($pair);
+                $this->directChats->postEvent(
+                    $pair->fresh(),
+                    $client,
+                    DirectChatMessage::TYPE_OFFER_ACCEPTED,
+                    'Offer accepted',
+                    [
+                        'order_id' => $order->id,
+                        'offer_id' => $offer->id,
+                        'price' => (string) $offer->price,
+                    ],
+                );
+            }
 
             if ($paymentEnabled) {
                 $order->update([
@@ -216,6 +461,7 @@ class OfferService
 
         if (! $paymentEnabled) {
             $this->notifyDeal($offer);
+            $this->generateContract($offer);
         }
 
         return $offer->load(['agent', 'agentProfile.companyLogoFile']);
@@ -240,6 +486,7 @@ class OfferService
         });
 
         $this->notifyDeal($offer);
+        $this->generateContract($offer);
     }
 
     private function activateInTransaction(Order $order, Offer $offer): void
@@ -265,6 +512,22 @@ class OfferService
     {
         try {
             $this->notifier->notifyOfferAccepted($offer);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Generate the per-order contract once the deal is active. Best-effort — a
+     * rendering hiccup must not fail the deal (the contract can be regenerated).
+     */
+    private function generateContract(Offer $offer): void
+    {
+        try {
+            $offer->loadMissing('order');
+            if ($offer->order !== null) {
+                $this->contracts->generateForOrder($offer->order);
+            }
         } catch (\Throwable $e) {
             report($e);
         }

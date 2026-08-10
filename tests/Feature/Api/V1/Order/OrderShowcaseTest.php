@@ -5,9 +5,12 @@ namespace Tests\Feature\Api\V1\Order;
 use App\Enums\OrderStatus;
 use App\Models\AgentProfile;
 use App\Models\Category;
+use App\Models\File;
+use App\Models\Hashtag;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderView;
+use App\Models\Region;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -68,6 +71,93 @@ class OrderShowcaseTest extends TestCase
             ->assertJsonCount(3, 'data');
     }
 
+    public function test_showcase_filters_by_title_search(): void
+    {
+        Order::factory()->status(OrderStatus::New)->create(['title' => 'LED banner kampaniya']);
+        Order::factory()->status(OrderStatus::New)->create(['title' => 'SMM paket']);
+
+        $this->getJson('/api/v1/orders/showcase?q=banner&limit=20')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'LED banner kampaniya');
+    }
+
+    public function test_showcase_filters_by_category_region_and_date(): void
+    {
+        $category = Category::factory()->create();
+        $otherCategory = Category::factory()->create();
+        $region = Region::factory()->create();
+        $otherRegion = Region::factory()->create();
+
+        $match = Order::factory()->for($category)->status(OrderStatus::New)->create([
+            'region_id' => $region->id,
+            'created_at' => now()->subDays(2),
+        ]);
+        Order::factory()->for($otherCategory)->status(OrderStatus::New)->create([
+            'region_id' => $region->id,
+            'created_at' => now()->subDays(2),
+        ]);
+        Order::factory()->for($category)->status(OrderStatus::New)->create([
+            'region_id' => $otherRegion->id,
+            'created_at' => now()->subDays(2),
+        ]);
+        Order::factory()->for($category)->status(OrderStatus::New)->create([
+            'region_id' => $region->id,
+            'created_at' => now()->subDays(40),
+        ]);
+
+        $from = now()->subDays(7)->toDateString();
+        $to = now()->toDateString();
+
+        $this->getJson(
+            '/api/v1/orders/showcase?category_ids='.$category->id
+            .'&region_id='.$region->id
+            .'&created_from='.$from
+            .'&created_to='.$to
+            .'&limit=20'
+        )
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $match->id);
+    }
+
+    public function test_showcase_filters_by_multiple_category_ids(): void
+    {
+        $first = Category::factory()->create();
+        $second = Category::factory()->create();
+        $other = Category::factory()->create();
+
+        $a = Order::factory()->for($first)->status(OrderStatus::New)->create();
+        $b = Order::factory()->for($second)->status(OrderStatus::New)->create();
+        Order::factory()->for($other)->status(OrderStatus::New)->create();
+
+        $ids = $this->getJson(
+            '/api/v1/orders/showcase?category_ids='.$first->id.','.$second->id
+            .'&limit=20'
+        )
+            ->assertOk()
+            ->json('data.*.id');
+
+        $this->assertEqualsCanonicalizing([$a->id, $b->id], $ids);
+    }
+
+    public function test_showcase_search_matches_hashtag_label(): void
+    {
+        $tag = Hashtag::factory()->create([
+            'slug' => 'led-ekran',
+            'label' => 'LED ekran',
+            'is_active' => true,
+        ]);
+        $withTag = Order::factory()->status(OrderStatus::New)->create(['title' => 'Boshqa title']);
+        $withTag->hashtags()->attach($tag->id);
+        Order::factory()->status(OrderStatus::New)->create(['title' => 'Oddiy buyurtma']);
+
+        $this->getJson('/api/v1/orders/showcase?q=%23led&limit=20')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $withTag->id);
+    }
+
     // ── Detail ──────────────────────────────────────────────────────────
 
     /**
@@ -112,6 +202,51 @@ class OrderShowcaseTest extends TestCase
         $this->assertNull($data['my_offer']);
         $this->assertArrayNotHasKey('budget_min', $data);
         $this->assertArrayNotHasKey('budget_max', $data);
+    }
+
+    public function test_detail_includes_attachment_files_by_default(): void
+    {
+        $client = User::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $order = Order::factory()
+            ->for($client, 'client')
+            ->status(OrderStatus::New)
+            ->create(['attachment_file_ids' => [$file->id]]);
+
+        $viewer = User::factory()->create();
+        $token = $viewer->createToken('test')->plainTextToken;
+
+        $this->getJson(
+            "/api/v1/orders/showcase/{$order->id}",
+            ['Authorization' => "Bearer $token"],
+        )
+            ->assertOk()
+            ->assertJsonCount(1, 'data.attachment_files')
+            ->assertJsonPath('data.attachment_files.0.id', $file->id);
+    }
+
+    public function test_detail_hides_attachment_files_when_flag_false(): void
+    {
+        $client = User::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        $order = Order::factory()
+            ->for($client, 'client')
+            ->status(OrderStatus::New)
+            ->create([
+                'attachment_file_ids' => [$file->id],
+                'show_files_in_showcase' => false,
+            ]);
+
+        // Even the order owner must not see files on the showcase detail page.
+        $token = $client->createToken('test')->plainTextToken;
+
+        $response = $this->getJson(
+            "/api/v1/orders/showcase/{$order->id}",
+            ['Authorization' => "Bearer $token"],
+        )->assertOk();
+
+        $this->assertArrayHasKey('attachment_files', $response->json('data'));
+        $this->assertSame([], $response->json('data.attachment_files'));
     }
 
     public function test_detail_can_offer_true_for_approved_matching_provider(): void

@@ -5,7 +5,7 @@ namespace App\Http\Requests\Api\V1\Agent;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * An agent's offer (proposal) for an order — a price plus a pitch comment.
+ * Agent response to an order — either a priced offer or an empty-body interest (otklik).
  */
 class StoreOfferRequest extends FormRequest
 {
@@ -20,8 +20,8 @@ class StoreOfferRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'price' => ['required', 'numeric', 'min:0', 'max:9999999999'],
-            'comment' => ['required', 'string', 'max:2000'],
+            'price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'comment' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
 }

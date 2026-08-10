@@ -142,7 +142,7 @@ class AgentProfileTest extends TestCase
     public function test_admin_can_approve_pending_application(): void
     {
         $user = User::factory()->create(['role' => Role::Client]);
-        $profile = AgentProfile::factory()->for($user)->create();
+        $profile = AgentProfile::factory()->for($user)->contractUnderReview()->create();
 
         $this->patchJson("/api/v1/admin/agents/{$profile->id}/status", [
             'status' => 'approved',
@@ -167,7 +167,7 @@ class AgentProfileTest extends TestCase
             'roles' => [Role::Client],
             'role_selected_at' => now(),
         ]);
-        $profile = AgentProfile::factory()->for($user)->create();
+        $profile = AgentProfile::factory()->for($user)->contractUnderReview()->create();
 
         $this->patchJson("/api/v1/admin/agents/{$profile->id}/status", [
             'status' => 'approved',

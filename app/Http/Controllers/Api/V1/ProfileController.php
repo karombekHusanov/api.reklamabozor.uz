@@ -11,6 +11,7 @@ use App\Http\Requests\Api\V1\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class ProfileController extends ApiController
@@ -81,6 +82,22 @@ class ProfileController extends ApiController
         return $this->success(
             new UserResource($user->load('avatarFile')),
             'Person type updated',
+        );
+    }
+
+    /**
+     * Record the user's acceptance of the current public offer (Terms of Use)
+     * version. Idempotent — re-accepting simply refreshes the timestamp.
+     */
+    public function acceptTerms(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $user->acceptCurrentTerms();
+
+        return $this->success(
+            new UserResource($user->load('avatarFile')),
+            'Terms accepted',
         );
     }
 }

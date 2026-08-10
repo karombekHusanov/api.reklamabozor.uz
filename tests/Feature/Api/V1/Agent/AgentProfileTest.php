@@ -9,11 +9,20 @@ use App\Models\Category;
 use App\Models\File;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AgentProfileTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // KYC apply/resubmit renders the agreement PDF — keep it off the real disk.
+        Storage::fake((string) config('files.disk'));
+    }
 
     /**
      * @return array{0: User, 1: string}

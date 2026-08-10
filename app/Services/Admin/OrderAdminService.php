@@ -14,7 +14,7 @@ class OrderAdminService
      *
      * @var list<string>
      */
-    private const RELATIONS = ['category', 'client', 'targetAgent.agentProfile', 'offers.agent', 'offers.agentProfile', 'payments.payer'];
+    private const RELATIONS = ['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.agentProfile', 'offers.agent', 'offers.agentProfile', 'payments.payer', 'contract.pdfFile'];
 
     /**
      * Allowed admin status transitions: target => acceptable source states.
@@ -49,7 +49,7 @@ class OrderAdminService
     public function list(array $filters): LengthAwarePaginator
     {
         $query = Order::query()
-            ->with(['category', 'client', 'targetAgent.agentProfile'])
+            ->with(['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.agentProfile'])
             ->withCount('offers');
 
         if (! empty($filters['status'])) {

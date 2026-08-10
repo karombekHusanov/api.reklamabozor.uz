@@ -9,6 +9,7 @@ use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Chat\DirectChatService;
 use App\Services\Telegram\AdminNotifier;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Support\Str;
@@ -97,12 +98,87 @@ class OrderNotifier
             return false;
         }
 
+        $buttonLabel = "📂 Taklifni ko'rish";
+        $deepLink = $this->miniAppLink('/orders/'.$offer->order_id);
+
+        if (! $offer->hasPrice()) {
+            $chat = app(DirectChatService::class)->findForOffer($offer);
+            if ($chat !== null) {
+                $deepLink = $this->miniAppLink('/chat/direct/'.$chat->id);
+                $buttonLabel = '💬 Suhbatni ochish';
+            }
+        }
+
+        $markup = $deepLink !== null
+            ? $this->bot->openAppInlineKeyboard($buttonLabel, $deepLink)
+            : null;
+
+        $this->bot->sendMessage((int) $client->telegram_id, $this->buildOfferMessage($offer), $markup);
+
+        return true;
+    }
+
+    /**
+     * Client: agent changed their pending offer price during negotiation.
+     */
+    public function notifyOfferPriceChanged(Offer $offer): bool
+    {
+        $offer->loadMissing('order.client', 'agentProfile');
+
+        $client = $offer->order?->client;
+
+        if ($client?->telegram_id === null) {
+            return false;
+        }
+
+        $company = $offer->agentProfile?->company_name ?? 'Agentlik';
+        $price = number_format((float) $offer->price, 0, '.', ' ');
+        $text = "💰 {$company} taklif narxini yangiladi.\n"
+            ."Buyurtma #{$offer->order_id}\n"
+            ."Yangi narx: {$price} so'm";
+
         $deepLink = $this->miniAppLink('/orders/'.$offer->order_id);
         $markup = $deepLink !== null
             ? $this->bot->openAppInlineKeyboard("📂 Taklifni ko'rish", $deepLink)
             : null;
 
-        $this->bot->sendMessage((int) $client->telegram_id, $this->buildOfferMessage($offer), $markup);
+        $this->bot->sendMessage((int) $client->telegram_id, $text, $markup);
+
+        return true;
+    }
+
+    /**
+     * Client: agent sent a pricelist (priced contract) on their offer — the
+     * client can now review the lines and accept.
+     */
+    public function notifyOfferPricelistSent(Offer $offer): bool
+    {
+        $offer->loadMissing('order.client', 'agentProfile');
+
+        $client = $offer->order?->client;
+
+        if ($client?->telegram_id === null) {
+            return false;
+        }
+
+        $company = $offer->agentProfile?->company_name ?? 'Agentlik';
+        $price = number_format((float) $offer->price, 0, '.', ' ');
+        $text = implode("\n", [
+            '📋 <b>Narxlar ro\'yxati keldi!</b>',
+            '',
+            "🔖 Buyurtma: <b>#{$offer->order_id}</b>",
+            '🏢 Agentlik: <b>'.e($company).'</b>',
+            "💰 Jami: <b>{$price} so'm</b>",
+            '',
+            'Narxlarni ko\'rib chiqing va mos bo\'lsa tanlang.',
+        ]);
+
+        $deepLink = $this->miniAppLink('/orders/'.$offer->order_id);
+        $markup = $deepLink !== null
+            ? $this->bot->openAppInlineKeyboard("📂 Ko'rish va tanlash", $deepLink)
+            : null;
+
+        $this->bot->sendMessage((int) $client->telegram_id, $text, $markup);
 
         return true;
     }
@@ -339,19 +415,35 @@ class OrderNotifier
         $agent = $offer->agent;
         $company = e($offer->agentProfile?->company_name
             ?? trim(($agent?->first_name ?? '').' '.($agent?->last_name ?? '')));
-        $price = number_format((float) $offer->price, 0, '.', ' ');
-        $comment = e(Str::limit($offer->comment, 300));
 
-        return implode("\n", [
+        if (! $offer->hasPrice()) {
+            return implode("\n", [
+                '🙋 <b>Yangi otklik!</b>',
+                '',
+                "🔖 Buyurtma: <b>#{$order->id}</b> — ".e($order->title),
+                "🏢 Agentlik: <b>{$company}</b>",
+                '',
+                'Agentlik buyurtmangizga qiziqish bildirdi. Suhbatni boshlash uchun tugmani bosing.',
+            ]);
+        }
+
+        $price = number_format((float) $offer->price, 0, '.', ' ');
+        $lines = [
             '💼 <b>Yangi taklif!</b>',
             '',
             "🔖 Buyurtma: <b>#{$order->id}</b> — ".e($order->title),
             "🏢 Agentlik: <b>{$company}</b>",
             "💰 Narx: <b>{$price} so'm</b>",
-            "💬 Izoh: {$comment}",
-            '',
-            "Taklifni ko'rish va tanlash uchun quyidagi tugmani bosing.",
-        ]);
+        ];
+
+        if ($offer->comment !== null && $offer->comment !== '') {
+            $lines[] = '💬 Izoh: '.e(Str::limit($offer->comment, 300));
+        }
+
+        $lines[] = '';
+        $lines[] = "Taklifni ko'rish va tanlash uchun quyidagi tugmani bosing.";
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -382,6 +474,7 @@ class OrderNotifier
         $lines = [
             "🆕 <b>Yangi buyurtma — #{$order->id}</b>",
             '',
+            '📌 Loyiha: <b>'.e($order->title).'</b>',
             "📁 Yo'nalish: <b>{$category}</b>",
         ];
 

@@ -28,6 +28,8 @@ class AdminOfferResource extends JsonResource
             'price' => $this->price,
             'comment' => $this->comment,
             'status' => $this->status->value,
+            'is_interest' => $this->isInterest(),
+            'can_accept' => $this->canAccept(),
             'agent' => [
                 'id' => $this->agent_id,
                 'company_name' => $profile?->company_name,

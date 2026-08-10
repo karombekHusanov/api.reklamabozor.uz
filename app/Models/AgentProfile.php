@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AgentContractStatus;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
@@ -34,6 +35,8 @@ class AgentProfile extends Model
         'companyLogoFile',
         'directorPassportFile',
         'registrationCertificateFile',
+        'contractFile',
+        'signedContractFile',
     ];
 
     /**
@@ -82,6 +85,14 @@ class AgentProfile extends Model
         'status',
         'rejection_reason',
         'approved_at',
+        'contract_status',
+        'contract_file_id',
+        'contract_hash',
+        'contract_version',
+        'contract_generated_at',
+        'signed_contract_file_id',
+        'contract_signed_at',
+        'contract_rejection_reason',
     ];
 
     public function user(): BelongsTo
@@ -102,6 +113,34 @@ class AgentProfile extends Model
     public function registrationCertificateFile(): BelongsTo
     {
         return $this->belongsTo(File::class, 'registration_certificate_file_id');
+    }
+
+    /** The platform↔agent agreement generated from KYC data. */
+    public function contractFile(): BelongsTo
+    {
+        return $this->belongsTo(File::class, 'contract_file_id');
+    }
+
+    /** The agent's uploaded signed (wet-signature + stamp) scan. */
+    public function signedContractFile(): BelongsTo
+    {
+        return $this->belongsTo(File::class, 'signed_contract_file_id');
+    }
+
+    /**
+     * Only agencies (legal entities) sign the platform agreement; designers
+     * (individuals, instant-approved) do not.
+     */
+    public function requiresContract(): bool
+    {
+        return $this->provider_type === ProviderType::Agent;
+    }
+
+    /** Whether the signed agreement is approved (or not required at all). */
+    public function contractApproved(): bool
+    {
+        return ! $this->requiresContract()
+            || $this->contract_status === AgentContractStatus::Approved;
     }
 
     public function categories(): BelongsToMany
@@ -250,6 +289,9 @@ class AgentProfile extends Model
             'status' => AgentProfileStatus::class,
             'approved_at' => 'datetime',
             'workflow_steps' => 'array',
+            'contract_status' => AgentContractStatus::class,
+            'contract_generated_at' => 'datetime',
+            'contract_signed_at' => 'datetime',
         ];
     }
 }
