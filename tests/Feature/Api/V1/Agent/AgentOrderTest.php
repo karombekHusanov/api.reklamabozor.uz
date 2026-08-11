@@ -304,7 +304,27 @@ class AgentOrderTest extends TestCase
 
         $this->getJson('/api/v1/agent/offers', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonCount(2, 'data');
+            ->assertJsonCount(2, 'data')
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => [
+                        'id',
+                        'price',
+                        'status',
+                        'order' => [
+                            'id',
+                            'title',
+                            'description',
+                            'status',
+                            'hashtags',
+                            'views_count',
+                            'offers_count',
+                            'client' => ['id', 'first_name', 'avatar'],
+                            'created_at',
+                        ],
+                    ],
+                ],
+            ]);
     }
 
     public function test_agent_can_view_own_offer_detail(): void

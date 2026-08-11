@@ -202,10 +202,12 @@ class OfferService
             ->where('agent_id', $agent->id)
             ->with([
                 'items',
+                'order' => fn ($q) => $q->withCount(['views', 'offers']),
                 'order.category',
                 'order.region',
                 'order.district',
                 'order.hashtags',
+                'order.client.avatarFile',
                 'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
                     ->where('reviewer_id', $agent->id),
             ])

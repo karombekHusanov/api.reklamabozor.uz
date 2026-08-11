@@ -43,6 +43,7 @@ class AgentOfferResource extends JsonResource
             'order' => [
                 'id' => $this->order?->id,
                 'title' => $this->order?->title,
+                'description' => $this->order?->description,
                 'status' => $this->order?->status->value,
                 'category' => $this->order?->category
                     ? new CategoryResource($this->order->category)
@@ -50,6 +51,14 @@ class AgentOfferResource extends JsonResource
                 'hashtags' => HashtagResource::collection(
                     $this->order?->relationLoaded('hashtags') ? $this->order->hashtags : [],
                 ),
+                'views_count' => $this->order?->views_count ?? null,
+                'offers_count' => $this->order?->offers_count ?? null,
+                'client' => $this->order ? [
+                    'id' => $this->order->client?->id,
+                    'first_name' => $this->order->client?->first_name,
+                    'avatar' => $this->order->client?->avatarFile?->url(),
+                ] : null,
+                'created_at' => $this->order?->created_at,
             ],
             'my_review' => $myReview ? new ReviewResource($myReview) : null,
             'created_at' => $this->created_at,
