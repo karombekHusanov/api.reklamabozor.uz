@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CategoryType;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\OrderStatus;
@@ -29,6 +30,7 @@ class Order extends Model
         'client_id',
         'target_agent_id',
         'category_id',
+        'category_type',
         'title',
         'description',
         'deadline',
@@ -311,6 +313,7 @@ class Order extends Model
             'lat' => 'decimal:7',
             'lng' => 'decimal:7',
             'status' => OrderStatus::class,
+            'category_type' => CategoryType::class,
             'deadline' => OrderDeadline::class,
             'attachment_file_ids' => 'array',
             'show_files_in_showcase' => 'boolean',

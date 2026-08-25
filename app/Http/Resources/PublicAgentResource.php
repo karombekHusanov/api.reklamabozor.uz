@@ -29,10 +29,16 @@ class PublicAgentResource extends JsonResource
                 ?: trim($this->user->first_name.' '.($this->user->last_name ?? '')),
             'avatar' => $this->user->avatarFile?->url(),
             'provider_type' => $this->provider_type->value,
+            // Capacities offered, derived from category types (agent | designer).
+            // Which marketplace lists this profile appears in. A legal entity may
+            // serve both. PROFILE_ARCHITECTURE.md §3.
+            'capabilities' => $this->servedCapabilities(),
             // Legal nature of the provider (agents/sellers are verified legal
             // entities; a designer may be an individual or a legal entity).
             'person_type' => $this->user->effectivePersonType()?->value,
             'person_type_verified' => $this->user->isVerifiedLegalEntity(),
+            // Optional MyID biometric identity badge — a trust signal for clients.
+            'identity_verified' => $this->user->isIdentityVerified(),
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
             'location_label' => $this->location_label,

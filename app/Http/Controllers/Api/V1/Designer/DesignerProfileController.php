@@ -24,15 +24,19 @@ class DesignerProfileController extends ApiController
     {
         $user = $request->user();
 
-        // Multirole: holding the designer role is enough — it does not have
-        // to be the active one.
-        abort_if(! $user->hasRole(Role::Designer), 403);
-
         if (AgentProfile::query()->where('user_id', $user->id)->exists()) {
             throw ValidationException::withMessages([
                 'profile' => ['You already have a provider profile.'],
             ]);
         }
+
+        // Creating a designer profile IS becoming a designer — grant the role
+        // here (mirrors agent approval granting the agent role). No self-select
+        // step, no PATCH /me/role. PROFILE_ARCHITECTURE.md §4.
+        $user->grantRole(Role::Designer);
+        $user->role = Role::Designer;
+        $user->role_selected_at ??= now();
+        $user->save();
 
         $validated = $request->validated();
 

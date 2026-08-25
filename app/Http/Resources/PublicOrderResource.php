@@ -9,9 +9,9 @@ use Illuminate\Support\Str;
 
 /**
  * Anonymised order for the public home "live orders" showcase — social proof of
- * marketplace activity. Deliberately omits client identity, attachments, budget
- * and any contact data; it exposes only the category, a short teaser and the
- * public activity counters (views / offers).
+ * marketplace activity. Exposes category, region, a short teaser, the client
+ * preview, and public counters (views / offers / attachment count). Omits
+ * attachment payloads, budget and contact data.
  *
  * @mixin Order
  */
@@ -33,6 +33,7 @@ class PublicOrderResource extends JsonResource
             'status' => $this->status->value,
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
+            'attachments_count' => count($this->allAttachmentFileIds()),
             'client' => $this->whenLoaded('client', fn () => [
                 'id' => $this->client->id,
                 'first_name' => $this->client->first_name,

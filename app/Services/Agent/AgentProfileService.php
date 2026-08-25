@@ -3,8 +3,10 @@
 namespace App\Services\Agent;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\CategoryType;
 use App\Enums\ProviderType;
 use App\Models\AgentProfile;
+use App\Models\Category;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
@@ -89,6 +91,7 @@ class AgentProfileService
         $profile->save();
 
         if ($categoryIds !== null) {
+            $this->assertCategoriesAllowed($profile, $categoryIds);
             $profile->categories()->sync($categoryIds);
         }
 
@@ -97,5 +100,31 @@ class AgentProfileService
         }
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
+    }
+
+    /**
+     * Capability upgrade gate (R3, PROFILE_ARCHITECTURE.md §3): agency
+     * (agent-type) categories are a legal-entity service. An individual
+     * (designer) profile may not list them — offering agency services requires
+     * upgrading through agent KYC + a signed contract first.
+     *
+     * @param  list<int>  $categoryIds
+     */
+    private function assertCategoriesAllowed(AgentProfile $profile, array $categoryIds): void
+    {
+        if ($profile->isLegalEntity() || $categoryIds === []) {
+            return;
+        }
+
+        $listsAgentType = Category::query()
+            ->whereIn('id', $categoryIds)
+            ->where('type', CategoryType::Agent)
+            ->exists();
+
+        if ($listsAgentType) {
+            throw ValidationException::withMessages([
+                'category_ids' => ['Agency categories require a verified legal-entity (agent) profile.'],
+            ]);
+        }
     }
 }

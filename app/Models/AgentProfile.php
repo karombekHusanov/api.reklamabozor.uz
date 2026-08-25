@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AgentContractStatus;
 use App\Enums\AgentProfileStatus;
+use App\Enums\CategoryType;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProviderType;
@@ -133,7 +134,40 @@ class AgentProfile extends Model
      */
     public function requiresContract(): bool
     {
+        return $this->isLegalEntity();
+    }
+
+    /**
+     * Whether this profile is a legal-entity provider. `provider_type` is the
+     * profile's legal/KYC track — agent = legal entity (company KYC + contract),
+     * designer = individual (light). It is NOT the marketplace capability, which
+     * is derived from categories ({@see servedCapabilities()}).
+     * PROFILE_ARCHITECTURE.md §3.
+     */
+    public function isLegalEntity(): bool
+    {
         return $this->provider_type === ProviderType::Agent;
+    }
+
+    /**
+     * The capacities this profile actually offers, derived from the category
+     * types it lists (agent | designer). A legal entity may serve both; an
+     * individual serves designer only. Drives which marketplace lists it
+     * appears in and its capacity stats.
+     *
+     * @return list<string>
+     */
+    public function servedCapabilities(): array
+    {
+        $types = $this->relationLoaded('categories')
+            ? $this->categories->pluck('type')
+            : $this->categories()->pluck('type');
+
+        return $types
+            ->map(fn ($type): string => $type instanceof CategoryType ? $type->value : (string) $type)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /** Whether the signed agreement is approved (or not required at all). */

@@ -72,7 +72,7 @@ class PublicAgentController extends ApiController
         }
 
         $agents = $query
-            ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'cachedRating'])
+            ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'user.identityVerification', 'cachedRating'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')
             ->get()
@@ -103,7 +103,7 @@ class PublicAgentController extends ApiController
             ->approved()
             ->whereNotNull('lat')
             ->whereNotNull('lng')
-            ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'cachedRating'])
+            ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'user.identityVerification', 'cachedRating'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')
             ->get()
@@ -131,6 +131,7 @@ class PublicAgentController extends ApiController
             'categories',
             'user.avatarFile',
             'user.legalEntityVerification',
+            'user.identityVerification',
             'cachedRating',
             'advantages' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order'),
             'portfolioItems.imageFile',

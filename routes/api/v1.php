@@ -31,6 +31,8 @@ use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Identity\MyIdCallbackController;
+use App\Http\Controllers\Api\V1\IdentityController;
 use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
@@ -55,6 +57,11 @@ Route::post('/telegram/webhook', WebhookController::class);
 
 // Multicard payment webhook — called by Multicard, guarded by source-IP allowlist + SHA1 sign.
 Route::post('/payment/multicard/callback', MulticardCallbackController::class);
+
+// MyID redirect-flow callback (public — MyID redirects the browser here with
+// ?code&state; the single-use state establishes trust). Fallback for when the
+// camera iframe is blocked in the Telegram WebView.
+Route::get('/identity/myid/callback', MyIdCallbackController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
@@ -96,11 +103,16 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::post('/file-upload', [FileUploadController::class, 'store']);
     Route::patch('/me', [ProfileController::class, 'update']);
-    Route::patch('/me/role', [ProfileController::class, 'setRole']);
     Route::patch('/me/person-type', [ProfileController::class, 'setPersonType']);
     Route::post('/me/accept-terms', [ProfileController::class, 'acceptTerms']);
     Route::get('/me/legal-entity', [LegalEntityController::class, 'show']);
     Route::post('/me/legal-entity', [LegalEntityController::class, 'store']);
+
+    // Optional MyID biometric identity verification (badge, never a gate).
+    Route::get('/me/identity', [IdentityController::class, 'show']);
+    Route::post('/me/identity/session', [IdentityController::class, 'session']);   // WebSDK iframe flow
+    Route::post('/me/identity/verify', [IdentityController::class, 'finalize']);   // WebSDK iframe flow
+    Route::post('/me/identity/authorize', [IdentityController::class, 'authorize']); // redirect fallback
 
     Route::get('/me/rating', [RatingController::class, 'me']);
     Route::get('/me/activity', [ActivityController::class, 'show']);

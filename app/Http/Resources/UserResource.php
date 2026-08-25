@@ -42,6 +42,12 @@ class UserResource extends JsonResource
             // Verification state for the LinkedIn-style badge/CTA: pending /
             // approved / rejected, or null when nothing has been submitted.
             'legal_entity_status' => $this->legalEntityStatus()?->value,
+            // Optional MyID identity badge: verified true/false + raw state
+            // (pending / verified / failed / null) for the CTA.
+            'identity_verified' => $this->isIdentityVerified(),
+            'identity_status' => $this->identityVerificationStatus()?->value,
+            // Whether MyID is configured — the mini app only shows the CTA when true.
+            'identity_verification_enabled' => (bool) config('services.myid.enabled'),
             // KYC application status; null = agent-role user who never applied.
             'agent_profile_status' => $this->whenLoaded(
                 'agentProfile',

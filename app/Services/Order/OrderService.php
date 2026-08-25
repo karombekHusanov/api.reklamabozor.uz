@@ -61,6 +61,8 @@ class OrderService
         /** @var Order $order */
         $order = $client->orders()->create([
             'category_id' => $category->id,
+            // Freeze the category type so capacity stats survive category edits.
+            'category_type' => $category->type,
             'target_agent_id' => $targetAgentId,
             'title' => $title,
             'description' => $data['description'],

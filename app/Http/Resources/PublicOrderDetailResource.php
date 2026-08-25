@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\AgentProfileStatus;
 use App\Models\Order;
 use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
@@ -87,11 +86,7 @@ class PublicOrderDetailResource extends JsonResource
 
         $order->loadMissing('category');
         if ($order->category?->shouldBroadcastToAllProviders()) {
-            $hasApproved = $user->providerProfiles()
-                ->where('status', AgentProfileStatus::Approved)
-                ->exists();
-
-            return $hasApproved;
+            return $user->approvedProfile() !== null;
         }
 
         return false;

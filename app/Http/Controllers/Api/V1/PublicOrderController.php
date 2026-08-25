@@ -55,6 +55,7 @@ class PublicOrderController extends ApiController
             $query->where(function ($builder) use ($likeTerm, $titleTerm): void {
                 $builder
                     ->whereRaw('LOWER(title) LIKE ?', [$titleTerm])
+                    ->orWhereRaw('LOWER(COALESCE(description, \'\')) LIKE ?', [$titleTerm])
                     ->orWhereHas('hashtags', function ($hashtagQuery) use ($likeTerm): void {
                         $hashtagQuery
                             ->where('is_active', true)
@@ -117,7 +118,7 @@ class PublicOrderController extends ApiController
         Order::hydrateAttachmentFiles($order);
 
         if ($user->id !== $order->client_id) {
-            $isProvider = $user->providerProfiles()->exists();
+            $isProvider = $user->profile()->exists();
             if ($isProvider) {
                 OrderView::upsert(
                     [['order_id' => $order->id, 'user_id' => $user->id, 'created_at' => now(), 'updated_at' => now()]],

@@ -22,7 +22,7 @@ class UserAdminService
      */
     public function list(array $filters): LengthAwarePaginator
     {
-        $query = User::query()->with(['avatarFile', 'agentProfile', 'legalEntityVerification']);
+        $query = User::query()->with(['avatarFile', 'agentProfile', 'legalEntityVerification', 'identityVerification']);
 
         // No role = the "all users" view: every marketplace account,
         // including agent-role users who never submitted a KYC application.

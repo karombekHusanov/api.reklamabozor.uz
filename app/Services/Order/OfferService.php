@@ -6,7 +6,6 @@ use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
-use App\Models\AgentProfile;
 use App\Models\Chat;
 use App\Models\DirectChatMessage;
 use App\Models\Offer;
@@ -39,20 +38,17 @@ class OfferService
      */
     public function availableForAgent(User $agent, ?int $orderId = null): Collection
     {
-        // Categories served by any of the agent's approved provider profiles.
-        $profiles = $agent->providerProfiles()
+        // Categories served by the agent's approved profile (1 user = 1 profile).
+        $profile = $agent->profile()
             ->where('status', AgentProfileStatus::Approved)
             ->with('categories')
-            ->get();
+            ->first();
 
-        if ($profiles->isEmpty()) {
+        if ($profile === null) {
             return new Collection;
         }
 
-        $categoryIds = $profiles
-            ->flatMap(fn (AgentProfile $profile) => $profile->categories->pluck('id'))
-            ->unique()
-            ->values();
+        $categoryIds = $profile->categories->pluck('id')->values();
 
         $orders = Order::query()
             ->where(function ($query) use ($categoryIds): void {
@@ -137,6 +133,15 @@ class OfferService
     public function submitOffer(User $agent, Order $order, array $data): Offer
     {
         $order->loadMissing('category');
+
+        // No self-dealing: a user who is both the client and a provider must not
+        // bid on their own order (would let them drive their own payout / inflate
+        // their stats). One account can hold both capacities, so guard explicitly.
+        if ($order->client_id === $agent->id) {
+            throw ValidationException::withMessages([
+                'order' => ['You cannot send an offer to your own order.'],
+            ]);
+        }
 
         // Prefer the profile that lists this category; for broadcast orders
         // ("Other" / empty category) fall back to any approved profile.

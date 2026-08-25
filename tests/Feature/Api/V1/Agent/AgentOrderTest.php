@@ -105,19 +105,17 @@ class AgentOrderTest extends TestCase
         $this->assertArrayHasKey('avatar', $clientData);
     }
 
-    public function test_offer_binds_to_the_profile_that_serves_the_orders_category(): void
+    public function test_offer_binds_to_the_users_profile_that_serves_the_category(): void
     {
         Http::fake();
 
-        // One person running both an agency and a design studio (two profiles).
+        // 1 user = 1 profile (PROFILE_ARCHITECTURE.md). The profile serves the
+        // order's category, so the offer binds to it.
         $user = User::factory()->create();
-        $agentCategory = Category::factory()->create();
         $designerCategory = Category::factory()->designer()->create();
 
-        $agentProfile = AgentProfile::factory()->for($user)->approved()->create();
-        $agentProfile->categories()->attach($agentCategory);
-        $designerProfile = AgentProfile::factory()->for($user)->designer()->approved()->create();
-        $designerProfile->categories()->attach($designerCategory);
+        $profile = AgentProfile::factory()->for($user)->designer()->approved()->create();
+        $profile->categories()->attach($designerCategory);
 
         $token = $user->createToken('test')->plainTextToken;
         $order = Order::factory()->for($designerCategory)->create();
@@ -127,11 +125,10 @@ class AgentOrderTest extends TestCase
             'comment' => 'Design in a week.',
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
-        // Bound to the DESIGNER profile (order's category type), not the agency.
         $this->assertDatabaseHas('offers', [
             'order_id' => $order->id,
             'agent_id' => $user->id,
-            'agent_profile_id' => $designerProfile->id,
+            'agent_profile_id' => $profile->id,
         ]);
     }
 

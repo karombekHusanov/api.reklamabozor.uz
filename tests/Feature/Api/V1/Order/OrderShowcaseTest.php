@@ -49,6 +49,24 @@ class OrderShowcaseTest extends TestCase
         $this->assertSame('Kamola', $row['client']['first_name']);
         $this->assertArrayHasKey('avatar', $row['client']);
         $this->assertArrayNotHasKey('attachment_files', $row);
+        $this->assertArrayHasKey('attachments_count', $row);
+    }
+
+    public function test_showcase_list_includes_attachments_count(): void
+    {
+        $client = User::factory()->create();
+        $file = File::factory()->create(['uploaded_by' => $client->id]);
+        Order::factory()
+            ->for($client, 'client')
+            ->status(OrderStatus::New)
+            ->create(['attachment_file_ids' => [$file->id]]);
+
+        $row = $this->getJson('/api/v1/orders/showcase')
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame(1, $row['attachments_count']);
+        $this->assertArrayNotHasKey('attachment_files', $row);
     }
 
     public function test_showcase_hides_cancelled_orders(): void
@@ -80,6 +98,23 @@ class OrderShowcaseTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.title', 'LED banner kampaniya');
+    }
+
+    public function test_showcase_filters_by_description_search(): void
+    {
+        Order::factory()->status(OrderStatus::New)->create([
+            'title' => 'Tashqi reklama',
+            'description' => 'LED banner kerak Yunusobodda',
+        ]);
+        Order::factory()->status(OrderStatus::New)->create([
+            'title' => 'SMM paket',
+            'description' => 'Instagram kontent',
+        ]);
+
+        $this->getJson('/api/v1/orders/showcase?q=yunusobod&limit=20')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'Tashqi reklama');
     }
 
     public function test_showcase_filters_by_category_region_and_date(): void

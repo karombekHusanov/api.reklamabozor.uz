@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Designer;
 
+use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\User;
@@ -79,15 +80,21 @@ class DesignerProfileTest extends TestCase
             ->assertJsonValidationErrors('category_ids.0');
     }
 
-    public function test_non_designers_cannot_use_the_designer_flow(): void
+    public function test_creating_a_designer_profile_grants_the_designer_role(): void
     {
-        $client = User::factory()->create(['role' => 'client']);
+        // No self-select step: a client becomes a designer simply by creating
+        // the profile (which grants the role). PROFILE_ARCHITECTURE.md §4.
+        $client = User::factory()->create(['role' => 'client', 'roles' => ['client']]);
         $category = Category::factory()->designer()->create();
 
         $this->postJson('/api/v1/designer/profile', [
             'category_ids' => [$category->id],
         ], ['Authorization' => 'Bearer '.$client->createToken('t')->plainTextToken])
-            ->assertForbidden();
+            ->assertCreated();
+
+        $fresh = $client->fresh();
+        $this->assertTrue($fresh->hasRole(Role::Designer));
+        $this->assertSame(Role::Designer, $fresh->role);
     }
 
     public function test_designer_cannot_apply_through_agency_kyc(): void

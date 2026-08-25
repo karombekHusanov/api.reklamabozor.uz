@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1;
 
 use App\Enums\PersonType;
 use App\Enums\Role;
+use App\Models\AgentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -31,19 +32,38 @@ class PersonTypeTest extends TestCase
             ->assertJsonPath('data.person_type_declared', 'legal_entity');
     }
 
-    public function test_agent_is_a_verified_legal_entity_regardless_of_declaration(): void
+    public function test_agent_with_an_approved_profile_is_a_verified_legal_entity(): void
     {
-        // Even with an individual self-declaration, the agent role forces legal.
+        // Even with an individual self-declaration, an APPROVED agent profile
+        // makes the user a verified legal entity.
+        $user = User::factory()->create([
+            'role' => Role::Agent,
+            'roles' => [Role::Client, Role::Agent],
+            'person_type' => PersonType::Individual,
+        ]);
+        AgentProfile::factory()->for($user)->approved()->create();
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => 'Bearer '.$this->token($user)])
+            ->assertOk()
+            ->assertJsonPath('data.person_type', 'legal_entity')
+            ->assertJsonPath('data.person_type_verified', true);
+    }
+
+    public function test_agent_role_without_an_approved_profile_is_not_yet_verified(): void
+    {
+        // Holding the agent role alone (e.g. self-selected, KYC pending) must
+        // NOT confer verified legal-entity status — PROFILE_ARCHITECTURE.md §3.
         $user = User::factory()->create([
             'role' => Role::Agent,
             'roles' => [Role::Client, Role::Agent],
             'person_type' => PersonType::Individual,
         ]);
 
+        $this->assertFalse($user->isVerifiedLegalEntity());
+
         $this->getJson('/api/v1/auth/me', ['Authorization' => 'Bearer '.$this->token($user)])
-            ->assertOk()
-            ->assertJsonPath('data.person_type', 'legal_entity')
-            ->assertJsonPath('data.person_type_verified', true);
+            ->assertJsonPath('data.person_type_verified', false)
+            ->assertJsonPath('data.legal_entity_status', 'pending');
     }
 
     public function test_seller_is_a_verified_legal_entity(): void
@@ -65,10 +85,11 @@ class PersonTypeTest extends TestCase
         $this->assertSame(PersonType::Individual, $user->effectivePersonType());
         $this->assertFalse($user->isVerifiedLegalEntity());
 
-        // Acquires the agent role (e.g. KYC approved).
+        // Becomes an agent: role granted AND profile approved (KYC done).
         $user->grantRole(Role::Agent);
         $user->role = Role::Agent;
         $user->save();
+        AgentProfile::factory()->for($user)->approved()->create();
 
         $this->assertSame(PersonType::LegalEntity, $user->fresh()->effectivePersonType());
         $this->assertTrue($user->fresh()->isVerifiedLegalEntity());

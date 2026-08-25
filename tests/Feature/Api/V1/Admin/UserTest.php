@@ -101,10 +101,10 @@ class UserTest extends TestCase
             ->assertJsonPath('data.phone', '+998901112233');
     }
 
-    public function test_admin_can_move_a_user_between_provider_groups(): void
+    public function test_admin_sets_active_role_and_capabilities_accumulate(): void
     {
-        // A mis-picked agent who should be a designer. The admin moves them:
-        // the agent role is dropped and designer granted (still a valid set).
+        // No coexistence matrix: setting a new active role grants it and keeps
+        // the ones already held (one profile serves every capacity).
         $user = User::factory()->create([
             'role' => Role::Agent,
             'roles' => [Role::Client, Role::Agent],
@@ -117,17 +117,17 @@ class UserTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('data.role', 'designer')
-            ->assertJsonPath('data.roles', ['client', 'designer']);
+            ->assertJsonPath('data.roles', ['client', 'agent', 'designer']);
 
         $fresh = $user->fresh();
         $this->assertTrue($fresh->hasRole(Role::Designer));
-        $this->assertFalse($fresh->hasRole(Role::Agent));
+        $this->assertTrue($fresh->hasRole(Role::Agent));
     }
 
-    public function test_admin_cannot_move_provider_group_while_an_approved_profile_survives(): void
+    public function test_admin_role_change_keeps_an_approved_profile(): void
     {
-        // A ghost guard: an approved agency profile would still show in the
-        // marketplace, so the admin must reject it before switching the role.
+        // Capabilities accumulate, so changing the active role no longer strips
+        // a role — the approved profile keeps its capacity, no guard needed.
         $user = User::factory()->create([
             'role' => Role::Agent,
             'roles' => [Role::Client, Role::Agent],
@@ -138,9 +138,7 @@ class UserTest extends TestCase
             'role' => 'designer',
         ], [
             'Authorization' => 'Bearer '.$this->adminToken(),
-        ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['role']);
+        ])->assertOk();
 
         $this->assertTrue($user->fresh()->hasRole(Role::Agent));
     }

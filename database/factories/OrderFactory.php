@@ -36,4 +36,20 @@ class OrderFactory extends Factory
     {
         return $this->state(fn (array $attributes) => ['status' => $status]);
     }
+
+    /**
+     * Snapshot the category type onto the order (mirrors OrderService), so
+     * factory-built orders carry the same capacity data production does.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Order $order): void {
+            if ($order->category_type === null) {
+                $type = Category::find($order->category_id)?->type;
+                if ($type !== null) {
+                    $order->forceFill(['category_type' => $type])->saveQuietly();
+                }
+            }
+        });
+    }
 }

@@ -71,6 +71,29 @@ return [
         'payout_advance_percent' => env('PAYOUT_ADVANCE_PERCENT', 40),
     ],
 
+    // MyID (myid.uz) — state biometric identity verification / eKYC. Optional;
+    // grants an "identity verified" badge. Credentials come from a UZINFOCOM
+    // contract; until then keep `enabled` false (the whole flow is gated off).
+    'myid' => [
+        // Master switch. When false, session/verify endpoints return 404 and no
+        // badge can be granted — the app behaves exactly as before.
+        'enabled' => (bool) env('MYID_ENABLED', false),
+        // dev: https://devmyid.uz  •  prod: https://myid.uz
+        'base_url' => env('MYID_BASE_URL', 'https://devmyid.uz'),
+        // Hosted WebSDK origin the mini app embeds as a camera iframe.
+        'web_url' => env('MYID_WEB_URL', 'https://web.myid.uz'),
+        // Issued by MyID; backend-only, never exposed to the client.
+        'client_id' => env('MYID_CLIENT_ID'),
+        'client_secret' => env('MYID_CLIENT_SECRET'),
+        // Data scopes granted by the contract (e.g. common_data,doc_data,address).
+        'scope' => env('MYID_SCOPE', 'common_data'),
+        // Redirect (OAuth) fallback for when the WebSDK camera iframe is blocked
+        // in the Telegram WebView (known Android limitation). MyID redirects the
+        // external browser here with ?code&state; must be public HTTPS and
+        // registered with MyID, matching the token-exchange redirect_uri.
+        'redirect_uri' => env('MYID_REDIRECT_URI'),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         // HMAC verification of Mini App initData on login. Only disable in
