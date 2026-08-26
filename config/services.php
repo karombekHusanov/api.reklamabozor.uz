@@ -85,6 +85,10 @@ return [
         // Issued by MyID; backend-only, never exposed to the client.
         'client_id' => env('MYID_CLIENT_ID'),
         'client_secret' => env('MYID_CLIENT_SECRET'),
+        // Dev/test only: show the card and grant a FAKE verified identity on
+        // "verify" without calling MyID (no contract creds needed). MUST be
+        // false in real production — it lets anyone self-grant the badge.
+        'simulate' => (bool) env('MYID_SIMULATE', false),
         // Data scopes granted by the contract (e.g. common_data,doc_data,address).
         'scope' => env('MYID_SCOPE', 'common_data'),
         // Redirect (OAuth) fallback for when the WebSDK camera iframe is blocked

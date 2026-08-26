@@ -46,8 +46,11 @@ class UserResource extends JsonResource
             // (pending / verified / failed / null) for the CTA.
             'identity_verified' => $this->isIdentityVerified(),
             'identity_status' => $this->identityVerificationStatus()?->value,
-            // Whether MyID is configured — the mini app only shows the CTA when true.
-            'identity_verification_enabled' => (bool) config('services.myid.enabled'),
+            // Whether MyID is available — the mini app only shows the CTA when
+            // true (real MyID or dev/test simulate mode).
+            'identity_verification_enabled' => (bool) config('services.myid.enabled') || (bool) config('services.myid.simulate'),
+            // Dev/test: "verify" grants a fake badge instead of the real flow.
+            'identity_simulate' => (bool) config('services.myid.simulate'),
             // KYC application status; null = agent-role user who never applied.
             'agent_profile_status' => $this->whenLoaded(
                 'agentProfile',

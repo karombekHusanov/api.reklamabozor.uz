@@ -22,7 +22,17 @@ class IdentityVerificationService
 
     public function enabled(): bool
     {
-        return (bool) config('services.myid.enabled');
+        return (bool) config('services.myid.enabled') || $this->simulate();
+    }
+
+    /**
+     * Dev/test mode: the card is shown and "verify" grants a fake verified
+     * identity WITHOUT calling MyID (no contract creds needed). MUST be off in
+     * real production. PROFILE_ARCHITECTURE / MyID docs.
+     */
+    public function simulate(): bool
+    {
+        return (bool) config('services.myid.simulate');
     }
 
     private function assertEnabled(): void
@@ -30,6 +40,36 @@ class IdentityVerificationService
         if (! $this->enabled()) {
             throw new RuntimeException('MyID identity verification is disabled.');
         }
+    }
+
+    /**
+     * Grant a simulated verified identity (dev/test only). Bypasses MyID and
+     * marks the user verified with placeholder data derived from their account.
+     */
+    public function simulateVerify(User $user): IdentityVerification
+    {
+        if (! $this->simulate()) {
+            throw new RuntimeException('MyID simulate mode is disabled.');
+        }
+
+        $fullName = trim($user->first_name.' '.($user->last_name ?? '')) ?: 'Test User';
+
+        /** @var IdentityVerification $verification */
+        $verification = $user->identityVerification()->updateOrCreate([], [
+            'status' => IdentityVerificationStatus::Verified,
+            'verified_full_name' => $fullName,
+            'pinfl' => null,
+            'pass_data' => null,
+            'comparison_value' => 0.99,
+            'myid_reuid' => 'simulated',
+            'failure_code' => null,
+            'failure_note' => null,
+            'state' => null,
+            'state_expires_at' => null,
+            'verified_at' => now(),
+        ]);
+
+        return $verification;
     }
 
     /**

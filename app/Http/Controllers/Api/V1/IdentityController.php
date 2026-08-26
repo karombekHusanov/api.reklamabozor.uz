@@ -66,6 +66,22 @@ class IdentityController extends ApiController
     }
 
     /**
+     * Dev/test only: grant a simulated verified identity without calling MyID.
+     * Available when MYID_SIMULATE is on. Lets the whole card → badge flow be
+     * exercised in a dev/staging (or prod-test) environment without creds.
+     */
+    public function simulate(Request $request): JsonResponse
+    {
+        if (! $this->service->simulate()) {
+            return $this->error('Identity verification is not available', 404);
+        }
+
+        $verification = $this->service->simulateVerify($request->user());
+
+        return $this->success(new IdentityVerificationResource($verification));
+    }
+
+    /**
      * Finalize after the user finishes MyID: exchange the auth_code server-side
      * and grant/fail the badge.
      */

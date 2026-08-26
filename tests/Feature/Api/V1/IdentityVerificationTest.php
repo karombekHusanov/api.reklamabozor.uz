@@ -165,6 +165,34 @@ class IdentityVerificationTest extends TestCase
             ->assertRedirect('https://app.reklamabozor.uz/?identity=failed');
     }
 
+    public function test_simulate_mode_grants_a_verified_badge_without_myid(): void
+    {
+        config(['services.myid.enabled' => false, 'services.myid.simulate' => true]);
+        $user = User::factory()->create(['first_name' => 'Test', 'last_name' => 'Person']);
+
+        $this->postJson('/api/v1/me/identity/simulate', [], [
+            'Authorization' => 'Bearer '.$this->token($user),
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'verified')
+            ->assertJsonPath('data.verified_full_name', 'Test Person');
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => 'Bearer '.$this->token($user)])
+            ->assertJsonPath('data.identity_verified', true)
+            ->assertJsonPath('data.identity_verification_enabled', true)
+            ->assertJsonPath('data.identity_simulate', true);
+    }
+
+    public function test_simulate_endpoint_is_hidden_when_simulate_is_off(): void
+    {
+        config(['services.myid.enabled' => false, 'services.myid.simulate' => false]);
+        $user = User::factory()->create();
+
+        $this->postJson('/api/v1/me/identity/simulate', [], [
+            'Authorization' => 'Bearer '.$this->token($user),
+        ])->assertNotFound();
+    }
+
     public function test_finalize_marks_failed_when_checks_do_not_pass(): void
     {
         $this->enableMyId();

@@ -113,6 +113,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/me/identity/session', [IdentityController::class, 'session']);   // WebSDK iframe flow
     Route::post('/me/identity/verify', [IdentityController::class, 'finalize']);   // WebSDK iframe flow
     Route::post('/me/identity/authorize', [IdentityController::class, 'authorize']); // redirect fallback
+    Route::post('/me/identity/simulate', [IdentityController::class, 'simulate']);   // dev/test only
 
     Route::get('/me/rating', [RatingController::class, 'me']);
     Route::get('/me/activity', [ActivityController::class, 'show']);
