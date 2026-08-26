@@ -5,6 +5,7 @@ namespace App\Services\Agent;
 use App\Enums\AgentProfileStatus;
 use App\Enums\CategoryType;
 use App\Enums\ProviderType;
+use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\User;
@@ -32,6 +33,15 @@ class AgentProfileService
                 'company_name' => ['You already have an agent profile.'],
             ]);
         }
+
+        // Applying makes the user an agent so their (pending) provider surface
+        // shows immediately — mirrors the designer flow. Real powers (bidding,
+        // verified badge) stay gated by the APPROVED profile, so the role alone
+        // grants nothing until an admin approves. PROFILE_ARCHITECTURE.md §4.
+        $user->grantRole(Role::Agent);
+        $user->role = Role::Agent;
+        $user->role_selected_at ??= now();
+        $user->save();
 
         /** @var AgentProfile $profile */
         $profile = $user->agentProfile()->create([

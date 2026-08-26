@@ -12,4 +12,13 @@ enum ProviderType: string
 {
     case Agent = 'agent';
     case Designer = 'designer';
+
+    /** The role a provider of this type holds. */
+    public function toRole(): Role
+    {
+        return match ($this) {
+            self::Agent => Role::Agent,
+            self::Designer => Role::Designer,
+        };
+    }
 }
