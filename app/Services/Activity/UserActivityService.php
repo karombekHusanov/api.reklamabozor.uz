@@ -4,7 +4,6 @@ namespace App\Services\Activity;
 
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
-use App\Enums\ProviderType;
 use App\Enums\ReviewDirection;
 use App\Enums\Role;
 use App\Models\AgentProfile;
@@ -15,7 +14,6 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\GlobalChat\GlobalChatService;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -45,15 +43,19 @@ class UserActivityService
             ]);
         }
 
-        $profiles = $user->providerProfiles()
+        // 1 user = 1 profile: the single provider profile (null for a pure client).
+        $profile = $user->profile()
             ->withCount([
                 'portfolioItems as portfolio_items_count' => fn ($q) => $q->visible(),
                 'categories',
             ])
-            ->get();
+            ->first();
 
-        $scopedProfile = $this->resolveScopedProfile($profiles, $agentProfileId);
-        $primaryProfile = $this->primaryFrom($profiles);
+        // An explicit scope may only reference the user's own profile.
+        if ($agentProfileId !== null && $profile?->id !== $agentProfileId) {
+            throw new NotFoundHttpException('Agent profile not found.');
+        }
+
         $isProviderRole = in_array($role, [Role::Agent, Role::Designer], true);
 
         $chats = $this->chatUnread($user);
@@ -65,12 +67,12 @@ class UserActivityService
             $provider = null;
         } else {
             $client = $this->clientBlock($user);
-            if ($profiles->isEmpty()) {
+            if ($profile === null) {
                 // KYC-pending agent/designer still gets a stub so the client can
                 // prompt "finish your profile" — ordinary clients stay null.
                 $provider = $isProviderRole ? $this->emptyProviderBlock() : null;
             } else {
-                $provider = $this->providerBlock($user, $profiles, $scopedProfile);
+                $provider = $this->providerBlock($user, $profile);
             }
         }
 
@@ -87,8 +89,9 @@ class UserActivityService
             'role' => $role->value,
             'roles' => $user->allRoles()->map(fn (Role $r) => $r->value)->values()->all(),
             // Only advertise a profile id on provider perspective (or explicit scope).
-            'agent_profile_id' => $scopedProfile?->id
-                ?? ($isProviderRole ? $primaryProfile?->id : null),
+            'agent_profile_id' => ($isProviderRole || $agentProfileId !== null)
+                ? $profile?->id
+                : null,
             'chats' => $chats,
             'client' => $client,
             'provider' => $provider,
@@ -116,33 +119,6 @@ class UserActivityService
             'count' => 0,
             'last_seen_at' => $seenAt->toIso8601String(),
         ];
-    }
-
-    /**
-     * @param  Collection<int, AgentProfile>  $profiles
-     */
-    private function resolveScopedProfile(Collection $profiles, ?int $agentProfileId): ?AgentProfile
-    {
-        if ($agentProfileId === null) {
-            return null;
-        }
-
-        $profile = $profiles->firstWhere('id', $agentProfileId);
-
-        if ($profile === null) {
-            throw new NotFoundHttpException('Agent profile not found.');
-        }
-
-        return $profile;
-    }
-
-    /**
-     * @param  Collection<int, AgentProfile>  $profiles
-     */
-    private function primaryFrom(Collection $profiles): ?AgentProfile
-    {
-        return $profiles->firstWhere('provider_type', ProviderType::Agent)
-            ?? $profiles->first();
     }
 
     /**
@@ -245,17 +221,13 @@ class UserActivityService
     }
 
     /**
-     * @param  Collection<int, AgentProfile>  $profiles
      * @return array<string, mixed>
      */
-    private function providerBlock(User $user, Collection $profiles, ?AgentProfile $scoped): array
+    private function providerBlock(User $user, AgentProfile $profile): array
     {
-        $profile = $scoped ?? $this->primaryFrom($profiles);
-
+        // 1 user = 1 profile: every offer the user made belongs to this profile,
+        // so the user's provider activity is simply all of their offers.
         $offerQuery = Offer::query()->where('agent_id', $user->id);
-        if ($scoped !== null) {
-            $offerQuery->where('agent_profile_id', $scoped->id);
-        }
 
         $offerCounts = [
             OfferStatus::Pending->value => 0,
@@ -280,10 +252,6 @@ class UserActivityService
             ->where('offers.status', OfferStatus::Accepted)
             ->join('orders', 'orders.id', '=', 'offers.order_id');
 
-        if ($scoped !== null) {
-            $dealQuery->where('offers.agent_profile_id', $scoped->id);
-        }
-
         $dealRows = $dealQuery
             ->select('orders.status', DB::raw('COUNT(*) as aggregate'))
             ->groupBy('orders.status')
@@ -304,19 +272,10 @@ class UserActivityService
             ->whereDoesntHave('order.reviews', fn ($q) => $q
                 ->where('direction', ReviewDirection::ProviderToClient));
 
-        if ($scoped !== null) {
-            $reviewsPendingQuery->where('offers.agent_profile_id', $scoped->id);
-        }
-
         $reviewsPending = (int) $reviewsPendingQuery->count();
 
-        if ($scoped !== null) {
-            $portfolioItems = (int) $scoped->portfolio_items_count;
-            $categories = (int) $scoped->categories_count;
-        } else {
-            $portfolioItems = (int) $profiles->sum('portfolio_items_count');
-            $categories = (int) $profiles->sum('categories_count');
-        }
+        $portfolioItems = (int) $profile->portfolio_items_count;
+        $categories = (int) $profile->categories_count;
 
         return [
             'has_profile' => true,

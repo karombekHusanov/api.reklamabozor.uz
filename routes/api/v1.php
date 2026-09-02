@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\V1\PublicOrderController;
 use App\Http\Controllers\Api\V1\Rating\RatingController;
 use App\Http\Controllers\Api\V1\RegionController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
+use App\Http\Controllers\Api\V1\StatsController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +85,9 @@ Route::get('/orders/showcase', [PublicOrderController::class, 'showcase']);
 
 // Public hashtag suggest (active catalog) for order wizard autocomplete / filters.
 Route::get('/hashtags', [HashtagController::class, 'index']);
+
+// Public "live pulse" stats for the home JONLI marquee (online counts, etc.).
+Route::get('/stats/live', [StatsController::class, 'live'])->middleware('throttle:120,1');
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/telegram', [AuthController::class, 'telegramLogin']);

@@ -8,7 +8,6 @@ use App\Models\GlobalChatMessage;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Collection;
 
 /** @mixin GlobalChatMessage */
 class GlobalChatMessageResource extends JsonResource
@@ -19,7 +18,10 @@ class GlobalChatMessageResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $this->user;
-        $profile = $this->displayProfile($user);
+        // 1 user = 1 profile: the sender's single provider profile (null for a
+        // pure client). Not keyed off the active role — the profile's own kind
+        // stands on its own, so an agent↔designer role switch never flips it.
+        $profile = $user->profile;
 
         return [
             'id' => $this->id,
@@ -52,52 +54,12 @@ class GlobalChatMessageResource extends JsonResource
         ];
     }
 
-    /**
-     * Prefer the profile matching the sender's active role, else any profile
-     * that has a logo (covers agent↔designer switches without a "flip" bug).
-     */
-    private function displayProfile(User $user): ?AgentProfile
-    {
-        /** @var Collection<int, AgentProfile> $profiles */
-        $profiles = $user->relationLoaded('providerProfiles')
-            ? $user->providerProfiles
-            : collect(array_filter([$user->agentProfile]));
-
-        if ($profiles->isEmpty()) {
-            return null;
-        }
-
-        $byRole = $profiles->first(
-            fn (AgentProfile $profile) => $profile->provider_type->value === $user->role->value,
-        );
-
-        if ($byRole !== null) {
-            return $byRole;
-        }
-
-        return $profiles->first(
-            fn (AgentProfile $profile) => $profile->company_logo_file_id !== null,
-        ) ?? $profiles->first();
-    }
-
     private function senderAvatarUrl(User $user, ?AgentProfile $profile): ?string
     {
+        // Same priority as marketplace cards: studio logo, else personal photo.
         $logo = $profile?->companyLogoFile?->url();
         if (is_string($logo) && $logo !== '') {
             return $logo;
-        }
-
-        // Fall back to any other provider logo, then the personal avatar.
-        if ($user->relationLoaded('providerProfiles')) {
-            foreach ($user->providerProfiles as $other) {
-                if ($profile !== null && $other->is($profile)) {
-                    continue;
-                }
-                $url = $other->companyLogoFile?->url();
-                if (is_string($url) && $url !== '') {
-                    return $url;
-                }
-            }
         }
 
         $avatar = $user->avatarFile?->url();

@@ -23,7 +23,7 @@ class GlobalChatAdminService
     public function messages(array $filters): LengthAwarePaginator
     {
         return GlobalChatMessage::query()
-            ->with(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'deletedBy', 'attachments'])
+            ->with(['user.avatarFile', 'user.profile.companyLogoFile', 'deletedBy', 'attachments'])
             ->when(! ($filters['include_deleted'] ?? false), fn ($q) => $q->visible())
             ->when($filters['user_id'] ?? null, fn ($q, $userId) => $q->where('user_id', $userId))
             ->when($filters['search'] ?? null, function ($q, $search): void {
@@ -51,7 +51,7 @@ class GlobalChatAdminService
             ]);
         }
 
-        return $message->load(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'deletedBy']);
+        return $message->load(['user.avatarFile', 'user.profile.companyLogoFile', 'deletedBy']);
     }
 
     /**

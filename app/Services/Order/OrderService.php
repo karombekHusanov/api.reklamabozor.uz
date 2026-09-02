@@ -67,7 +67,7 @@ class OrderService
             'title' => $title,
             'description' => $data['description'],
             'deadline' => $data['deadline'] ?? null,
-            'attachment_file_ids' => $data['attachment_file_ids'],
+            'attachment_file_ids' => $data['attachment_file_ids'] ?? [],
             'show_files_in_showcase' => $data['show_files_in_showcase'] ?? true,
             'lat' => $data['lat'],
             'lng' => $data['lng'],

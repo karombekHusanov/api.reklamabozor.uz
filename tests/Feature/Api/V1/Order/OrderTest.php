@@ -199,9 +199,33 @@ class OrderTest extends TestCase
     {
         [, $token] = $this->authedUser();
 
+        // title and attachment_file_ids are optional (simplified MVP request form
+        // omits them; the service falls back to the category label and no files).
         $this->postJson('/api/v1/orders', [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['category_id', 'title', 'description', 'lat', 'lng', 'attachment_file_ids']);
+            ->assertJsonValidationErrors(['category_id', 'description', 'lat', 'lng'])
+            ->assertJsonMissingValidationErrors(['title', 'attachment_file_ids']);
+    }
+
+    public function test_client_can_place_a_text_only_request_without_title_or_files(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+        $category = Category::factory()->create(['name_uz' => 'Boshqa']);
+
+        $response = $this->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'description' => 'Need a 3x6m billboard for one month.',
+            ...$this->locationPayload(),
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated();
+
+        // Title falls back to the category label; attachments default to empty.
+        $this->assertDatabaseHas('orders', [
+            'id' => $response->json('data.id'),
+            'client_id' => $client->id,
+            'title' => 'Boshqa',
+        ]);
     }
 
     public function test_client_can_place_an_order_without_region(): void

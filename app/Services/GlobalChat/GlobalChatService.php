@@ -60,7 +60,7 @@ class GlobalChatService
     {
         $query = GlobalChatMessage::query()
             ->visible()
-            ->with(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'attachments']);
+            ->with(['user.avatarFile', 'user.profile.companyLogoFile', 'attachments']);
 
         if ($afterId !== null) {
             return $query->where('id', '>', $afterId)->oldest('id')->limit($limit)->get();
@@ -172,7 +172,7 @@ class GlobalChatService
 
             MessageAttachments::attach($message->attachments(), $files);
 
-            return $message->load(['user.avatarFile', 'user.providerProfiles.companyLogoFile', 'attachments']);
+            return $message->load(['user.avatarFile', 'user.profile.companyLogoFile', 'attachments']);
         });
     }
 

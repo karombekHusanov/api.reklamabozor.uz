@@ -143,8 +143,19 @@ class OfferService
             ]);
         }
 
-        // Prefer the profile that lists this category; for broadcast orders
-        // ("Other" / empty category) fall back to any approved profile.
+        // Directed order: only the addressed agency may respond. The feed query
+        // ({@see availableForAgent}) already hides it from others, but the submit
+        // endpoint is reachable directly, so enforce the restriction here too.
+        if ($order->target_agent_id !== null && $order->target_agent_id !== $agent->id) {
+            throw ValidationException::withMessages([
+                'order' => ['This order is addressed to a specific agency.'],
+            ]);
+        }
+
+        // 1 user = 1 profile: the single approved profile responds, eligible when
+        // it lists this category or the order is a broadcast ("Other" / empty
+        // category). Both resolvers return that one profile — null means the
+        // profile does not serve this order.
         $profile = $agent->providerProfileForCategory($order->category_id)
             ?? $agent->providerProfileForBroadcastOrder($order);
 

@@ -29,8 +29,10 @@ class StoreOrderRequest extends FormRequest
                 'integer',
                 Rule::exists('categories', 'id')->where('is_active', true),
             ],
-            // Project name from the quick-order wizard ("Loyiha nomi").
-            'title' => ['required', 'string', 'max:200'],
+            // Project name from the quick-order wizard ("Loyiha nomi"). Optional:
+            // the simplified MVP request form omits it and the service falls back
+            // to the category label.
+            'title' => ['nullable', 'string', 'max:200'],
             'description' => ['required', 'string', 'max:2000'],
             // Free-text hashtags (normalized server-side to a shared catalog).
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
@@ -70,11 +72,11 @@ class StoreOrderRequest extends FormRequest
             ],
             // How soon the work is needed (optional urgency preset).
             'deadline' => ['nullable', Rule::enum(OrderDeadline::class)],
-            // One or more files the client uploaded for this order.
+            // Files the client uploaded for this order. Optional: the simplified
+            // MVP request form allows a text-only request (images are optional).
             'attachment_file_ids' => [
-                'required',
+                'nullable',
                 'array',
-                'min:1',
                 'max:'.Order::MAX_ATTACHMENTS,
             ],
             'attachment_file_ids.*' => [

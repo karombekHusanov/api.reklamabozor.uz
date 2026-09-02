@@ -74,6 +74,18 @@ class PublicOrderDetailResource extends JsonResource
             return false;
         }
 
+        // Mirror the submit-side guards so the showcase CTA never promises an
+        // offer the server would reject. One account can be both client and
+        // provider (1 user = 1 profile), so exclude the viewer's own order...
+        if ($order->client_id === $user->id) {
+            return false;
+        }
+
+        // ...and directed orders, which only the addressed agency may answer.
+        if ($order->target_agent_id !== null && $order->target_agent_id !== $user->id) {
+            return false;
+        }
+
         $myOffer = $this->relationLoaded('offers') ? $this->offers->first() : null;
         if ($myOffer !== null) {
             return false;

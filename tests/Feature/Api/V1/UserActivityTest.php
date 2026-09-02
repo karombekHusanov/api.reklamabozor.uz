@@ -353,39 +353,40 @@ class UserActivityTest extends TestCase
             ->assertJsonPath('data.provider.deals_completed', 1);
     }
 
-    public function test_scoped_agent_profile_id_narrows_provider_counts(): void
+    public function test_scoped_agent_profile_id_must_reference_own_profile(): void
     {
+        // 1 user = 1 profile: an explicit agent_profile_id scope may only point
+        // to the user's own single profile (it no longer narrows across many).
         $agent = User::factory()->agent()->create([
             'roles' => [Role::Client, Role::Agent],
             'role_selected_at' => now(),
         ]);
-        // App normally blocks multi-profile create; tests can seed both types.
-        $agency = AgentProfile::factory()->approved()->for($agent, 'user')->create();
-        $designer = AgentProfile::factory()->designer()->approved()->for($agent, 'user')->create();
+        $profile = AgentProfile::factory()->approved()->for($agent, 'user')->create();
 
         $client = User::factory()->create();
         $orderA = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
         Offer::factory()->for($orderA)->accepted()->create([
             'agent_id' => $agent->id,
-            'agent_profile_id' => $agency->id,
+            'agent_profile_id' => $profile->id,
         ]);
         $orderB = Order::factory()->for($client, 'client')->status(OrderStatus::Completed)->create();
         Offer::factory()->for($orderB)->accepted()->create([
             'agent_id' => $agent->id,
-            'agent_profile_id' => $designer->id,
+            'agent_profile_id' => $profile->id,
         ]);
 
-        $this->getJson('/api/v1/me/activity?agent_profile_id='.$agency->id, $this->auth($agent))
+        // Scoping to the user's own profile is accepted; counts equal the
+        // unscoped view (all of the single profile's offers).
+        $this->getJson('/api/v1/me/activity?agent_profile_id='.$profile->id, $this->auth($agent))
             ->assertOk()
-            ->assertJsonPath('data.agent_profile_id', $agency->id)
-            ->assertJsonPath('data.provider.offers_accepted', 1)
-            ->assertJsonPath('data.provider.deals_in_progress', 1)
-            ->assertJsonPath('data.provider.deals_completed', 0);
-
-        $this->getJson('/api/v1/me/activity', $this->auth($agent))
-            ->assertOk()
+            ->assertJsonPath('data.agent_profile_id', $profile->id)
             ->assertJsonPath('data.provider.offers_accepted', 2)
             ->assertJsonPath('data.provider.deals_in_progress', 1)
             ->assertJsonPath('data.provider.deals_completed', 1);
+
+        // A profile belonging to someone else is rejected.
+        $foreign = AgentProfile::factory()->approved()->create();
+        $this->getJson('/api/v1/me/activity?agent_profile_id='.$foreign->id, $this->auth($agent))
+            ->assertNotFound();
     }
 }
