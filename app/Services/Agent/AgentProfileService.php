@@ -17,7 +17,7 @@ class AgentProfileService
 
     public function findForUser(User $user): ?AgentProfile
     {
-        return $user->agentProfile()->with(AgentProfile::PROFILE_RELATIONS)->first();
+        return $user->profile()->with(AgentProfile::PROFILE_RELATIONS)->first();
     }
 
     /**
@@ -28,7 +28,7 @@ class AgentProfileService
      */
     public function apply(User $user, array $data): AgentProfile
     {
-        if ($user->agentProfile()->exists()) {
+        if ($user->profile()->exists()) {
             throw ValidationException::withMessages([
                 'company_name' => ['You already have an agent profile.'],
             ]);
@@ -44,7 +44,7 @@ class AgentProfileService
         $user->save();
 
         /** @var AgentProfile $profile */
-        $profile = $user->agentProfile()->create([
+        $profile = $user->profile()->create([
             ...$data,
             'provider_type' => ProviderType::Agent,
             'status' => AgentProfileStatus::Pending,

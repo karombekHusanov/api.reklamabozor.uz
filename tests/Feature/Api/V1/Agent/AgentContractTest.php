@@ -57,7 +57,7 @@ class AgentContractTest extends TestCase
             ->assertJsonPath('data.contract.status', 'awaiting_signature')
             ->assertJsonPath('data.contract.approved', false);
 
-        $profile = $user->agentProfile()->first();
+        $profile = $user->profile()->first();
         $this->assertNotNull($profile->contract_file_id);
         $this->assertNotNull($profile->contract_hash);
         $this->assertSame(AgentContractStatus::AwaitingSignature, $profile->contract_status);

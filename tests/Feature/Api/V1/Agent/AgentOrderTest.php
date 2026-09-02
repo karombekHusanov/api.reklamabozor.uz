@@ -168,7 +168,7 @@ class AgentOrderTest extends TestCase
         // The client hears about the offer: order id, agency name, price, and a
         // deep-link button straight to their order detail page.
         // Company name is HTML-escaped in the Telegram body (e()), so match that.
-        $company = e($agent->agentProfile->company_name);
+        $company = e($agent->profile->company_name);
         Http::assertSent(function ($request) use ($order, $company) {
             $text = $request['text'] ?? '';
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';

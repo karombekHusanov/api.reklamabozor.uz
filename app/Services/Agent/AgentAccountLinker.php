@@ -24,7 +24,7 @@ class AgentAccountLinker
         }
 
         // The Telegram user may already be an agent — nothing to adopt.
-        if ($user->agentProfile()->exists()) {
+        if ($user->profile()->exists()) {
             return;
         }
 
@@ -33,7 +33,7 @@ class AgentAccountLinker
             ->whereNull('telegram_id')
             ->where('role', Role::Agent)
             ->whereKeyNot($user->id)
-            ->whereHas('agentProfile')
+            ->whereHas('profile')
             ->first();
 
         if ($placeholder === null) {
@@ -44,7 +44,7 @@ class AgentAccountLinker
             // Hand the approved profile to the real account. The mini app may
             // already hold a token for $user, so the placeholder is the one
             // that must go.
-            $placeholder->agentProfile()->update(['user_id' => $user->id]);
+            $placeholder->profile()->update(['user_id' => $user->id]);
 
             $user->grantRole(Role::Agent);
             $user->role = Role::Agent;

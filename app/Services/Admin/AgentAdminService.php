@@ -166,7 +166,7 @@ class AgentAdminService
             ]);
 
             /** @var AgentProfile $profile */
-            $profile = $user->agentProfile()->create([
+            $profile = $user->profile()->create([
                 ...$data,
                 'provider_type' => ProviderType::Agent,
                 'status' => AgentProfileStatus::Approved,

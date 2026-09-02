@@ -63,7 +63,7 @@ class Order extends Model
         'region',
         'district',
         'hashtags',
-        'targetAgent.agentProfile',
+        'targetAgent.profile',
         'offers.agentProfile.companyLogoFile',
         'offers.items',
         'acceptedOffer.agentProfile',

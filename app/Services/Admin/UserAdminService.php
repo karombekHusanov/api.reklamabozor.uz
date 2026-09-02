@@ -2,7 +2,6 @@
 
 namespace App\Services\Admin;
 
-use App\Enums\AgentProfileStatus;
 use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -22,7 +21,7 @@ class UserAdminService
      */
     public function list(array $filters): LengthAwarePaginator
     {
-        $query = User::query()->with(['avatarFile', 'agentProfile', 'legalEntityVerification', 'identityVerification']);
+        $query = User::query()->with(['avatarFile', 'profile', 'legalEntityVerification', 'identityVerification']);
 
         // No role = the "all users" view: every marketplace account,
         // including agent-role users who never submitted a KYC application.
@@ -74,11 +73,9 @@ class UserAdminService
                 $user->revokeRole(Role::Admin);
             }
 
-            // Correcting a mis-picked role: an admin may move a user to a
-            // conflicting provider group (e.g. agent → designer), dropping the
-            // old provider role so the result stays a valid combination.
-            $this->moveProviderGroup($user, $data['role']);
-
+            // Marketplace roles accumulate (1 user = 1 profile serves every
+            // capacity, so there are no conflicting provider groups to move
+            // between).
             $user->grantRole($data['role']);
         }
 
@@ -131,36 +128,6 @@ class UserAdminService
             throw ValidationException::withMessages([
                 'role' => ['Cannot demote the last active admin.'],
             ]);
-        }
-    }
-
-    /**
-     * When an admin sets a provider role that conflicts with the user's held
-     * roles (coexistence matrix), revoke the conflicting provider role(s) so the
-     * user MOVES between groups (e.g. agent → designer) instead of ending up in
-     * an invalid combination. Blocked while an approved provider profile of the
-     * old group survives — it would linger as a ghost in the marketplace; the
-     * admin must reject that profile first.
-     */
-    private function moveProviderGroup(User $user, Role $newRole): void
-    {
-        $heldConflicts = array_filter(
-            $newRole->conflictingRoles(),
-            fn (Role $role) => $user->hasRole($role),
-        );
-
-        if ($heldConflicts === []) {
-            return;
-        }
-
-        if ($user->agentProfile()->where('status', AgentProfileStatus::Approved)->exists()) {
-            throw ValidationException::withMessages([
-                'role' => ["Reject this user's approved provider profile before switching their provider role."],
-            ]);
-        }
-
-        foreach ($heldConflicts as $role) {
-            $user->revokeRole($role);
         }
     }
 

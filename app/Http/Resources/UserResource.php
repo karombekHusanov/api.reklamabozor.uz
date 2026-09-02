@@ -53,8 +53,8 @@ class UserResource extends JsonResource
             'identity_simulate' => (bool) config('services.myid.simulate'),
             // KYC application status; null = agent-role user who never applied.
             'agent_profile_status' => $this->whenLoaded(
-                'agentProfile',
-                fn () => $this->agentProfile?->status->value,
+                'profile',
+                fn () => $this->profile?->status->value,
                 null,
             ),
             'is_active' => $this->is_active,

@@ -44,7 +44,7 @@ class OrderResource extends JsonResource
             // broadcast order (shown to every provider in the category).
             'target_agent' => $this->whenLoaded('targetAgent', fn () => $this->targetAgent ? [
                 'id' => $this->targetAgent->id,
-                'company_name' => $this->targetAgent->agentProfile?->company_name,
+                'company_name' => $this->targetAgent->profile?->company_name,
             ] : null),
             'work_submitted_at' => $this->work_submitted_at,
             'completed_at' => $this->completed_at,

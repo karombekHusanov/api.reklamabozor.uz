@@ -82,23 +82,6 @@ class User extends Authenticatable
     }
 
     /**
-     * @deprecated Use {@see profile()}. Kept for existing call-sites.
-     */
-    public function agentProfile(): HasOne
-    {
-        return $this->profile();
-    }
-
-    /**
-     * @deprecated 1 user = 1 profile; use {@see profile()}. Returns a 0-or-1
-     * collection for the few call-sites still written against many profiles.
-     */
-    public function providerProfiles(): HasMany
-    {
-        return $this->hasMany(AgentProfile::class);
-    }
-
-    /**
      * Optional legal-entity verification request (self-declared client/designer).
      */
     public function legalEntityVerification(): HasOne
@@ -271,27 +254,6 @@ class User extends Authenticatable
         $this->accepted_terms_version = self::currentTermsVersion();
         $this->accepted_terms_at = now();
         $this->save();
-    }
-
-    /**
-     * Whether the user may take on this role under the coexistence matrix
-     * ({@see Role::conflictingRoles()}). Client and already-held roles are
-     * always allowed (switching); acquiring a new provider role is blocked
-     * when it conflicts with one the user already holds.
-     */
-    public function canAcquireRole(Role $role): bool
-    {
-        if ($role === Role::Client || $this->hasRole($role)) {
-            return true;
-        }
-
-        foreach ($role->conflictingRoles() as $conflict) {
-            if ($this->hasRole($conflict)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**

@@ -120,7 +120,7 @@ class OrderService
         // see them in their request list again.
         $orders = $client->orders()
             ->where('status', '!=', OrderStatus::Cancelled)
-            ->with(['category', 'region', 'district', 'targetAgent.agentProfile'])
+            ->with(['category', 'region', 'district', 'targetAgent.profile'])
             ->withCount(['offers', 'views'])
             ->latest()
             ->get();

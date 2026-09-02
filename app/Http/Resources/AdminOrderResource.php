@@ -40,7 +40,7 @@ class AdminOrderResource extends JsonResource
             // Set when the client sent the order directly to one agency.
             'target_agent' => $this->whenLoaded('targetAgent', fn () => $this->targetAgent ? [
                 'id' => $this->targetAgent->id,
-                'company_name' => $this->targetAgent->agentProfile?->company_name,
+                'company_name' => $this->targetAgent->profile?->company_name,
             ] : null),
             'client' => $client ? [
                 'id' => $client->id,

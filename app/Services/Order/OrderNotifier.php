@@ -37,7 +37,7 @@ class OrderNotifier
 
         $recipients = User::query()
             ->whereNotNull('telegram_id')
-            ->whereHas('agentProfile', function ($query) use ($order, $broadcast): void {
+            ->whereHas('profile', function ($query) use ($order, $broadcast): void {
                 $query->where('status', AgentProfileStatus::Approved);
 
                 // Directed order → only the chosen agency (filtered by id below).
