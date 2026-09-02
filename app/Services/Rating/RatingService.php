@@ -29,29 +29,43 @@ class RatingService
             return;
         }
 
+        // 1 user = 1 profile (Variant 1): agent/designer reputation is a single
+        // combined rating owned by that one profile — computed once under the
+        // profile's own kind, not paired per provider role. Client (and the
+        // deferred seller stub) stay role-keyed with no profile.
+        $profile = AgentProfile::where('user_id', $userId)->first();
+
         foreach ($user->allRoles() as $role) {
             if ($role === Role::Admin) {
                 continue;
             }
 
-            if (in_array($role, [Role::Agent, Role::Designer, Role::Seller], true)) {
-                $profiles = AgentProfile::where('user_id', $userId)->get();
-                $matched = false;
-
-                foreach ($profiles as $profile) {
-                    // Only pair a role with a profile of the same provider_type.
-                    if ($profile->provider_type?->value === $role->value) {
-                        $this->recomputeOne($userId, $role, $profile->id);
-                        $matched = true;
-                    }
-                }
-
-                if (! $matched) {
-                    $this->recomputeOne($userId, $role, null);
-                }
-            } else {
-                $this->recomputeOne($userId, $role, null);
+            // Agent/designer with a profile: handled once after the loop, so a
+            // held provider role that isn't the profile's kind doesn't create a
+            // stray null-profile row (capability comes from categories).
+            if ($profile !== null && in_array($role, [Role::Agent, Role::Designer], true)) {
+                continue;
             }
+
+            // Client, the deferred seller stub, or a KYC-pending provider with no
+            // profile yet — seed a role-keyed row with no profile.
+            $this->recomputeOne($userId, $role, null);
+        }
+
+        if ($profile !== null) {
+            $providerRole = $profile->provider_type->toRole();
+            $this->recomputeOne($userId, $providerRole, $profile->id);
+
+            // Prune any stale agent/designer rows that aren't this canonical
+            // profile row (an old null-profile stub, or the other kind) so
+            // cachedRating() and /me/rating resolve to exactly one provider row.
+            UserRating::where('user_id', $userId)
+                ->whereIn('role', [Role::Agent->value, Role::Designer->value])
+                ->where(fn ($query) => $query
+                    ->where('role', '!=', $providerRole->value)
+                    ->orWhereNull('agent_profile_id')
+                    ->orWhere('agent_profile_id', '!=', $profile->id))
+                ->delete();
         }
     }
 
