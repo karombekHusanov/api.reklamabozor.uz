@@ -37,8 +37,6 @@ class PublicAgentResource extends JsonResource
             // entities; a designer may be an individual or a legal entity).
             'person_type' => $this->user->effectivePersonType()?->value,
             'person_type_verified' => $this->user->isVerifiedLegalEntity(),
-            // Optional MyID biometric identity badge — a trust signal for clients.
-            'identity_verified' => $this->user->isIdentityVerified(),
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
             'location_label' => $this->location_label,

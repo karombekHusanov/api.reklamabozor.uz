@@ -35,6 +35,7 @@ class AgentOfferDetailResource extends JsonResource
             'id' => $this->id,
             'price' => $this->price,
             'comment' => $this->comment,
+            'deadline_days' => $this->deadline_days,
             'status' => $this->status->value,
             'is_interest' => $this->isInterest(),
             'can_accept' => $this->canAccept(),

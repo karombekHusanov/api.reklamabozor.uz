@@ -354,7 +354,7 @@ class OfferService
      *
      * @param  array<int, array{name: string, unit?: string|null, quantity: float|int|string, unit_price: float|int|string}>  $items
      */
-    public function setPricelist(User $agent, Offer $offer, array $items): Offer
+    public function setPricelist(User $agent, Offer $offer, array $items, ?int $deadlineDays = null): Offer
     {
         abort_unless($offer->agent_id === $agent->id, 404);
 
@@ -373,7 +373,7 @@ class OfferService
             ]);
         }
 
-        DB::transaction(function () use ($offer, $items): void {
+        DB::transaction(function () use ($offer, $items, $deadlineDays): void {
             $offer->items()->delete();
 
             foreach (array_values($items) as $index => $item) {
@@ -390,7 +390,10 @@ class OfferService
 
             $offer->load('items');
             $offer->recomputeTotal();
-            $offer->update(['price_updated_at' => now()]);
+            $offer->update([
+                'price_updated_at' => now(),
+                'deadline_days' => $deadlineDays,
+            ]);
         });
 
         $chat = $this->directChats->findForOffer($offer)

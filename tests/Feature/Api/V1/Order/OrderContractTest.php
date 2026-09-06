@@ -55,6 +55,7 @@ class OrderContractTest extends TestCase
             'agent_profile_id' => $profile->id,
             'status' => OfferStatus::Pending,
             'price' => 4_800_000,
+            'deadline_days' => 14,
         ]);
         OfferItem::factory()->for($offer)->create([
             'name' => 'Backprint 27x98',

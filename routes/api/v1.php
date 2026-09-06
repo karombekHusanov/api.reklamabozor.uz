@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Admin\AdvantageController as AdminAdvantageController;
 use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
+use App\Http\Controllers\Api\V1\Admin\AmendmentController as AdminAmendmentController;
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
@@ -31,10 +32,9 @@ use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
-use App\Http\Controllers\Api\V1\Identity\MyIdCallbackController;
-use App\Http\Controllers\Api\V1\IdentityController;
 use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
+use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Payment\MulticardCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
@@ -58,11 +58,6 @@ Route::post('/telegram/webhook', WebhookController::class);
 
 // Multicard payment webhook — called by Multicard, guarded by source-IP allowlist + SHA1 sign.
 Route::post('/payment/multicard/callback', MulticardCallbackController::class);
-
-// MyID redirect-flow callback (public — MyID redirects the browser here with
-// ?code&state; the single-use state establishes trust). Fallback for when the
-// camera iframe is blocked in the Telegram WebView.
-Route::get('/identity/myid/callback', MyIdCallbackController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
@@ -112,13 +107,6 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/me/legal-entity', [LegalEntityController::class, 'show']);
     Route::post('/me/legal-entity', [LegalEntityController::class, 'store']);
 
-    // Optional MyID biometric identity verification (badge, never a gate).
-    Route::get('/me/identity', [IdentityController::class, 'show']);
-    Route::post('/me/identity/session', [IdentityController::class, 'session']);   // WebSDK iframe flow
-    Route::post('/me/identity/verify', [IdentityController::class, 'finalize']);   // WebSDK iframe flow
-    Route::post('/me/identity/authorize', [IdentityController::class, 'authorize']); // redirect fallback
-    Route::post('/me/identity/simulate', [IdentityController::class, 'simulate']);   // dev/test only
-
     Route::get('/me/rating', [RatingController::class, 'me']);
     Route::get('/me/activity', [ActivityController::class, 'show']);
     Route::post('/me/activity/live-orders/seen', [ActivityController::class, 'markLiveOrdersSeen']);
@@ -143,6 +131,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Order payment (Multicard hosted checkout): (re)start checkout + poll status.
     Route::post('/orders/{order}/pay', [PaymentController::class, 'pay']);
     Route::get('/orders/{order}/payment', [PaymentController::class, 'show']);
+
+    // Additional agreements (Qo'shimcha kelishuv): either party proposes a change
+    // to an active deal; client, agent, and (when flagged) operator must approve.
+    Route::get('/orders/{order}/amendments', [OrderAmendmentController::class, 'index']);
+    Route::post('/orders/{order}/amendments', [OrderAmendmentController::class, 'store'])
+        ->middleware('throttle:20,1');
+    Route::post('/amendments/{amendment}/approve', [OrderAmendmentController::class, 'approve']);
+    Route::post('/amendments/{amendment}/reject', [OrderAmendmentController::class, 'reject']);
+    Route::post('/amendments/{amendment}/cancel', [OrderAmendmentController::class, 'cancel']);
 
     // Community-wide global chat, open to every authenticated user.
     Route::get('/chat/global', [GlobalChatController::class, 'meta']);
@@ -275,6 +272,11 @@ Route::prefix('admin')
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);
         Route::post('/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
+
+        // Operator review of additional agreements (Qo'shimcha kelishuv).
+        Route::get('/amendments', [AdminAmendmentController::class, 'index']);
+        Route::post('/amendments/{amendment}/approve', [AdminAmendmentController::class, 'approve']);
+        Route::post('/amendments/{amendment}/reject', [AdminAmendmentController::class, 'reject']);
 
         // Agent payouts out of escrow — manager reviews + releases (marks paid).
         Route::get('/payouts', [AdminPayoutController::class, 'index']);

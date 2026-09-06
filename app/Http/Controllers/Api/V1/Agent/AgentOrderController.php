@@ -102,7 +102,13 @@ class AgentOrderController extends ApiController
      */
     public function setPricelist(SetOfferPricelistRequest $request, Offer $offer): JsonResponse
     {
-        $offer = $this->offers->setPricelist($request->user(), $offer, $request->validated()['items']);
+        $validated = $request->validated();
+        $offer = $this->offers->setPricelist(
+            $request->user(),
+            $offer,
+            $validated['items'],
+            (int) $validated['deadline_days'],
+        );
 
         return $this->success(new AgentOfferDetailResource($offer), 'Pricelist sent');
     }

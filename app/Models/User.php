@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\AgentProfileStatus;
-use App\Enums\IdentityVerificationStatus;
 use App\Enums\LegalEntityStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderStatus;
@@ -333,32 +332,6 @@ class User extends Authenticatable
         }
 
         return $this->legalEntityVerification?->status;
-    }
-
-    /**
-     * Optional MyID biometric identity verification. One request per user;
-     * present only once a session has been started.
-     */
-    public function identityVerification(): HasOne
-    {
-        return $this->hasOne(IdentityVerification::class);
-    }
-
-    /**
-     * Whether the user has passed MyID identity verification (badge granted).
-     */
-    public function isIdentityVerified(): bool
-    {
-        return $this->identityVerification?->status === IdentityVerificationStatus::Verified;
-    }
-
-    /**
-     * MyID verification state for the badge/CTA (pending / verified / failed),
-     * or null when the user has never attempted it.
-     */
-    public function identityVerificationStatus(): ?IdentityVerificationStatus
-    {
-        return $this->identityVerification?->status;
     }
 
     /**

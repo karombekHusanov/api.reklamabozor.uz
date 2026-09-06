@@ -1,16 +1,16 @@
 <?php
 
-namespace App\Http\Requests\Api\V1\Agent;
+namespace App\Http\Requests\Api\V1\Order;
 
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Agent sends (or replaces) the pricelist on their offer — the priced "contract"
- * step after negotiating in the order chat. At least one line is required.
+ * Client or agent proposes an amendment (Qo'shimcha kelishuv): a new pricelist
+ * and delivery deadline that replaces the current terms once approved.
  */
-class SetOfferPricelistRequest extends FormRequest
+class StoreAmendmentRequest extends FormRequest
 {
-    /** Hard cap on line items in a single pricelist. */
+    /** Hard cap on line items in one amendment. */
     public const MAX_ITEMS = 50;
 
     public function authorize(): bool
@@ -30,6 +30,7 @@ class SetOfferPricelistRequest extends FormRequest
             'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:9999999'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'deadline_days' => ['required', 'integer', 'min:1', 'max:365'],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
         ];
     }
 }

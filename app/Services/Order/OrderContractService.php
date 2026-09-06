@@ -54,7 +54,7 @@ class OrderContractService
             'items' => $itemsSnapshot,
             'total' => (string) ($offer->price ?? '0'),
             'generatedAt' => now(),
-            'deadlineLabel' => $this->deadlineLabel($order),
+            'deadlineLabel' => $this->deadlineLabel($order, $offer),
         ])->setPaper('a4');
 
         $contents = $pdf->output();
@@ -157,8 +157,19 @@ class OrderContractService
         return 'RB-'.$order->id.'-'.now()->format('Y');
     }
 
-    private function deadlineLabel(Order $order): ?string
+    /**
+     * The agent's committed delivery deadline (from the priced offer) takes
+     * precedence; falls back to the client's urgency preference on the order.
+     */
+    private function deadlineLabel(Order $order, Offer $offer): ?string
     {
+        if ($offer->deadline_days !== null) {
+            $days = (int) $offer->deadline_days;
+            $due = now()->addDays($days)->format('d.m.Y');
+
+            return "{$days} kun ({$due} gacha)";
+        }
+
         return match ($order->deadline?->value) {
             'today_tomorrow' => 'Bugun-erta',
             'this_week' => 'Shu hafta',

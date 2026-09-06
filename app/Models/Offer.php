@@ -26,6 +26,7 @@ class Offer extends Model
         'agent_profile_id',
         'price',
         'comment',
+        'deadline_days',
         'status',
         'price_updated_at',
         'price_edit_count',
@@ -160,6 +161,7 @@ class Offer extends Model
     {
         return [
             'price' => 'decimal:2',
+            'deadline_days' => 'integer',
             'status' => OfferStatus::class,
             'price_updated_at' => 'datetime',
             'price_edit_count' => 'integer',

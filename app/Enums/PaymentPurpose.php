@@ -9,4 +9,6 @@ namespace App\Enums;
 enum PaymentPurpose: string
 {
     case Order = 'order';
+    /** Extra payment for an approved additional agreement (Qo'shimcha kelishuv). */
+    case Amendment = 'amendment';
 }

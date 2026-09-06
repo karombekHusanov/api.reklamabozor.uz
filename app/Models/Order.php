@@ -198,6 +198,14 @@ class Order extends Model
     }
 
     /**
+     * Additional agreements (Qo'shimcha kelishuv) proposed on this deal.
+     */
+    public function amendments(): HasMany
+    {
+        return $this->hasMany(OrderAmendment::class)->latest();
+    }
+
+    /**
      * The generated per-order service contract (present once the deal started).
      */
     public function contract(): HasOne

@@ -11,9 +11,11 @@ use App\Enums\WithdrawalStatus;
 use App\Jobs\RecalculateRating;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderAmendment;
 use App\Models\Payment;
 use App\Models\User;
 use App\Models\Withdrawal;
+use App\Services\Order\AmendmentService;
 use App\Services\Order\OfferService;
 use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
@@ -71,6 +73,64 @@ class PaymentService
             'payment_uuid' => (string) Str::uuid(),
             'gateway' => 'multicard',
             'purpose' => PaymentPurpose::Order,
+            'payer_id' => $order->client_id,
+            'amount' => $amount,
+            'currency' => 'UZS',
+            'status' => PaymentStatus::Draft,
+        ]);
+
+        $data = $this->client->createInvoice($this->invoicePayload($order, $payment, $amount));
+
+        $payment->update([
+            'gateway_uuid' => $data['uuid'] ?? null,
+            'checkout_url' => $data['checkout_url'] ?? null,
+            'meta' => $data,
+        ]);
+
+        return $payment->refresh();
+    }
+
+    /**
+     * Start (or reuse) the checkout for an approved amendment's extra charge.
+     * The amendment is applied to the deal only once this payment succeeds.
+     */
+    public function startAmendmentPayment(OrderAmendment $amendment): Payment
+    {
+        $order = $amendment->order;
+
+        if (! $order instanceof Order) {
+            throw new RuntimeException('Amendment has no order to charge against.');
+        }
+
+        $amount = (int) round(((float) $amendment->extra_amount) * 100); // som → tiyin
+
+        if ($amount <= 0) {
+            throw new RuntimeException('Amendment has no extra amount to charge.');
+        }
+
+        $existing = Payment::query()
+            ->where('purpose', PaymentPurpose::Amendment)
+            ->where('payable_type', $amendment->getMorphClass())
+            ->where('payable_id', $amendment->id)
+            ->whereIn('status', [PaymentStatus::Draft, PaymentStatus::Progress])
+            ->latest()
+            ->first();
+
+        if ($existing !== null && $existing->checkout_url && ! $this->invoiceExpired($existing)) {
+            return $existing;
+        }
+
+        if ($existing !== null && $existing->status === PaymentStatus::Draft) {
+            $existing->update(['status' => PaymentStatus::Error]);
+        }
+
+        /** @var Payment $payment */
+        $payment = Payment::query()->create([
+            'payment_uuid' => (string) Str::uuid(),
+            'gateway' => 'multicard',
+            'purpose' => PaymentPurpose::Amendment,
+            'payable_type' => $amendment->getMorphClass(),
+            'payable_id' => $amendment->id,
             'payer_id' => $order->client_id,
             'amount' => $amount,
             'currency' => 'UZS',
@@ -166,6 +226,7 @@ class PaymentService
 
         if ($status === PaymentStatus::Success) {
             $this->onOrderPaid($payment);
+            $this->onAmendmentPaid($payment);
         }
 
         // First transition into Revert only — idempotent retries must not
@@ -388,6 +449,24 @@ class PaymentService
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Apply an approved amendment once its extra payment succeeds.
+     */
+    private function onAmendmentPaid(Payment $payment): void
+    {
+        if ($payment->purpose !== PaymentPurpose::Amendment) {
+            return;
+        }
+
+        $amendment = $payment->payable;
+
+        if (! $amendment instanceof OrderAmendment) {
+            return;
+        }
+
+        app(AmendmentService::class)->applyPaid($amendment->fresh());
     }
 
     /**

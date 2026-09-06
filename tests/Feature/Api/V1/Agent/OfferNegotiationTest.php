@@ -380,15 +380,17 @@ class OfferNegotiationTest extends TestCase
                 ['name' => 'Backprint 27x98', 'unit' => 'dona', 'quantity' => 2, 'unit_price' => 240_000],
                 ['name' => 'Antikrajka', 'quantity' => 1, 'unit_price' => 6_000_000],
             ],
+            'deadline_days' => 14,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.is_interest', false)
             ->assertJsonPath('data.price', '6480000.00')
+            ->assertJsonPath('data.deadline_days', 14)
             ->assertJsonPath('data.items.0.name', 'Backprint 27x98')
             ->assertJsonPath('data.items.0.line_total', '480000.00')
             ->assertJsonPath('data.items.1.unit', 'dona');
 
-        $this->assertDatabaseHas('offers', ['id' => $offer->id, 'price' => 6_480_000]);
+        $this->assertDatabaseHas('offers', ['id' => $offer->id, 'price' => 6_480_000, 'deadline_days' => 14]);
         $this->assertSame(2, $offer->items()->count());
         $this->assertDatabaseHas('direct_chat_messages', [
             'type' => DirectChatMessage::TYPE_OFFER_PRICELIST_SENT,
@@ -407,6 +409,7 @@ class OfferNegotiationTest extends TestCase
 
         $this->actingAs($agent)->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'Service', 'quantity' => 1, 'unit_price' => 3_000_000]],
+            'deadline_days' => 7,
         ])
             ->assertOk()
             ->assertJsonPath('data.can_accept', true);
@@ -431,13 +434,16 @@ class OfferNegotiationTest extends TestCase
                 ['name' => 'A', 'quantity' => 1, 'unit_price' => 100_000],
                 ['name' => 'B', 'quantity' => 1, 'unit_price' => 200_000],
             ],
+            'deadline_days' => 10,
         ], ['Authorization' => 'Bearer '.$token])->assertOk();
 
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'C', 'quantity' => 3, 'unit_price' => 50_000]],
+            'deadline_days' => 5,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.price', '150000.00');
+            ->assertJsonPath('data.price', '150000.00')
+            ->assertJsonPath('data.deadline_days', 5);
 
         $this->assertSame(1, $offer->items()->count());
         $this->assertSame('C', $offer->items()->first()->name);
@@ -455,8 +461,24 @@ class OfferNegotiationTest extends TestCase
 
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
+            'deadline_days' => 7,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable();
+    }
+
+    public function test_pricelist_requires_deadline_days(): void
+    {
+        [$agent, $token, $profile, $category] = $this->approvedAgent();
+        $order = Order::factory()->for($category)->status(OrderStatus::OffersSent)->create();
+        $offer = Offer::factory()->interest()->for($order)->for($agent, 'agent')->create([
+            'agent_profile_id' => $profile->id,
+        ]);
+
+        $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
+            'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('deadline_days');
     }
 
     public function test_pricelist_requires_at_least_one_item(): void
@@ -484,6 +506,7 @@ class OfferNegotiationTest extends TestCase
 
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
+            'deadline_days' => 7,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertNotFound();
     }
