@@ -32,8 +32,9 @@ class OrderNotifier
         $order->loadMissing('category');
         Order::hydrateAttachmentFiles($order);
 
+        // No category at all, or the catch-all "Boshqa" → everyone approved.
         $broadcast = $order->target_agent_id === null
-            && ($order->category?->shouldBroadcastToAllProviders() ?? false);
+            && ($order->category === null || $order->category->shouldBroadcastToAllProviders());
 
         $recipients = User::query()
             ->whereNotNull('telegram_id')

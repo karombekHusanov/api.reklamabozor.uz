@@ -9,7 +9,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * B2C order — pick a category, name the project, describe the need, attach files.
+ * B2C order. Only the description is required: category, region, files and the
+ * map pin are optional, and a category-less order is broadcast to every
+ * approved provider.
  */
 class StoreOrderRequest extends FormRequest
 {
@@ -25,7 +27,7 @@ class StoreOrderRequest extends FormRequest
     {
         return [
             'category_id' => [
-                'required',
+                'nullable',
                 'integer',
                 Rule::exists('categories', 'id')->where('is_active', true),
             ],
@@ -37,9 +39,9 @@ class StoreOrderRequest extends FormRequest
             // Free-text hashtags (normalized server-side to a shared catalog).
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
             'hashtags.*' => ['string', 'max:40'],
-            // Client location — required so providers know where the work is.
-            'lat' => ['required', 'numeric', 'between:-90,90'],
-            'lng' => ['required', 'numeric', 'between:-180,180'],
+            // Optional map pin — both coordinates or neither.
+            'lat' => ['nullable', 'required_with:lng', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'required_with:lat', 'numeric', 'between:-180,180'],
             'location_label' => ['nullable', 'string', 'max:200'],
             // Optional admin region (null = all Uzbekistan). District must be a child of region.
             'region_id' => [

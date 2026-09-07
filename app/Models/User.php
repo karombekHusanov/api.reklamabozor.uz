@@ -110,8 +110,12 @@ class User extends Authenticatable
      * bids on an order in that category. Null when not approved or the profile
      * does not list the category. (1 user = 1 profile.)
      */
-    public function providerProfileForCategory(int $categoryId): ?AgentProfile
+    public function providerProfileForCategory(?int $categoryId): ?AgentProfile
     {
+        if ($categoryId === null) {
+            return null;
+        }
+
         $profile = $this->approvedProfile();
 
         if ($profile === null) {
@@ -134,7 +138,8 @@ class User extends Authenticatable
     {
         $order->loadMissing('category');
 
-        if ($order->category === null || ! $order->category->shouldBroadcastToAllProviders()) {
+        // A category-less order is open to every approved provider.
+        if ($order->category !== null && ! $order->category->shouldBroadcastToAllProviders()) {
             return null;
         }
 

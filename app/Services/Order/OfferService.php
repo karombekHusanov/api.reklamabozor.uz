@@ -53,6 +53,8 @@ class OfferService
         $orders = Order::query()
             ->where(function ($query) use ($categoryIds): void {
                 $query->whereIn('category_id', $categoryIds)
+                    // No category picked → broadcast, open to everyone approved.
+                    ->orWhereNull('category_id')
                     ->orWhereHas('category', function ($categoryQuery): void {
                         // Catch-all "Boshqa" always open to every approved provider.
                         $categoryQuery->where('is_other', true);

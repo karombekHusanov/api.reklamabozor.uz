@@ -199,12 +199,46 @@ class OrderTest extends TestCase
     {
         [, $token] = $this->authedUser();
 
-        // title and attachment_file_ids are optional (simplified MVP request form
-        // omits them; the service falls back to the category label and no files).
+        // The MVP request form only insists on the description: category, region,
+        // files and the map pin are all optional.
         $this->postJson('/api/v1/orders', [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['category_id', 'description', 'lat', 'lng'])
-            ->assertJsonMissingValidationErrors(['title', 'attachment_file_ids']);
+            ->assertJsonValidationErrors(['description'])
+            ->assertJsonMissingValidationErrors([
+                'category_id', 'lat', 'lng', 'title', 'attachment_file_ids', 'region_id',
+            ]);
+    }
+
+    public function test_map_pin_requires_both_coordinates(): void
+    {
+        [, $token] = $this->authedUser();
+
+        $this->postJson('/api/v1/orders', [
+            'description' => 'Kafe uchun banner kerak.',
+            'lat' => 41.31,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['lng']);
+    }
+
+    public function test_client_can_place_a_description_only_request(): void
+    {
+        Http::fake();
+        [$client, $token] = $this->authedUser();
+
+        $response = $this->postJson('/api/v1/orders', [
+            'description' => '  Do\'kon ochilishi uchun bayram reklamasi kerak.  ',
+        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+
+        $order = Order::query()->where('client_id', $client->id)->firstOrFail();
+
+        $this->assertNull($order->category_id);
+        $this->assertNull($order->category_type);
+        $this->assertNull($order->lat);
+        $this->assertNull($order->lng);
+        // Title falls back to the request text when no category was picked.
+        $this->assertSame("Do'kon ochilishi uchun bayram reklamasi kerak.", $order->title);
+        $response->assertJsonPath('data.id', $order->id);
     }
 
     public function test_client_can_place_a_text_only_request_without_title_or_files(): void

@@ -37,14 +37,16 @@ class OrderService
      */
     public function create(User $client, array $data): Order
     {
-        /** @var Category $category */
-        $category = Category::findOrFail($data['category_id']);
+        $category = isset($data['category_id'])
+            ? Category::find($data['category_id'])
+            : null;
 
         $targetAgentId = $this->resolveTargetAgent($data['agent_profile_id'] ?? null, $category);
 
         $title = trim((string) ($data['title'] ?? ''));
         if ($title === '') {
-            $title = $category->name_uz;
+            // No category picked → name the order after its own description.
+            $title = $category?->name_uz ?? $this->titleFromDescription($data['description']);
         }
 
         $regionId = isset($data['region_id']) ? (int) $data['region_id'] : null;
@@ -60,17 +62,17 @@ class OrderService
 
         /** @var Order $order */
         $order = $client->orders()->create([
-            'category_id' => $category->id,
+            'category_id' => $category?->id,
             // Freeze the category type so capacity stats survive category edits.
-            'category_type' => $category->type,
+            'category_type' => $category?->type,
             'target_agent_id' => $targetAgentId,
             'title' => $title,
             'description' => $data['description'],
             'deadline' => $data['deadline'] ?? null,
             'attachment_file_ids' => $data['attachment_file_ids'] ?? [],
             'show_files_in_showcase' => $data['show_files_in_showcase'] ?? true,
-            'lat' => $data['lat'],
-            'lng' => $data['lng'],
+            'lat' => $data['lat'] ?? null,
+            'lng' => $data['lng'] ?? null,
             'location_label' => $locationLabel,
             'region_id' => $regionId,
             'district_id' => $districtId,
@@ -93,7 +95,7 @@ class OrderService
      * to the agent's user id. The agency must be approved and actually serve the
      * chosen category — otherwise it could never see or bid on the order.
      */
-    private function resolveTargetAgent(?int $agentProfileId, Category $category): ?int
+    private function resolveTargetAgent(?int $agentProfileId, ?Category $category): ?int
     {
         if ($agentProfileId === null) {
             return null;
@@ -102,13 +104,26 @@ class OrderService
         /** @var AgentProfile $profile */
         $profile = AgentProfile::where('status', AgentProfileStatus::Approved)->findOrFail($agentProfileId);
 
-        if (! $profile->categories()->where('categories.id', $category->id)->exists()) {
+        // Without a category there is nothing to check the agency against.
+        if ($category !== null && ! $profile->categories()->where('categories.id', $category->id)->exists()) {
             throw ValidationException::withMessages([
                 'agent_profile_id' => ['This agency does not serve the selected category.'],
             ]);
         }
 
         return $profile->user_id;
+    }
+
+    /** First words of the request, used as the title when no category was picked. */
+    private function titleFromDescription(string $description): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $description) ?? '');
+
+        if ($text === '') {
+            return 'Buyurtma';
+        }
+
+        return mb_strlen($text) > 60 ? mb_substr($text, 0, 57).'…' : $text;
     }
 
     /**
