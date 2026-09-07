@@ -88,4 +88,25 @@ return [
         'admin_events' => env('TELEGRAM_ADMIN_EVENTS', '*'),
     ],
 
+    /*
+     * AI assistant. Any OpenAI-compatible chat-completions endpoint works
+     * (OpenRouter, Gemini's compat layer, DeepSeek, Zhipu/GLM, Groq, ...), so
+     * switching provider is a .env change, not a code change. The key never
+     * leaves the server: the mini app talks only to our own endpoint.
+     */
+    'assistant' => [
+        'enabled' => env('ASSISTANT_ENABLED', false),
+        'base_url' => env('ASSISTANT_BASE_URL', 'https://openrouter.ai/api/v1'),
+        'api_key' => env('ASSISTANT_API_KEY'),
+        'model' => env('ASSISTANT_MODEL', 'minimax/minimax-m3:free'),
+        // Chat needs to feel instant — a slow provider is a broken feature.
+        'timeout' => (int) env('ASSISTANT_TIMEOUT', 20),
+        'max_tokens' => (int) env('ASSISTANT_MAX_TOKENS', 700),
+        'temperature' => (float) env('ASSISTANT_TEMPERATURE', 0.4),
+        // Per-user daily message cap on top of the per-minute route throttle.
+        'daily_limit' => (int) env('ASSISTANT_DAILY_LIMIT', 60),
+        // Models the `assistant:eval` command compares (comma-separated ids).
+        'eval_models' => env('ASSISTANT_EVAL_MODELS', ''),
+    ],
+
 ];

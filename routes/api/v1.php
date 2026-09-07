@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\Agent\AgentPortfolioController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
 use App\Http\Controllers\Api\V1\Agent\PayoutController as AgentPayoutController;
 use App\Http\Controllers\Api\V1\Agent\WithdrawalController;
+use App\Http\Controllers\Api\V1\Assistant\AssistantController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
@@ -110,6 +111,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/me/rating', [RatingController::class, 'me']);
     Route::get('/me/activity', [ActivityController::class, 'show']);
     Route::post('/me/activity/live-orders/seen', [ActivityController::class, 'markLiveOrdersSeen']);
+
+    // AI assistant — explains the app and drafts an order. Tight throttle:
+    // every call costs a provider request.
+    Route::post('/assistant/chat', [AssistantController::class, 'chat'])
+        ->middleware('throttle:10,1');
+    // Same turn, streamed (SSE) — the chat's default path.
+    Route::post('/assistant/chat/stream', [AssistantController::class, 'stream'])
+        ->middleware('throttle:10,1');
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/regions', [RegionController::class, 'index']);
