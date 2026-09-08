@@ -13,6 +13,7 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderAmendment;
 use App\Models\User;
+use App\Services\Fiscal\FiscalService;
 use App\Services\Telegram\AdminNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ class AmendmentService
         private readonly OrderContractService $contracts,
         private readonly AdminNotifier $admin,
         private readonly OrderNotifier $notifier,
+        private readonly FiscalService $fiscal,
     ) {}
 
     /**
@@ -482,6 +484,8 @@ class AmendmentService
             $offer = $amendment->offer()->firstOrFail();
             $after = $amendment->after_snapshot;
 
+            $fiscal = $this->fiscal->fieldsForOrder($amendment->order);
+
             $offer->items()->delete();
             foreach (array_values($after['items']) as $index => $item) {
                 $offer->items()->create([
@@ -490,6 +494,7 @@ class AmendmentService
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'sort_order' => $index,
+                    ...$fiscal,
                 ]);
             }
 

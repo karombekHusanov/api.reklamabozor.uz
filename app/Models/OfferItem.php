@@ -24,6 +24,7 @@ class OfferItem extends Model
         'quantity',
         'unit_price',
         'mxik_code',
+        'package_code',
         'vat_rate',
         'sort_order',
     ];
@@ -31,6 +32,15 @@ class OfferItem extends Model
     public function offer(): BelongsTo
     {
         return $this->belongsTo(Offer::class);
+    }
+
+    /**
+     * Whether this row carries everything a fiscal receipt line needs. Without
+     * it Multicard refuses the OFD payload (and, later, a partial refund).
+     */
+    public function hasFiscalData(): bool
+    {
+        return filled($this->mxik_code) && filled($this->package_code);
     }
 
     /**

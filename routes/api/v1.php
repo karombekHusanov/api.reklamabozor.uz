@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryControl
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagController;
 use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
+use App\Http\Controllers\Api\V1\Admin\MxikCodeController as AdminMxikCodeController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
@@ -289,6 +290,13 @@ Route::prefix('admin')
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
         Route::get('/orders/{order}/chat', [AdminOrderController::class, 'chat']);
+
+        // MXIK (IKPU) classifier catalogue — fiscal codes for pricelist rows.
+        Route::get('/mxik-codes', [AdminMxikCodeController::class, 'index']);
+        Route::get('/mxik-codes/coverage', [AdminMxikCodeController::class, 'coverage']);
+        Route::post('/mxik-codes', [AdminMxikCodeController::class, 'store']);
+        Route::patch('/mxik-codes/{mxikCode}', [AdminMxikCodeController::class, 'update']);
+        Route::delete('/mxik-codes/{mxikCode}', [AdminMxikCodeController::class, 'destroy']);
 
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);

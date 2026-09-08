@@ -28,6 +28,19 @@ class Category extends Model
         'sort_order',
     ];
 
+    /**
+     * Default MXIK (fiscal classifier) code for pricelist rows in this
+     * category. Stored in `category_mxik_defaults` so the classifier catalogue
+     * owns the mapping.
+     *
+     * @return BelongsToMany<MxikCode, $this>
+     */
+    public function defaultMxikCode(): BelongsToMany
+    {
+        return $this->belongsToMany(MxikCode::class, 'category_mxik_defaults')
+            ->withTimestamps();
+    }
+
     public function agentProfiles(): BelongsToMany
     {
         return $this->belongsToMany(AgentProfile::class, 'agent_categories')

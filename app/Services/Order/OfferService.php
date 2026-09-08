@@ -15,6 +15,7 @@ use App\Models\Order;
 use App\Models\OrderView;
 use App\Models\User;
 use App\Services\Chat\DirectChatService;
+use App\Services\Fiscal\FiscalService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -28,6 +29,7 @@ class OfferService
         private readonly PayoutService $payouts,
         private readonly DirectChatService $directChats,
         private readonly OrderContractService $contracts,
+        private readonly FiscalService $fiscal,
     ) {}
 
     /**
@@ -421,7 +423,11 @@ class OfferService
             ]);
         }
 
-        DB::transaction(function () use ($agent, $offer, $items, $deadlineDays, $request): void {
+        // Fiscal classifier for this order's category — frozen on every row so
+        // the receipt (and a later partial refund) can be built from the offer.
+        $fiscal = $this->fiscal->fieldsForOrder($order);
+
+        DB::transaction(function () use ($agent, $offer, $items, $deadlineDays, $request, $fiscal): void {
             $offer->items()->delete();
 
             foreach (array_values($items) as $index => $item) {
@@ -433,6 +439,7 @@ class OfferService
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'sort_order' => $index,
+                    ...$fiscal,
                 ]);
             }
 

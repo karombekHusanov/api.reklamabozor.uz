@@ -17,6 +17,7 @@ use App\Models\OrderAmendment;
 use App\Models\Payment;
 use App\Models\User;
 use App\Models\Withdrawal;
+use App\Services\Fiscal\FiscalService;
 use App\Services\Order\AmendmentService;
 use App\Services\Order\OfferService;
 use App\Services\Payout\PayoutService;
@@ -994,21 +995,23 @@ class PaymentService
             'callback_url' => (string) config('services.multicard.callback_url'),
         ];
 
-        // Fiscal receipt line — optional. When the gateway's OFD service is
-        // down/misconfigured, sending it makes the whole payment fail
-        // ("сервис недоступен" on confirm), so it is behind a flag. Real
-        // fiscalization (proper mxik / package_code per category) is a later
-        // finance phase.
+        // Fiscal receipt lines — built from the accepted offer's pricelist, whose
+        // rows carry the MXIK / packaging codes from the classifier catalogue.
+        // Sending an incomplete receipt makes the whole payment fail on some
+        // stands, so a pricelist without codes simply goes out without OFD.
         if (config('services.multicard.ofd_enabled')) {
-            $payload['ofd'] = [[
-                'name' => Str::limit((string) $order->title, 120, ''),
-                'qty' => 1,
-                'price' => $amount,
-                'total' => $amount,
-                'mxik' => '10305001001000000',
-                'package_code' => '1495862',
-                'vat' => 0,
-            ]];
+            $lines = app(FiscalService::class)->receiptLines(
+                $order->acceptedOffer()->with('items')->first(),
+            );
+
+            if ($lines === null) {
+                logger()->warning('multicard.invoice.ofd_skipped', [
+                    'order_id' => $order->id,
+                    'hint' => 'Pricelist rows have no MXIK / package code — map the category in the classifier catalogue.',
+                ]);
+            } else {
+                $payload['ofd'] = $lines;
+            }
         }
 
         if ($returnUrl = $this->miniAppReturnUrl($order)) {
