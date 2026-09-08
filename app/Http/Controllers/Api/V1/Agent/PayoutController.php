@@ -10,8 +10,8 @@ use Illuminate\Http\Request;
 
 /**
  * Agent-facing earnings: the payouts owed to / paid to the signed-in provider,
- * plus a balance summary. Backs the "earnings + withdraw" area of the agent
- * profile in the mini app.
+ * plus a balance summary and where the money is headed. Backs the earnings area
+ * of the agent profile in the mini app.
  */
 class PayoutController extends ApiController
 {
@@ -32,7 +32,21 @@ class PayoutController extends ApiController
 
         $balance = $this->payouts->balanceFor($agent);
 
+        $profile = $agent->profile()->first();
+
         return $this->success([
+            // Where earnings land. Bank transfers are executed by a manager
+            // against these requisites — incomplete ones hold the money up.
+            'payout' => [
+                'channel' => (string) config('payouts.channel', 'bank'),
+                'card_withdrawal_enabled' => (bool) config('payouts.card_withdrawal_enabled'),
+                'bank' => [
+                    'bank_name' => $profile?->bank_name,
+                    'bank_account' => $profile?->bank_account,
+                    'mfo' => $profile?->mfo,
+                    'complete' => $profile?->hasBankRequisites() ?? false,
+                ],
+            ],
             'balance' => [
                 'available' => $balance['available'],
                 'available_som' => $balance['available'] / 100,

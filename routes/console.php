@@ -23,3 +23,7 @@ Schedule::command('orders:remind-unpaid')->dailyAt('10:00');
 // Legacy awaiting_payment orders: unpaid checkout window elapsed → cancel order
 // + best-effort invoice DELETE.
 Schedule::command('orders:cancel-expired-awaiting-payments')->hourly()->withoutOverlapping();
+
+// Cooling-off window closed → tell ops which agent payouts are ready for their
+// bank transfer (the gateway cannot send money to a settlement account).
+Schedule::command('payouts:notify-due')->hourly()->withoutOverlapping();

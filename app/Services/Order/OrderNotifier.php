@@ -5,10 +5,12 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
+use App\Enums\PayoutTranche;
 use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderAmendment;
+use App\Models\Payout;
 use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Telegram\AdminNotifier;
@@ -397,6 +399,36 @@ class OrderNotifier
         }
 
         $this->admin->paymentOverdue($order);
+    }
+
+    /**
+     * The manager transferred an agent's tranche to their bank account. The
+     * transfer happens outside the platform, so this is the only moment the
+     * agent hears about it.
+     */
+    public function notifyPayoutReleased(Payout $payout): void
+    {
+        $payout->loadMissing(['agent', 'order']);
+
+        $amount = number_format($payout->amount / 100, 0, '.', ' ');
+        $tranche = $payout->tranche === PayoutTranche::Advance
+            ? 'Boshlang\'ich (avans)'
+            : ($payout->tranche === PayoutTranche::Final ? 'Yakuniy' : 'Tuzatish');
+
+        $this->sendToUser($payout->agent, implode("\n", array_filter([
+            '🏦 <b>Pul bank hisobingizga o\'tkazildi</b>',
+            '',
+            "💰 Summa: <b>{$amount} so'm</b>",
+            "📦 To'lov turi: {$tranche}",
+            $payout->order !== null
+                ? "🔖 Buyurtma: <b>#{$payout->order_id}</b> — ".e((string) $payout->order->title)
+                : null,
+            $payout->reference !== null
+                ? "🧾 To'lov topshirig'i: <code>".e($payout->reference).'</code>'
+                : null,
+            '',
+            'Bank o\'tkazmasi hisobingizga tushishi bir necha soat olishi mumkin.',
+        ])), '💼 Daromadlarim', '/earnings');
     }
 
     /**

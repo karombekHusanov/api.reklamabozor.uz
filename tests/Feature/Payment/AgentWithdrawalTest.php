@@ -20,6 +20,9 @@ class AgentWithdrawalTest extends TestCase
         parent::setUp();
 
         config([
+            // The card cash-out is off by product decision (earnings go to the
+            // agent's bank account); these tests cover the flow behind the flag.
+            'payouts.card_withdrawal_enabled' => true,
             'services.multicard.enabled' => true,
             'services.multicard.base_url' => 'https://gw.test',
             'services.multicard.store_id' => 6,

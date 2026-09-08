@@ -17,6 +17,7 @@ use App\Models\Payout;
 use App\Models\User;
 use App\Services\Payout\PayoutService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class AgentPayoutTest extends TestCase
@@ -41,7 +42,8 @@ class AgentPayoutTest extends TestCase
         $profile = AgentProfile::factory()->create();
         $order = Order::factory()->status(OrderStatus::InProgress)->create([
             'payment_state' => $paid ? OrderPaymentState::Paid : OrderPaymentState::Unpaid,
-            'paid_at' => $paid ? now() : null,
+            // Past the cooling-off window, so releases are not frozen here.
+            'paid_at' => $paid ? now()->subHours(2) : null,
         ]);
 
         if ($paid) {
@@ -52,7 +54,7 @@ class AgentPayoutTest extends TestCase
                 'purpose' => PaymentPurpose::Order,
                 'status' => PaymentStatus::Success,
                 'amount' => $priceSom * 100,
-                'paid_at' => now(),
+                'paid_at' => now()->subHours(2),
             ]);
         }
         Offer::factory()->for($order)->accepted()->create([
@@ -96,11 +98,41 @@ class AgentPayoutTest extends TestCase
 
         $advance = $payouts->planAdvance($order);
         // Manager releases a smaller advance than the default 40%.
-        $payouts->release($advance, User::factory()->create(), ['amount' => 300_000_000]);
+        $payouts->release($advance, User::factory()->create(), ['amount' => 300_000_000, 'reference' => 'PO-1']);
 
         $final = $payouts->planFinal($order);
         // Final = net (930m) - actual advance (300m) = 630m.
         $this->assertSame(630_000_000, $final->amount);
+    }
+
+    public function test_release_is_frozen_until_the_cancel_window_closes(): void
+    {
+        $this->configureSplit();
+        config(['orders.paid_cancel_window_minutes' => 60]);
+        $payouts = app(PayoutService::class);
+
+        $order = $this->orderWithAcceptedOffer(5_000_000);
+        // Money landed a moment ago — the client can still take it back.
+        $order->update(['paid_at' => now()->subMinutes(10)]);
+        $advance = $payouts->planAdvance($order->fresh());
+        $this->assertNotNull($advance);
+
+        $manager = User::factory()->create();
+
+        try {
+            $payouts->release($advance, $manager, ['reference' => 'PO-2']);
+            $this->fail('Releasing inside the cancel window should be refused.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('payouts unlock in', $e->getMessage());
+        }
+
+        $this->assertSame(PayoutStatus::Pending, $advance->fresh()->status);
+
+        // Window closed → the manager may release it.
+        $order->update(['paid_at' => now()->subMinutes(61)]);
+
+        $released = $payouts->release($advance->fresh(), $manager, ['reference' => 'PO-2']);
+        $this->assertSame(PayoutStatus::Paid, $released->status);
     }
 
     public function test_no_payout_when_gateway_disabled(): void

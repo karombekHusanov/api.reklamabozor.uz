@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\OrderPaymentState;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use Database\Factories\PayoutFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,8 +37,30 @@ class Payout extends Model
         'reference',
         'released_by',
         'paid_at',
+        'notified_at',
         'meta',
     ];
+
+    /**
+     * Payouts a manager may transfer right now: still pending, and the client's
+     * cooling-off window on the order has closed ({@see Order::payoutsLocked()}).
+     *
+     * @param  Builder<Payout>  $query
+     * @return Builder<Payout>
+     */
+    public function scopeReleasable(Builder $query): Builder
+    {
+        $minutes = max(1, (int) config('orders.paid_cancel_window_minutes', 60));
+
+        return $query
+            ->where('status', PayoutStatus::Pending->value)
+            ->whereHas('order', fn (Builder $order): Builder => $order->where(
+                fn (Builder $q): Builder => $q
+                    ->where('payment_state', '!=', OrderPaymentState::Paid->value)
+                    ->orWhereNull('paid_at')
+                    ->orWhere('paid_at', '<=', now()->subMinutes($minutes)),
+            ));
+    }
 
     public function order(): BelongsTo
     {
@@ -79,6 +103,7 @@ class Payout extends Model
             'status' => PayoutStatus::class,
             'tranche' => PayoutTranche::class,
             'paid_at' => 'datetime',
+            'notified_at' => 'datetime',
             'meta' => 'array',
         ];
     }

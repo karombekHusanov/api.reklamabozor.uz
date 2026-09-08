@@ -10,6 +10,8 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\User;
+use App\Services\Order\OrderNotifier;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Splits an order's escrow into agent payouts. The client pays 100% up front;
@@ -17,11 +19,16 @@ use App\Models\User;
  * an advance (deal start) + final (completion). Percentages are configurable
  * (defaults, not hardcoded) and a manager can override any amount at release.
  *
- * v1 releases are manual (a manager marks them paid). The `release()` seam is
- * where the automated Multicard credit flow plugs in later.
+ * Money leaves the platform as a bank transfer to the agent's KYC account
+ * (`payouts.channel`): the gateway has no account-payout API, so a manager
+ * executes the transfer and records its reference here.
  */
 class PayoutService
 {
+    public function __construct(
+        private readonly OrderNotifier $notifier,
+    ) {}
+
     /**
      * Amount owed to the agent after commission, in tiyin.
      */
@@ -129,26 +136,87 @@ class PayoutService
     }
 
     /**
-     * Release a payout to the agent. v1: a manager marks it paid manually
-     * (optionally overriding the amount and recording a bank reference). The
-     * automated Multicard credit flow will branch on `method` here later.
+     * Release a payout to the agent: a manager transfers the money to the
+     * agent's bank account and marks it paid here. The payment-order reference
+     * is required on the bank channel (it is the transfer's only audit trail);
+     * the amount may be overridden.
      *
      * @param  array{amount?: int|null, reference?: string|null, method?: string|null}  $data
      */
     public function release(Payout $payout, User $manager, array $data = []): Payout
     {
+        $this->assertReleasable($payout);
+
+        $method = $data['method'] ?? (string) config('payouts.channel', 'bank');
+        $reference = isset($data['reference']) ? trim((string) $data['reference']) : '';
+
+        if ($method === 'bank') {
+            $this->assertBankRequisites($payout);
+
+            // A bank transfer is only auditable through its payment order.
+            if ($reference === '') {
+                throw ValidationException::withMessages([
+                    'reference' => ['Enter the payment-order number of the bank transfer.'],
+                ]);
+            }
+        }
+
         if (array_key_exists('amount', $data) && $data['amount'] !== null) {
             $payout->amount = max(0, (int) $data['amount']);
         }
 
-        $payout->method = $data['method'] ?? 'manual';
-        $payout->reference = $data['reference'] ?? $payout->reference;
+        $payout->method = $method;
+        $payout->reference = $reference !== '' ? $reference : $payout->reference;
         $payout->released_by = $manager->id;
         $payout->status = PayoutStatus::Paid;
         $payout->paid_at = now();
         $payout->save();
 
-        return $payout->refresh();
+        $payout->refresh();
+
+        // The transfer happens in the bank, off-platform — this is the only
+        // moment the agent learns their money is on the way.
+        $this->notifier->notifyPayoutReleased($payout);
+
+        return $payout;
+    }
+
+    /**
+     * Money may only leave the platform once the client's cooling-off window has
+     * closed — until then they can still cancel the deal and get the payment
+     * back, and a released payout would have nothing to reverse.
+     */
+    private function assertReleasable(Payout $payout): void
+    {
+        $order = $payout->order()->first();
+
+        if ($order === null || ! $order->payoutsLocked()) {
+            return;
+        }
+
+        $minutes = max(1, (int) now()->diffInMinutes($order->payoutsUnlockAt(), absolute: true));
+
+        throw ValidationException::withMessages([
+            'payout' => ["The client can still cancel this order — payouts unlock in {$minutes} min."],
+        ]);
+    }
+
+    /**
+     * A bank transfer needs somewhere to land: refuse to mark a payout paid
+     * while the agent's KYC requisites are incomplete, so the money is never
+     * recorded as sent against a blank account.
+     */
+    private function assertBankRequisites(Payout $payout): void
+    {
+        $profile = $payout->agentProfile()->first();
+
+        if ($profile !== null && $profile->hasBankRequisites()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'payout' => ["The agent's bank requisites are incomplete — the transfer cannot be recorded."],
+        ]);
     }
 
     /**

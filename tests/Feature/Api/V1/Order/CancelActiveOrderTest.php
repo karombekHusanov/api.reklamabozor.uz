@@ -37,7 +37,7 @@ class CancelActiveOrderTest extends TestCase
             'services.multicard.application_id' => 'rhmt_test',
             'services.multicard.secret' => 'test_secret',
             'services.multicard.store_id' => '6',
-            'orders.paid_cancel_window_hours' => 24,
+            'orders.paid_cancel_window_minutes' => 60,
         ]);
     }
 
@@ -95,7 +95,7 @@ class CancelActiveOrderTest extends TestCase
         ]);
 
         [$client, $order] = $this->activeDeal(OrderPaymentState::Paid);
-        $order->update(['paid_at' => now()->subHours(2)]);
+        $order->update(['paid_at' => now()->subMinutes(10)]); // inside the 60-minute window
 
         $payment = Payment::factory()->create([
             'payable_type' => Order::class,
@@ -106,7 +106,7 @@ class CancelActiveOrderTest extends TestCase
             'status' => PaymentStatus::Success,
             'gateway_uuid' => 'gw-paid',
             'amount' => 200_000_000,
-            'paid_at' => now()->subHours(2),
+            'paid_at' => now()->subMinutes(10),
         ]);
 
         // A planned (not yet released) advance must be voided by the refund.
@@ -133,7 +133,7 @@ class CancelActiveOrderTest extends TestCase
     {
         Http::fake();
         [$client, $order] = $this->activeDeal(OrderPaymentState::Paid);
-        $order->update(['paid_at' => now()->subHours(30)]);
+        $order->update(['paid_at' => now()->subHours(2)]); // window closed
 
         Payment::factory()->create([
             'payable_type' => Order::class,
@@ -141,7 +141,7 @@ class CancelActiveOrderTest extends TestCase
             'purpose' => PaymentPurpose::Order,
             'status' => PaymentStatus::Success,
             'gateway_uuid' => 'gw-late',
-            'paid_at' => now()->subHours(30),
+            'paid_at' => now()->subHours(2),
         ]);
 
         $this->actingAs($client)->postJson("/api/v1/orders/{$order->id}/cancel")
@@ -215,14 +215,14 @@ class CancelActiveOrderTest extends TestCase
     {
         Http::fake();
         [$client, $order] = $this->activeDeal(OrderPaymentState::Paid);
-        $order->update(['paid_at' => now()->subHour()]);
+        $order->update(['paid_at' => now()->subMinutes(5)]);
 
         $this->actingAs($client)->getJson("/api/v1/orders/{$order->id}")
             ->assertOk()
             ->assertJsonPath('data.can_cancel', true)
             ->assertJsonStructure(['data' => ['cancel_deadline_at']]);
 
-        $order->update(['paid_at' => now()->subHours(48)]);
+        $order->update(['paid_at' => now()->subHours(2)]);
 
         $this->actingAs($client)->getJson("/api/v1/orders/{$order->id}")
             ->assertOk()

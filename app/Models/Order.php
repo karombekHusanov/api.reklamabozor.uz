@@ -480,6 +480,23 @@ class Order extends Model
         return $endsAt === null || $endsAt->isFuture() ? 'ok' : 'window_closed';
     }
 
+    /**
+     * When the platform may start releasing payouts on this order: the end of
+     * the client's cooling-off window (null = right away, nothing was paid).
+     */
+    public function payoutsUnlockAt(): ?Carbon
+    {
+        return $this->clientCancelDeadline();
+    }
+
+    /** Whether payouts on this order are still frozen by the cancel window. */
+    public function payoutsLocked(): bool
+    {
+        $unlockAt = $this->payoutsUnlockAt();
+
+        return $unlockAt !== null && $unlockAt->isFuture();
+    }
+
     public function canProposeAmendment(?User $user): bool
     {
         return $this->amendmentProposalState($user) === 'ok';
@@ -488,6 +505,9 @@ class Order extends Model
     /**
      * Deadline for the client's own cancellation, or null when the order can be
      * cancelled without a time limit (nothing has been paid yet).
+     *
+     * The same moment gates the agent's advance payout: money only moves once
+     * the client can no longer pull it back ({@see Order::payoutsUnlockAt()}).
      */
     public function clientCancelDeadline(): ?Carbon
     {
@@ -495,9 +515,11 @@ class Order extends Model
             return null;
         }
 
-        $hours = max(1, (int) config('orders.paid_cancel_window_hours', 24));
+        $minutes = max(1, (int) config('orders.paid_cancel_window_minutes', 60));
 
-        return ($this->paid_at ?? $this->updated_at)?->copy()->addHours($hours);
+        // Measured from the moment the deal was first settled — a later top-up
+        // (an amendment's extra) does not reopen the right to cancel.
+        return ($this->paid_at ?? $this->updated_at)?->copy()->addMinutes($minutes);
     }
 
     /**

@@ -232,6 +232,15 @@ class AgentProfile extends Model
     /**
      * Weighted completion of the client-facing presentation fields (0–100).
      */
+    /**
+     * Whether the KYC requisites carry everything a bank transfer needs. Agent
+     * earnings are paid to this account, so an incomplete set blocks a release.
+     */
+    public function hasBankRequisites(): bool
+    {
+        return filled($this->bank_name) && filled($this->bank_account) && filled($this->mfo);
+    }
+
     public function completionPercent(): int
     {
         $w = self::COMPLETION_WEIGHTS;

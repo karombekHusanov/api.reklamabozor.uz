@@ -7,12 +7,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | Accepting the contract activates the deal immediately, so the client gets
-    | a cooling-off window after paying: within this many hours they may still
-    | cancel (the payment is refunded), afterwards only support can. An unpaid
-    | active deal can be cancelled at any time — no money has moved.
+    | a short cooling-off window after paying: within this many minutes they may
+    | still cancel (the payment is refunded), afterwards only support can. The
+    | window is also the gate on the agent's advance payout — money only leaves
+    | the platform once the client can no longer take it back. An unpaid active
+    | deal can be cancelled at any time, because nothing has moved.
     |
     */
-    'paid_cancel_window_hours' => (int) env('ORDER_PAID_CANCEL_WINDOW_HOURS', 24),
+    'paid_cancel_window_minutes' => (int) env('ORDER_PAID_CANCEL_WINDOW_MINUTES', 60),
 
     /*
     |--------------------------------------------------------------------------

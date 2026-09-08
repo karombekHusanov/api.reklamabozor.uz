@@ -15,6 +15,10 @@ use Illuminate\Http\Request;
  * a hosted card form), the mini app polls `show` (which advances the flow once
  * the card is bound), the agent enters the OTP via `confirm`, and may `cancel`
  * before completion.
+ *
+ * Disabled by default (`payouts.card_withdrawal_enabled`): earnings are paid to
+ * the agent's bank account by a manager. The in-flight endpoints stay reachable
+ * so a withdrawal started before the switch can still be finished or cancelled.
  */
 class WithdrawalController extends ApiController
 {
@@ -24,6 +28,10 @@ class WithdrawalController extends ApiController
 
     public function store(Request $request): JsonResponse
     {
+        if (! config('payouts.card_withdrawal_enabled')) {
+            return $this->error('Earnings are paid to your bank account — card withdrawals are off.', 422);
+        }
+
         if (! config('services.multicard.enabled')) {
             return $this->error('Withdrawals are not available yet.', 422);
         }

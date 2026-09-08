@@ -181,6 +181,21 @@ class AdminNotifier
     }
 
     /**
+     * The cooling-off window closed on paid orders: these payouts are now free
+     * to leave, and the bank transfer is a manual step.
+     */
+    public function payoutsDue(int $count, int $totalTiyin): void
+    {
+        $som = number_format($totalTiyin / 100, 0, '.', ' ');
+
+        $this->send('payouts_due', implode("\n", [
+            "\u{1F4B8} <b>Bank o'tkazmasi kutmoqda: {$count} ta chiqim</b>",
+            "Jami: {$som} so'm",
+            'Admin panel → Moliya → Chiqimlar → «To\'lovga tayyor».',
+        ]));
+    }
+
+    /**
      * A proposal needs the operator's signature before it can take effect.
      */
     public function amendmentNeedsOperator(OrderAmendment $amendment): void

@@ -13,13 +13,15 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Admin Finance → Payouts. Managers review the escrow releases owed to agents
- * and mark them paid (v1: manual bank transfer; automated Multicard credit is
- * a later phase). The payout carries the agent's bank requisites for transfer.
+ * Admin Finance → Payouts. Managers review the escrow releases owed to agents,
+ * transfer the money to the agent's bank account and mark the payout paid — the
+ * gateway has no account-payout API, so this is the only way money leaves. The
+ * payout carries the agent's bank requisites for the transfer.
  */
 class PayoutController extends ApiController
 {
-    private const RELATIONS = ['agentProfile', 'agent'];
+    // `order` carries the cancel window that freezes a release.
+    private const RELATIONS = ['agentProfile', 'agent', 'order'];
 
     public function __construct(
         private readonly PayoutService $payouts,
@@ -37,6 +39,11 @@ class PayoutController extends ApiController
 
         if (($tranche = $request->query('tranche')) && PayoutTranche::tryFrom((string) $tranche)) {
             $query->where('tranche', $tranche);
+        }
+
+        // "Ready to pay": pending and past the client's cooling-off window.
+        if ($request->boolean('ready')) {
+            $query->releasable();
         }
 
         if ($orderId = $request->query('order_id')) {
