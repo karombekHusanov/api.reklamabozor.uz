@@ -33,6 +33,25 @@ class OrderResource extends JsonResource
             'lng' => $this->lng,
             'location_label' => $this->location_label,
             'status' => $this->status->value,
+            // Money runs on its own track: the deal is active from the moment
+            // the contract is accepted, the payment may still be outstanding.
+            'payment_state' => $this->payment_state?->value,
+            'payment_due_at' => $this->payment_due_at,
+            'paid_at' => $this->paid_at,
+            'activated_at' => $this->activated_at,
+            // Client's own cancel affordance (unpaid: any time; paid: inside
+            // the cooling-off window).
+            'can_cancel' => $this->isCancellableByClient(),
+            'cancel_deadline_at' => $this->clientCancelDeadline(),
+            // Outstanding balance drives the pay prompts (an applied amendment
+            // can put a paid order back in debt).
+            'outstanding_som' => round($this->outstandingTiyin() / 100, 2),
+            // Who may propose an additional agreement right now, and until when.
+            'amendment_window' => [
+                'can_propose' => $this->canProposeAmendment($request->user()),
+                'reason' => $this->amendmentProposalState($request->user()),
+                'ends_at' => $this->amendmentWindowEndsAt(),
+            ],
             // Client's legal nature — present when the client is loaded (provider
             // views), for billing context (can they be issued a VAT invoice).
             'client' => $this->whenLoaded('client', fn () => $this->client ? [
@@ -49,8 +68,8 @@ class OrderResource extends JsonResource
             'work_submitted_at' => $this->work_submitted_at,
             'completed_at' => $this->completed_at,
             'auto_completed' => $this->auto_completed,
-            // Latest payment (checkout_url / status) so the client can settle or
-            // retry an awaiting_payment order. Null when the gateway is off.
+            // Latest payment attempt (checkout / invoice / offline) so the
+            // client can settle or retry. Null when the gateway is off.
             'payment' => $this->whenLoaded(
                 'latestPayment',
                 fn () => $this->latestPayment ? new PaymentResource($this->latestPayment) : null,

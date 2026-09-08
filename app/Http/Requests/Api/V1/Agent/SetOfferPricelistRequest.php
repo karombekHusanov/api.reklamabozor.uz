@@ -6,7 +6,9 @@ use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * Agent sends (or replaces) the pricelist on their offer — the priced "contract"
- * step after negotiating in the order chat. At least one line is required.
+ * step after negotiating in the order chat. At least one line is required, and
+ * sending is also the agent's acceptance of the contract built from those lines
+ * (`accept_contract`), which is logged before the offer reaches the client.
  */
 class SetOfferPricelistRequest extends FormRequest
 {
@@ -30,6 +32,18 @@ class SetOfferPricelistRequest extends FormRequest
             'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:9999999'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'deadline_days' => ['required', 'integer', 'min:1', 'max:365'],
+            'accept_contract' => ['required', 'accepted'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'accept_contract.required' => 'Confirm the contract before sending the offer.',
+            'accept_contract.accepted' => 'Confirm the contract before sending the offer.',
         ];
     }
 }

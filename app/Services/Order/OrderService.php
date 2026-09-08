@@ -4,6 +4,7 @@ namespace App\Services\Order;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Services\Hashtag\HashtagService;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
+use App\Services\Telegram\AdminNotifier;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -25,6 +27,7 @@ class OrderService
         private readonly PayoutService $payouts,
         private readonly PaymentService $payments,
         private readonly HashtagService $hashtags,
+        private readonly AdminNotifier $admin,
     ) {}
 
     /**
@@ -227,13 +230,23 @@ class OrderService
     }
 
     /**
-     * The client cancels their own order — while still open for offers
-     * (`new` / `offers_sent`) or while awaiting unpaid checkout
-     * (`awaiting_payment`). Once paid / in progress, cancel is refused.
+     * The client cancels their own order:
+     *  - while still open for offers (`new` / `offers_sent`);
+     *  - while awaiting an unpaid checkout (legacy `awaiting_payment`);
+     *  - on an **active but unpaid** deal — no money has moved;
+     *  - on an **active paid** deal only inside the cooling-off window
+     *    ({@see Order::clientCancelDeadline()}), which refunds the payment.
+     *
+     * Once the work is delivered, the window has closed, or an agent payout was
+     * already released, only support can cancel.
      */
     public function cancelByClient(User $client, Order $order): Order
     {
         abort_unless($order->client_id === $client->id, 404);
+
+        if ($order->status === OrderStatus::InProgress) {
+            return $this->cancelActiveDeal($client, $order);
+        }
 
         if ($order->status === OrderStatus::AwaitingPayment) {
             $acceptedAgent = $order->offers()
@@ -289,6 +302,49 @@ class OrderService
     }
 
     /**
+     * Cancel an already-running deal. Unpaid: open invoices are retired and the
+     * order closes. Paid: the payment is refunded first (gateway revert, or a
+     * manual return flagged to ops for cash / bank transfers), which is what
+     * closes the order.
+     */
+    private function cancelActiveDeal(User $client, Order $order): Order
+    {
+        if (! $order->isCancellableByClient()) {
+            throw ValidationException::withMessages([
+                'order' => [$order->payment_state === OrderPaymentState::Paid
+                    ? 'The cancellation window has closed — contact support.'
+                    : 'This order can no longer be cancelled.'],
+            ]);
+        }
+
+        $agent = $order->offers()
+            ->where('status', OfferStatus::Accepted)
+            ->with('agent')
+            ->first()
+            ?->agent;
+
+        if ($order->payment_state === OrderPaymentState::Paid) {
+            // Refunding settles the money and cancels the order (see
+            // PaymentService::onOrderRefunded).
+            $this->payments->refundForClientCancel($order, $client);
+        } else {
+            $this->payments->voidOpenIntents($order);
+
+            $order->update(['status' => OrderStatus::Cancelled]);
+        }
+
+        RecalculateRating::dispatch($client->id);
+
+        try {
+            $this->notifier->notifyOrderCancelled($order->fresh(), array_filter([$agent]));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->withClientRelations($order->fresh());
+    }
+
+    /**
      * Shared completion transition, used by the client confirmation and the
      * scheduler's auto-complete.
      */
@@ -300,9 +356,20 @@ class OrderService
             'auto_completed' => $auto,
         ]);
 
-        // Queue the agent's final payout — the remaining escrow after the
-        // advance (gateway flow only). A manager releases it later.
-        $this->payouts->planFinal($order);
+        // Queue the agent's final payout — the remainder after the advance.
+        // Payouts follow settled money: an order that still owes (e.g. an
+        // amendment raised the price) holds its final tranche.
+        $final = $this->payouts->planFinal($order);
+
+        $outstanding = $order->fresh()->outstandingTiyin();
+
+        if ($final === null && $outstanding > 0) {
+            try {
+                $this->admin->finalPayoutHeld($order, $outstanding);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
 
         $this->dispatchRatingRecompute($order);
 

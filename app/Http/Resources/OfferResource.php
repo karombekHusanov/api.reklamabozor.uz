@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\ContractAcceptance;
 use App\Models\Offer;
 use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
@@ -38,6 +39,12 @@ class OfferResource extends JsonResource
                 'location_label' => $profile?->location_label,
                 'person_type' => $this->agent?->effectivePersonType()?->value,
                 'person_type_verified' => (bool) $this->agent?->isVerifiedLegalEntity(),
+            ],
+            // Click-wrap contract consent (agent signs by sending the pricelist,
+            // client by accepting the offer).
+            'contract' => [
+                'agent_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_AGENT),
+                'client_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_CLIENT),
             ],
             'chat_id' => app(DirectChatService::class)->findForOffer($this->resource)?->id,
             'created_at' => $this->created_at,

@@ -2,8 +2,10 @@
 
 namespace App\Services\Telegram;
 
+use App\Enums\PaymentMethod;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderAmendment;
 use App\Models\Payment;
 use App\Models\Review;
 use App\Models\User;
@@ -108,12 +110,112 @@ class AdminNotifier
     {
         $som = number_format($payment->amountSom(), 0, '.', ' ');
         $orderId = $payment->payable_id;
+        $method = $this->methodLabel($payment);
 
         $this->send('payment_success', implode("\n", [
             "💳 <b>To'lov qabul qilindi — buyurtma #{$orderId}</b>",
-            "💰 {$som} so'm • ".e((string) ($payment->ps ?? '')),
-            'Holat: ish boshlandi (in_progress).',
+            "💰 {$som} so'm • ".e((string) ($payment->ps ?? $method)),
+            "Usul: {$method}",
         ]));
+    }
+
+    /**
+     * Client asked to pay outside the gateway (cash desk or bank transfer) —
+     * a manager must confirm the money once it arrives.
+     */
+    public function offlinePaymentRequested(Payment $payment): void
+    {
+        $som = number_format($payment->amountSom(), 0, '.', ' ');
+        $orderId = $payment->payable_id;
+
+        $this->send('payment_offline_requested', implode("\n", [
+            "🧾 <b>Offline to'lov so'raldi — buyurtma #{$orderId}</b>",
+            "💰 {$som} so'm • ".$this->methodLabel($payment),
+            'Pul kelgach admin panelda tasdiqlang (Finance → Payments).',
+        ]));
+    }
+
+    /**
+     * Offline money (cash / bank transfer) has to be handed back by a human —
+     * the gateway cannot reverse it.
+     */
+    public function manualRefundRequired(Payment $payment): void
+    {
+        $som = number_format($payment->amountSom(), 0, '.', ' ');
+        $orderId = $payment->payable_id;
+
+        $this->send('payment_manual_refund', implode("\n", [
+            "↩️ <b>Qo'lda qaytarish kerak — buyurtma #{$orderId}</b>",
+            "💰 {$som} so'm • ".$this->methodLabel($payment),
+            'Mijoz buyurtmani bekor qildi; pul gateway orqali qaytmaydi.',
+        ]));
+    }
+
+    /**
+     * The deal is active but the client has not paid by the due date.
+     */
+    public function paymentOverdue(Order $order): void
+    {
+        $due = $order->payment_due_at?->format('d.m.Y') ?? '—';
+
+        $this->send('payment_overdue', implode("\n", [
+            "⏰ <b>To'lov muddati o'tdi — buyurtma #{$order->id}</b>",
+            "Muddat: {$due}",
+            'Ish davom etmoqda, pul hali kelmadi.',
+        ]));
+    }
+
+    /**
+     * Order completed while money is still owed — the agent's final payout is
+     * held until the client settles.
+     */
+    public function finalPayoutHeld(Order $order, int $outstandingTiyin): void
+    {
+        $som = number_format($outstandingTiyin / 100, 0, '.', ' ');
+
+        $this->send('payout_held', implode("\n", [
+            "⏸️ <b>Yakuniy chiqim ushlab turildi — buyurtma #{$order->id}</b>",
+            "Qoldiq qarz: {$som} so'm",
+            'Mijoz to\'lovni yopgach payout rejalashtiriladi.',
+        ]));
+    }
+
+    /**
+     * A proposal needs the operator's signature before it can take effect.
+     */
+    public function amendmentNeedsOperator(OrderAmendment $amendment): void
+    {
+        $delta = number_format((float) $amendment->extra_amount, 0, '.', ' ');
+
+        $this->send('amendment_operator', implode("\n", [
+            "🖋 <b>Operator tasdig'i kerak — {$amendment->number}</b>",
+            "Buyurtma #{$amendment->order_id} · o'zgarish {$delta} so'm",
+            'Admin panel → Kelishuvlar → Operator kutmoqda.',
+        ]));
+    }
+
+    /**
+     * An applied addendum lowered a paid deal — the difference has to be handed
+     * back by a human (the gateway has no partial refund).
+     */
+    public function amendmentRefundDue(OrderAmendment $amendment): void
+    {
+        $som = number_format((float) $amendment->refund_amount, 0, '.', ' ');
+
+        $this->send('amendment_refund_due', implode("\n", [
+            "↩️ <b>Qaytarish kerak — {$amendment->number}</b>",
+            "Buyurtma #{$amendment->order_id} · {$som} so'm",
+            'Qo\'shimcha kelishuv summani kamaytirdi. Admin panelda qaytarishni qayd eting.',
+        ]));
+    }
+
+    private function methodLabel(Payment $payment): string
+    {
+        return match ($payment->method) {
+            PaymentMethod::Cash => 'naqd',
+            PaymentMethod::BankTransfer => 'bank o\'tkazmasi',
+            default => 'Multicard',
+        };
     }
 
     /**

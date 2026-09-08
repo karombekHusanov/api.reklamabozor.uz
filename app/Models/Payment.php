@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,7 +28,14 @@ class Payment extends Model
         'amount',
         'currency',
         'status',
+        'method',
         'checkout_url',
+        'short_link',
+        'invoice_file_id',
+        'reference',
+        'note',
+        'confirmed_by',
+        'confirmed_at',
         'card_pan',
         'ps',
         'billing_id',
@@ -47,6 +55,23 @@ class Payment extends Model
     public function payer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'payer_id');
+    }
+
+    /** Manager who confirmed an offline (cash / bank transfer) payment. */
+    public function confirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    /** Generated invoice (hisob-faktura) handed to the client. */
+    public function invoiceFile(): BelongsTo
+    {
+        return $this->belongsTo(File::class, 'invoice_file_id');
+    }
+
+    public function isOffline(): bool
+    {
+        return $this->method->isOffline();
     }
 
     public function isPaid(): bool
@@ -69,6 +94,8 @@ class Payment extends Model
             'amount' => 'integer',
             'status' => PaymentStatus::class,
             'purpose' => PaymentPurpose::class,
+            'method' => PaymentMethod::class,
+            'confirmed_at' => 'datetime',
             'paid_at' => 'datetime',
             'refunded_at' => 'datetime',
             'meta' => 'array',

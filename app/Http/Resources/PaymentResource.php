@@ -18,11 +18,18 @@ class PaymentResource extends JsonResource
             'id' => $this->id,
             'uuid' => $this->payment_uuid,
             'purpose' => $this->purpose->value,
+            'method' => $this->method->value,
             'status' => $this->status->value,
             'amount' => $this->amount,          // tiyin
             'amount_som' => $this->amountSom(),  // whole som
             'currency' => $this->currency,
             'checkout_url' => $this->checkout_url,
+            // Production-only short link; falls back to the checkout URL so the
+            // mini app can always render a QR / share a link.
+            'share_url' => $this->short_link ?: $this->checkout_url,
+            'invoice_url' => $this->invoiceFile?->url(),
+            'reference' => $this->reference,
+            'confirmed_at' => $this->confirmed_at,
             'card_pan' => $this->card_pan,
             'ps' => $this->ps,
             'paid_at' => $this->paid_at,

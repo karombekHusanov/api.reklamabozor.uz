@@ -216,7 +216,7 @@ class OfferNegotiationTest extends TestCase
             'blocked_by' => $client->id,
         ]);
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$clientToken,
         ])->assertOk();
 
@@ -271,7 +271,7 @@ class OfferNegotiationTest extends TestCase
             'agent_profile_id' => $profile->id,
         ]);
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$clientToken,
         ])->assertUnprocessable();
 
@@ -381,6 +381,7 @@ class OfferNegotiationTest extends TestCase
                 ['name' => 'Antikrajka', 'quantity' => 1, 'unit_price' => 6_000_000],
             ],
             'deadline_days' => 14,
+            'accept_contract' => true,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.is_interest', false)
@@ -410,11 +411,12 @@ class OfferNegotiationTest extends TestCase
         $this->actingAs($agent)->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'Service', 'quantity' => 1, 'unit_price' => 3_000_000]],
             'deadline_days' => 7,
+            'accept_contract' => true,
         ])
             ->assertOk()
             ->assertJsonPath('data.can_accept', true);
 
-        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept")
+        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true])
             ->assertOk();
 
         $this->assertSame(OfferStatus::Accepted, $offer->fresh()->status);
@@ -435,11 +437,13 @@ class OfferNegotiationTest extends TestCase
                 ['name' => 'B', 'quantity' => 1, 'unit_price' => 200_000],
             ],
             'deadline_days' => 10,
+            'accept_contract' => true,
         ], ['Authorization' => 'Bearer '.$token])->assertOk();
 
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'C', 'quantity' => 3, 'unit_price' => 50_000]],
             'deadline_days' => 5,
+            'accept_contract' => true,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.price', '150000.00')
@@ -462,6 +466,7 @@ class OfferNegotiationTest extends TestCase
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
             'deadline_days' => 7,
+            'accept_contract' => true,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable();
     }
@@ -507,6 +512,7 @@ class OfferNegotiationTest extends TestCase
         $this->putJson("/api/v1/agent/offers/{$offer->id}/pricelist", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
             'deadline_days' => 7,
+            'accept_contract' => true,
         ], ['Authorization' => 'Bearer '.$token])
             ->assertNotFound();
     }

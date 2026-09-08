@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 class Offer extends Model
 {
@@ -50,6 +51,29 @@ class Offer extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OfferItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Click-wrap acceptances of the per-order contract for this offer
+     * (agent when the pricelist was sent, client when the offer was accepted).
+     *
+     * @return HasMany<ContractAcceptance, $this>
+     */
+    public function contractAcceptances(): HasMany
+    {
+        return $this->hasMany(ContractAcceptance::class)->latest('accepted_at');
+    }
+
+    /**
+     * When the given party accepted the contract for this offer (latest wins).
+     */
+    public function contractAcceptedAt(string $party): ?Carbon
+    {
+        $acceptances = $this->relationLoaded('contractAcceptances')
+            ? $this->contractAcceptances
+            : $this->contractAcceptances()->get();
+
+        return $acceptances->firstWhere('party', $party)?->accepted_at;
     }
 
     /**

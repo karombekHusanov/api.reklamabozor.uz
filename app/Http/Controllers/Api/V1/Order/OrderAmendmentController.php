@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\V1\Order;
 
 use App\Enums\Role;
 use App\Http\Controllers\ApiController;
+use App\Http\Requests\Api\V1\Order\ApproveAmendmentRequest;
+use App\Http\Requests\Api\V1\Order\PreviewAmendmentRequest;
 use App\Http\Requests\Api\V1\Order\RejectAmendmentRequest;
 use App\Http\Requests\Api\V1\Order\StoreAmendmentRequest;
 use App\Http\Resources\AmendmentResource;
@@ -27,26 +29,52 @@ class OrderAmendmentController extends ApiController
         $this->authorizeParticipant($request, $order);
 
         $amendments = $order->amendments()
-            ->with(['order', 'offer', 'payment', 'pdfFile'])
+            ->with(['order', 'offer', 'payment', 'pdfFile', 'contract', 'acceptances'])
             ->get();
 
         return $this->success(AmendmentResource::collection($amendments));
     }
 
+    /**
+     * The addendum text for a draft proposal — read before sending it.
+     */
+    public function preview(PreviewAmendmentRequest $request, Order $order): JsonResponse
+    {
+        return $this->success(
+            $this->amendments->previewDocument($request->user(), $order, $request->validated()),
+        );
+    }
+
+    /**
+     * The stored addendum's text — read before approving it.
+     */
+    public function document(Request $request, OrderAmendment $amendment): JsonResponse
+    {
+        $amendment->loadMissing('order');
+        $this->authorizeParticipant($request, $amendment->order);
+
+        return $this->success($this->amendments->documentFor($amendment));
+    }
+
     public function store(StoreAmendmentRequest $request, Order $order): JsonResponse
     {
-        $amendment = $this->amendments->propose($request->user(), $order, $request->validated());
+        $amendment = $this->amendments->propose($request->user(), $order, $request->validated(), $request);
 
         return $this->success(
-            new AmendmentResource($amendment->load(['order', 'offer', 'payment', 'pdfFile'])),
+            new AmendmentResource($amendment->load(['order', 'offer', 'payment', 'pdfFile', 'contract', 'acceptances'])),
             'Amendment proposed',
             201,
         );
     }
 
-    public function approve(Request $request, OrderAmendment $amendment): JsonResponse
+    public function approve(ApproveAmendmentRequest $request, OrderAmendment $amendment): JsonResponse
     {
-        $amendment = $this->amendments->approve($request->user(), $amendment);
+        $amendment = $this->amendments->approve(
+            $request->user(),
+            $amendment,
+            $request->validated('document_hash'),
+            $request,
+        );
 
         return $this->respond($amendment, 'Amendment approved');
     }
@@ -72,7 +100,7 @@ class OrderAmendmentController extends ApiController
     private function respond(OrderAmendment $amendment, string $message): JsonResponse
     {
         return $this->success(
-            new AmendmentResource($amendment->load(['order', 'offer', 'payment', 'pdfFile'])),
+            new AmendmentResource($amendment->load(['order', 'offer', 'payment', 'pdfFile', 'contract', 'acceptances'])),
             $message,
         );
     }

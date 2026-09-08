@@ -3,6 +3,7 @@
 namespace Tests\Feature\Payment;
 
 use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
@@ -199,19 +200,23 @@ class AwaitingPaymentCancelTest extends TestCase
         $this->assertSame(PaymentStatus::Success, $payment->fresh()->status);
     }
 
-    public function test_cannot_cancel_once_in_progress(): void
+    public function test_active_unpaid_deal_can_still_be_cancelled(): void
     {
+        // Deals activate on contract acceptance, so an in-progress order whose
+        // payment never arrived stays cancellable (CancelActiveOrderTest covers
+        // the paid case and its cooling-off window).
         $this->enableGateway();
         $client = User::factory()->create();
         $token = $client->createToken('test')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create([
+            'payment_state' => OrderPaymentState::Unpaid,
+        ]);
         Offer::factory()->for($order)->create(['status' => OfferStatus::Accepted]);
 
         $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('order');
+            ->assertOk();
 
-        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+        $this->assertSame(OrderStatus::Cancelled, $order->fresh()->status);
     }
 
     public function test_second_cancel_is_rejected(): void

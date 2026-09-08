@@ -30,6 +30,9 @@ class AdminOrderResource extends JsonResource
             'lng' => $this->lng,
             'location_label' => $this->location_label,
             'status' => $this->status->value,
+            'payment_state' => $this->payment_state?->value,
+            'payment_due_at' => $this->payment_due_at,
+            'paid_at' => $this->paid_at,
             'category' => new CategoryResource($this->whenLoaded('category')),
             'region' => new RegionResource($this->whenLoaded('region')),
             'district' => new RegionResource($this->whenLoaded('district')),
@@ -51,6 +54,17 @@ class AdminOrderResource extends JsonResource
                 'telegram_id' => $client->telegram_id,
             ] : null,
             'offers' => AdminOfferResource::collection($this->whenLoaded('offers')),
+            // Addenda to this order's contract (DS1, DS2 …).
+            'amendments' => $this->whenLoaded('amendments', fn () => $this->amendments->map(fn ($amendment) => [
+                'id' => $amendment->id,
+                'number' => $amendment->number,
+                'status' => $amendment->status->value,
+                'extra_amount' => $amendment->extra_amount,
+                'refund_state' => $amendment->refund_state,
+                'requires_operator' => (bool) $amendment->requires_operator,
+                'applied_at' => $amendment->applied_at,
+                'created_at' => $amendment->created_at,
+            ])->all()),
             'accepted_offer_id' => $acceptedOffer?->id,
             'contract' => $this->whenLoaded(
                 'contract',

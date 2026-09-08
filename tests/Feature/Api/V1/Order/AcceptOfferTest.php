@@ -24,7 +24,7 @@ class AcceptOfferTest extends TestCase
         $chosen = Offer::factory()->for($order)->create();
         $other = Offer::factory()->for($order)->create();
 
-        $this->postJson("/api/v1/offers/{$chosen->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$chosen->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])
             ->assertOk()
@@ -51,7 +51,7 @@ class AcceptOfferTest extends TestCase
         $chosen = Offer::factory()->for($order)->for($winner, 'agent')->create(['price' => 3_000_000]);
         Offer::factory()->for($order)->for($loser, 'agent')->create();
 
-        $this->postJson("/api/v1/offers/{$chosen->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$chosen->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])->assertOk();
 
@@ -85,7 +85,7 @@ class AcceptOfferTest extends TestCase
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $chosen = Offer::factory()->for($order)->create(['price' => 5_000_000]);
 
-        $this->postJson("/api/v1/offers/{$chosen->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$chosen->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])->assertOk();
 
@@ -111,7 +111,7 @@ class AcceptOfferTest extends TestCase
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $chosen = Offer::factory()->for($order)->create();
 
-        $this->postJson("/api/v1/offers/{$chosen->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$chosen->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])->assertOk();
 
@@ -125,7 +125,7 @@ class AcceptOfferTest extends TestCase
         $order = Order::factory()->status(OrderStatus::OffersSent)->create();
         $offer = Offer::factory()->for($order)->create();
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])->assertNotFound();
     }
@@ -137,7 +137,7 @@ class AcceptOfferTest extends TestCase
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
         $offer = Offer::factory()->for($order)->create();
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$token,
         ])->assertUnprocessable();
     }

@@ -45,7 +45,7 @@ class ChatTest extends TestCase
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = Offer::factory()->for($order)->create();
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], [
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
             'Authorization' => 'Bearer '.$this->token($client),
         ])->assertOk();
 

@@ -14,7 +14,7 @@ class OrderAdminService
      *
      * @var list<string>
      */
-    private const RELATIONS = ['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.profile', 'offers.agent', 'offers.agentProfile', 'payments.payer', 'contract.pdfFile'];
+    private const RELATIONS = ['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.profile', 'offers.agent', 'offers.agentProfile', 'offers.contractAcceptances.user', 'payments.payer', 'contract.pdfFile', 'amendments.contract', 'amendments.offer.agentProfile'];
 
     /**
      * Allowed admin status transitions: target => acceptable source states.

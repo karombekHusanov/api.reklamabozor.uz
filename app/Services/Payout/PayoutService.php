@@ -3,6 +3,7 @@
 namespace App\Services\Payout;
 
 use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use App\Models\Offer;
@@ -48,7 +49,7 @@ class PayoutService
      */
     public function planAdvance(Order $order): ?Payout
     {
-        if (! $this->escrowFunded()) {
+        if (! $this->orderIsPaid($order)) {
             return null;
         }
 
@@ -76,7 +77,7 @@ class PayoutService
      */
     public function planFinal(Order $order): ?Payout
     {
-        if (! $this->escrowFunded()) {
+        if (! $this->orderIsPaid($order)) {
             return null;
         }
 
@@ -177,9 +178,17 @@ class PayoutService
         ];
     }
 
-    private function escrowFunded(): bool
+    /**
+     * Payouts follow the money: a tranche is only planned once the client's
+     * payment actually settled (gateway, cash or bank transfer). Orders on the
+     * offline flow — where the platform collects nothing — never plan payouts.
+     */
+    private function orderIsPaid(Order $order): bool
     {
-        return (bool) config('services.multicard.enabled');
+        // The state alone is not enough once amendments can change the amount:
+        // the ledger has the last word.
+        return $order->payment_state === OrderPaymentState::Paid
+            && $order->outstandingTiyin() <= 0;
     }
 
     private function acceptedOffer(Order $order): ?Offer

@@ -14,5 +14,12 @@ Schedule::command('orders:process-completions')->hourly();
 // Settle payments the single Multicard callback left pending (progress→success).
 Schedule::command('payments:reconcile-pending')->everyMinute()->withoutOverlapping();
 
-// Unpaid checkout window elapsed → cancel order + best-effort invoice DELETE.
+// Additional agreements: nudge before the deadline, close what nobody answered.
+Schedule::command('amendments:sweep')->hourly()->withoutOverlapping();
+
+// Active deal, payment past due → remind client + agent + ops (no cancel).
+Schedule::command('orders:remind-unpaid')->dailyAt('10:00');
+
+// Legacy awaiting_payment orders: unpaid checkout window elapsed → cancel order
+// + best-effort invoice DELETE.
 Schedule::command('orders:cancel-expired-awaiting-payments')->hourly()->withoutOverlapping();

@@ -64,6 +64,13 @@ return [
         //   md5  — md5(store_id + invoice_id + amount + secret) ← real stand often
         //   both — accept either (default — avoids prod/dev sign mismatch)
         'callback_sign' => env('MULTICARD_CALLBACK_SIGN', 'both'),
+        // How long the client has to pay once the deal is active (contract
+        // accepted). Overdue orders are not cancelled — the client, the agent
+        // and the ops group are reminded (orders:remind-unpaid).
+        'payment_due_days' => (int) env('PAYMENT_DUE_DAYS', 3),
+        // Lifetime of a shareable invoice link (QR / SMS), seconds. Longer than
+        // an in-app checkout because the client pays it later, elsewhere.
+        'invoice_link_ttl' => (int) env('MULTICARD_INVOICE_LINK_TTL', 259200), // 3 days
         // Platform commission on order payments, percent (deducted from payouts).
         'commission_percent' => env('MULTICARD_COMMISSION_PERCENT', 7),
         // Default advance slice of an agent payout, percent (final = remainder).

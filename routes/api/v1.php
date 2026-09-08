@@ -128,6 +128,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
+    // Three-party contract the client confirms in the accept drawer.
+    Route::get('/offers/{offer}/contract-preview', [OfferController::class, 'contractPreview']);
     Route::post('/offers/{offer}/accept', [OfferController::class, 'accept']);
     Route::post('/offers/{offer}/chat', [OfferController::class, 'openChat'])
         ->middleware('throttle:20,1');
@@ -137,13 +139,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
-    // Order payment (Multicard hosted checkout): (re)start checkout + poll status.
+    // Order payment: in-app checkout, shareable invoice link (QR/SMS), or an
+    // offline invoice (cash / bank transfer) a manager confirms.
     Route::post('/orders/{order}/pay', [PaymentController::class, 'pay']);
+    Route::post('/orders/{order}/pay/offline', [PaymentController::class, 'payOffline']);
     Route::get('/orders/{order}/payment', [PaymentController::class, 'show']);
+    Route::get('/orders/{order}/payments', [PaymentController::class, 'index']);
 
     // Additional agreements (Qo'shimcha kelishuv): either party proposes a change
     // to an active deal; client, agent, and (when flagged) operator must approve.
     Route::get('/orders/{order}/amendments', [OrderAmendmentController::class, 'index']);
+    // Addendum text: from draft rows (before sending) and from a stored one.
+    Route::post('/orders/{order}/amendments/preview', [OrderAmendmentController::class, 'preview'])
+        ->middleware('throttle:30,1');
+    Route::get('/amendments/{amendment}/document', [OrderAmendmentController::class, 'document']);
     Route::post('/orders/{order}/amendments', [OrderAmendmentController::class, 'store'])
         ->middleware('throttle:20,1');
     Route::post('/amendments/{amendment}/approve', [OrderAmendmentController::class, 'approve']);
@@ -212,6 +221,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->middleware('throttle:20,1');
         Route::patch('/offers/{offer}', [AgentOrderController::class, 'updateOffer'])
             ->middleware('throttle:10,1');
+        // Contract built from the draft pricelist, shown before the agent sends it.
+        Route::post('/offers/{offer}/contract-preview', [AgentOrderController::class, 'previewContract'])
+            ->middleware('throttle:30,1');
         Route::put('/offers/{offer}/pricelist', [AgentOrderController::class, 'setPricelist'])
             ->middleware('throttle:20,1');
 
@@ -281,11 +293,19 @@ Route::prefix('admin')
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);
         Route::post('/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
+        // Offline money (cash desk / bank statement) — manager settles it here.
+        Route::post('/payments/{payment}/confirm', [AdminPaymentController::class, 'confirm']);
+        Route::post('/payments/{payment}/reject', [AdminPaymentController::class, 'reject']);
 
         // Operator review of additional agreements (Qo'shimcha kelishuv).
         Route::get('/amendments', [AdminAmendmentController::class, 'index']);
+        Route::get('/amendments/{amendment}', [AdminAmendmentController::class, 'show']);
         Route::post('/amendments/{amendment}/approve', [AdminAmendmentController::class, 'approve']);
         Route::post('/amendments/{amendment}/reject', [AdminAmendmentController::class, 'reject']);
+        // Money the operator hands back (or writes off) for an applied addendum.
+        Route::post('/amendments/{amendment}/refund', [AdminAmendmentController::class, 'refund']);
+        Route::post('/amendments/{amendment}/waive-refund', [AdminAmendmentController::class, 'waiveRefund']);
+        Route::post('/amendments/{amendment}/expire', [AdminAmendmentController::class, 'expire']);
 
         // Agent payouts out of escrow — manager reviews + releases (marks paid).
         Route::get('/payouts', [AdminPayoutController::class, 'index']);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Order;
 
 use App\Enums\OrderStatus;
 use App\Http\Controllers\ApiController;
+use App\Http\Requests\Api\V1\Order\AcceptOfferRequest;
 use App\Http\Resources\DirectChatResource;
 use App\Http\Resources\OfferResource;
 use App\Http\Resources\PaymentResource;
@@ -25,14 +26,23 @@ class OfferController extends ApiController
     /**
      * Client accepts an agent's offer for their order.
      *
+     * The client must first confirm the three-party contract shown in the accept
+     * drawer (`accept_contract`); the consent is logged against that exact
+     * document before the deal (or checkout) starts.
+     *
      * When the payment gateway is enabled the order moves to awaiting_payment
      * and the response carries a `payment.checkout_url` the client is
      * redirected to — the deal activates once payment succeeds. Otherwise the
      * deal activates immediately and `payment` is null.
      */
-    public function accept(Request $request, Offer $offer): JsonResponse
+    public function accept(AcceptOfferRequest $request, Offer $offer): JsonResponse
     {
-        $accepted = $this->offers->acceptOffer($request->user(), $offer);
+        $accepted = $this->offers->acceptOffer(
+            $request->user(),
+            $offer,
+            $request->validated('contract_hash'),
+            $request,
+        );
 
         $payment = null;
 
@@ -51,6 +61,17 @@ class OfferController extends ApiController
             'offer' => new OfferResource($accepted),
             'payment' => $payment ? new PaymentResource($payment) : null,
         ], 'Offer accepted');
+    }
+
+    /**
+     * The three-party contract the client is asked to accept for this offer —
+     * rendered in the accept drawer before they confirm.
+     */
+    public function contractPreview(Request $request, Offer $offer): JsonResponse
+    {
+        return $this->success(
+            $this->offers->previewContractForClient($request->user(), $offer),
+        );
     }
 
     /**

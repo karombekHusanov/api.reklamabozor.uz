@@ -75,7 +75,7 @@ class OrderContractTest extends TestCase
         $order = Order::factory()->for($category)->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = $this->pricedOffer($order, $agent, $profile);
 
-        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept")
+        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true])
             ->assertOk();
 
         $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
@@ -97,7 +97,7 @@ class OrderContractTest extends TestCase
         $order = Order::factory()->for($category)->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = $this->pricedOffer($order, $agent, $profile);
 
-        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept")->assertOk();
+        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true])->assertOk();
 
         $this->actingAs($client)->getJson("/api/v1/orders/{$order->id}")
             ->assertOk()
@@ -113,7 +113,7 @@ class OrderContractTest extends TestCase
         $order = Order::factory()->for($category)->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = $this->pricedOffer($order, $agent, $profile);
 
-        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept")->assertOk();
+        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true])->assertOk();
 
         // Re-running generation must not create a second contract.
         app(OrderContractService::class)->generateForOrder($order->fresh());
@@ -133,7 +133,7 @@ class OrderContractTest extends TestCase
         $order = Order::factory()->for($category)->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = $this->pricedOffer($order, $agent, $profile);
 
-        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept")->assertOk();
+        $this->actingAs($client)->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true])->assertOk();
 
         $contract = Contract::query()->where('order_id', $order->id)->firstOrFail();
         $this->assertTrue($contract->client_snapshot['is_legal_entity']);

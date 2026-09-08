@@ -654,16 +654,18 @@ class OrderTest extends TestCase
         $this->assertSame(OfferStatus::Rejected, $offer->fresh()->status);
     }
 
-    public function test_client_cannot_cancel_once_an_offer_is_accepted(): void
+    public function test_client_cannot_cancel_once_the_work_is_delivered(): void
     {
+        // An active deal is cancellable while unpaid (see CancelActiveOrderTest);
+        // once the agent delivered, it is not.
         [$client, $token] = $this->authedUser();
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::WorkSubmitted)->create();
 
         $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('order');
 
-        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+        $this->assertSame(OrderStatus::WorkSubmitted, $order->fresh()->status);
     }
 
     public function test_client_can_cancel_while_awaiting_payment(): void

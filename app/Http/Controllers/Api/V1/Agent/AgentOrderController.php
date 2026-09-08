@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Agent;
 
 use App\Http\Controllers\ApiController;
+use App\Http\Requests\Api\V1\Agent\PreviewOfferContractRequest;
 use App\Http\Requests\Api\V1\Agent\SetOfferPricelistRequest;
 use App\Http\Requests\Api\V1\Agent\StoreOfferRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateOfferPriceRequest;
@@ -98,7 +99,25 @@ class AgentOrderController extends ApiController
     }
 
     /**
-     * Send (or replace) the pricelist on a pending offer — the priced contract step.
+     * The contract built from the pricelist the agent is composing — shown for
+     * confirmation before the offer is sent. Stores nothing.
+     */
+    public function previewContract(PreviewOfferContractRequest $request, Offer $offer): JsonResponse
+    {
+        $validated = $request->validated();
+
+        return $this->success($this->offers->previewContractForAgent(
+            $request->user(),
+            $offer,
+            $validated['items'],
+            (int) $validated['deadline_days'],
+        ));
+    }
+
+    /**
+     * Send (or replace) the pricelist on a pending offer — the priced contract
+     * step. Requires the agent's acceptance of the contract (logged), after
+     * which the offer becomes visible to the client as a priced offer.
      */
     public function setPricelist(SetOfferPricelistRequest $request, Offer $offer): JsonResponse
     {
@@ -108,6 +127,7 @@ class AgentOrderController extends ApiController
             $offer,
             $validated['items'],
             (int) $validated['deadline_days'],
+            $request,
         );
 
         return $this->success(new AgentOfferDetailResource($offer), 'Pricelist sent');

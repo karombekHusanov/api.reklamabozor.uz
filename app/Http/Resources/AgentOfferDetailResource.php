@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Enums\ReviewDirection;
+use App\Models\ContractAcceptance;
 use App\Models\Offer;
 use App\Services\Chat\DirectChatService;
 use Illuminate\Http\Request;
@@ -45,6 +46,10 @@ class AgentOfferDetailResource extends JsonResource
             'price_edits_remaining' => $this->priceEditsRemaining(),
             'max_price_edits' => Offer::MAX_PRICE_EDITS,
             'can_edit_price' => $this->canEditPrice(),
+            'contract' => [
+                'agent_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_AGENT),
+                'client_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_CLIENT),
+            ],
             'chat_id' => $chat?->id,
             'chat' => $chat ? ['id' => $chat->id, 'blocked' => $chat->isBlocked()] : null,
             'my_review' => $myReview ? new ReviewResource($myReview) : null,
@@ -73,6 +78,13 @@ class AgentOfferDetailResource extends JsonResource
                 'attachment_files' => FileResource::collection(
                     $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles : [],
                 ),
+                'activated_at' => $order->activated_at,
+                'outstanding_som' => round($order->outstandingTiyin() / 100, 2),
+                'amendment_window' => [
+                    'can_propose' => $order->canProposeAmendment($request->user()),
+                    'reason' => $order->amendmentProposalState($request->user()),
+                    'ends_at' => $order->amendmentWindowEndsAt(),
+                ],
                 'views_count' => $order->views_count ?? null,
                 'offers_count' => $order->offers_count ?? null,
                 'contract' => $order->relationLoaded('contract') && $order->contract

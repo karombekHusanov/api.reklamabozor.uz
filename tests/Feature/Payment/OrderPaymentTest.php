@@ -3,6 +3,7 @@
 namespace Tests\Feature\Payment;
 
 use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
@@ -16,6 +17,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class OrderPaymentTest extends TestCase
@@ -38,7 +40,33 @@ class OrderPaymentTest extends TestCase
         ]);
     }
 
-    public function test_accepting_offer_creates_invoice_and_awaits_payment(): void
+    public function test_accepting_offer_activates_the_deal_and_leaves_the_payment_outstanding(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+
+        $client = User::factory()->create();
+        $token = $client->createToken('t')->plainTextToken;
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
+        $chosen = Offer::factory()->for($order)->create(['price' => 3_000_000]);
+
+        $this->postJson("/api/v1/offers/{$chosen->id}/accept", ['accept_contract' => true], [
+            'Authorization' => 'Bearer '.$token,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.offer.status', 'accepted')
+            // The client picks how to pay afterwards — no checkout is forced.
+            ->assertJsonPath('data.payment', null);
+
+        $fresh = $order->fresh();
+        $this->assertSame(OrderStatus::InProgress, $fresh->status);
+        $this->assertSame(OrderPaymentState::Unpaid, $fresh->payment_state);
+        $this->assertNotNull($fresh->payment_due_at);
+        $this->assertSame(0, Payment::count());
+        $this->assertDatabaseHas('chats', ['order_id' => $order->id]);
+    }
+
+    public function test_client_starts_the_checkout_for_an_active_unpaid_order(): void
     {
         $this->enableGateway();
 
@@ -50,21 +78,13 @@ class OrderPaymentTest extends TestCase
             ]),
         ]);
 
-        $client = User::factory()->create();
-        $token = $client->createToken('t')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
-        $chosen = Offer::factory()->for($order)->create(['price' => 3_000_000]);
+        [$client, $token, $order] = $this->activeUnpaidOrder(3_000_000);
 
-        $this->postJson("/api/v1/offers/{$chosen->id}/accept", [], [
-            'Authorization' => 'Bearer '.$token,
-        ])
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.offer.status', 'accepted')
-            ->assertJsonPath('data.payment.checkout_url', 'https://pay.test/gw-uuid-1')
-            ->assertJsonPath('data.payment.status', 'draft');
-
-        // Deal does NOT activate yet — it waits for payment.
-        $this->assertSame(OrderStatus::AwaitingPayment, $order->fresh()->status);
+            ->assertJsonPath('data.checkout_url', 'https://pay.test/gw-uuid-1')
+            ->assertJsonPath('data.method', 'multicard')
+            ->assertJsonPath('data.status', 'draft');
 
         $payment = Payment::first();
         $this->assertSame(3_000_000 * 100, $payment->amount); // som → tiyin
@@ -77,6 +97,185 @@ class OrderPaymentTest extends TestCase
                 && $request['invoice_id'] === $payment->payment_uuid
                 && $request['store_id'] === '6';
         });
+    }
+
+    public function test_invoice_mode_returns_a_shareable_link_and_can_text_it(): void
+    {
+        $this->enableGateway();
+
+        Http::fake([
+            '*/auth' => Http::response(['token' => 'tok', 'expiry' => now()->addDay()->toDateTimeString()]),
+            '*/payment/invoice' => Http::response([
+                'success' => true,
+                'data' => [
+                    'uuid' => 'gw-share',
+                    'checkout_url' => 'https://pay.test/gw-share',
+                    'short_link' => 'https://mtd.uz/abc123',
+                ],
+            ]),
+        ]);
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(1_500_000);
+        $client->update(['phone' => '+998 90 123 45 67']);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [
+            'mode' => 'invoice',
+            'send_sms' => true,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            // QR / share source is the short link when Multicard returns one.
+            ->assertJsonPath('data.share_url', 'https://mtd.uz/abc123');
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/payment/invoice')) {
+                return false;
+            }
+            $data = $request->data();
+
+            // Shareable invoices live far longer than an in-app checkout.
+            return ($data['sms'] ?? null) === '998901234567'
+                && (int) ($data['ttl'] ?? 0) === 259200;
+        });
+    }
+
+    public function test_client_requests_a_cash_invoice_and_admin_confirms_it(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $response = $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'cash',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.method', 'cash')
+            ->assertJsonPath('data.status', 'progress');
+
+        $this->assertNotNull($response->json('data.invoice_url')); // hisob-faktura PDF
+
+        $payment = Payment::firstOrFail();
+        $this->assertSame('offline', $payment->gateway);
+        $this->assertSame(2_000_000 * 100, $payment->amount);
+        $this->assertSame(OrderPaymentState::Unpaid, $order->fresh()->payment_state);
+
+        // Money arrives at the cash desk → a manager settles it.
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->postJson("/api/v1/admin/payments/{$payment->id}/confirm", [
+            'reference' => 'KASSA-42',
+            'note' => 'Naqd, ofisda qabul qilindi',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'success')
+            ->assertJsonPath('data.reference', 'KASSA-42');
+
+        $fresh = $order->fresh();
+        $this->assertSame(OrderPaymentState::Paid, $fresh->payment_state);
+        $this->assertNotNull($fresh->paid_at);
+        $this->assertNull($fresh->payment_due_at);
+        // Money is in — the agent's advance payout is planned.
+        $this->assertSame(1, $fresh->payouts()->count());
+    }
+
+    public function test_offline_payment_can_be_rejected_by_admin(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+        ], ['Authorization' => 'Bearer '.$token])->assertOk();
+
+        $payment = Payment::firstOrFail();
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->postJson("/api/v1/admin/payments/{$payment->id}/reject", [
+            'note' => 'Pul kelmadi',
+        ])->assertOk()->assertJsonPath('data.status', 'error');
+
+        $this->assertSame(OrderPaymentState::Unpaid, $order->fresh()->payment_state);
+        $this->assertSame(0, $order->fresh()->payouts()->count());
+    }
+
+    public function test_paid_order_cannot_be_paid_again(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(1_000_000);
+        $order->update(['payment_state' => OrderPaymentState::Paid, 'paid_at' => now()]);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable();
+    }
+
+    public function test_overdue_payment_reminder_runs_once_a_day(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+
+        [, , $order] = $this->activeUnpaidOrder(1_200_000);
+        $order->update(['payment_due_at' => now()->subDay()]);
+
+        $this->artisan('orders:remind-unpaid')->assertSuccessful();
+
+        $reminded = $order->fresh()->payment_reminded_at;
+        $this->assertNotNull($reminded);
+        // Order is NOT cancelled — the agent may already be working.
+        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+
+        // Same day → no second nudge.
+        $this->artisan('orders:remind-unpaid')->assertSuccessful();
+        $this->assertTrue($reminded->equalTo($order->fresh()->payment_reminded_at));
+    }
+
+    public function test_gateway_disabled_activates_without_a_payment_obligation(): void
+    {
+        config(['services.multicard.enabled' => false]);
+        Http::fake();
+
+        $client = User::factory()->create();
+        $token = $client->createToken('t')->plainTextToken;
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
+        $offer = Offer::factory()->for($order)->create(['price' => 900_000]);
+
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], [
+            'Authorization' => 'Bearer '.$token,
+        ])->assertOk();
+
+        $fresh = $order->fresh();
+        $this->assertSame(OrderStatus::InProgress, $fresh->status);
+        $this->assertSame(OrderPaymentState::NotRequired, $fresh->payment_state);
+        $this->assertNull($fresh->payment_due_at);
+    }
+
+    /**
+     * An active deal (contract accepted) whose payment is still outstanding.
+     *
+     * @return array{0: User, 1: string, 2: Order}
+     */
+    private function activeUnpaidOrder(int $priceSom): array
+    {
+        $client = User::factory()->create();
+        $token = $client->createToken('t')->plainTextToken;
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::InProgress)->create([
+            'payment_state' => OrderPaymentState::Unpaid,
+            'payment_due_at' => now()->addDays(3),
+        ]);
+        $profile = AgentProfile::factory()->create();
+        Offer::factory()->for($order)->create([
+            'status' => OfferStatus::Accepted,
+            'price' => $priceSom,
+            'agent_id' => $profile->user_id,
+            'agent_profile_id' => $profile->id,
+        ]);
+
+        return [$client, $token, $order->fresh()];
     }
 
     public function test_invoice_includes_return_urls_when_mini_app_configured(): void
@@ -92,12 +291,9 @@ class OrderPaymentTest extends TestCase
             ]),
         ]);
 
-        $client = User::factory()->create();
-        $token = $client->createToken('t')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
-        $offer = Offer::factory()->for($order)->create(['price' => 3_000]);
+        [, $token, $order] = $this->activeUnpaidOrder(3_000);
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], ['Authorization' => 'Bearer '.$token])
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [], ['Authorization' => 'Bearer '.$token])
             ->assertOk();
 
         Http::assertSent(function ($request) use ($order) {
@@ -124,12 +320,9 @@ class OrderPaymentTest extends TestCase
             ]),
         ]);
 
-        $client = User::factory()->create();
-        $token = $client->createToken('t')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
-        $offer = Offer::factory()->for($order)->create(['price' => 3_000]);
+        [, $token, $order] = $this->activeUnpaidOrder(3_000);
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], ['Authorization' => 'Bearer '.$token])
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [], ['Authorization' => 'Bearer '.$token])
             ->assertOk();
 
         Http::assertSent(fn ($request) => str_contains($request->url(), '/payment/invoice')
@@ -148,13 +341,14 @@ class OrderPaymentTest extends TestCase
         $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
         $offer = Offer::factory()->for($order)->create(['price' => 3_000]);
 
-        // Acceptance must still succeed (no 500); payment is just deferred.
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], ['Authorization' => 'Bearer '.$token])
+        // Acceptance must still succeed (no 500); the deal starts either way.
+        $this->postJson("/api/v1/offers/{$offer->id}/accept", ['accept_contract' => true], ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.offer.status', 'accepted')
             ->assertJsonPath('data.payment', null);
 
-        $this->assertSame(OrderStatus::AwaitingPayment, $order->fresh()->status);
+        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+        $this->assertSame(OrderPaymentState::Unpaid, $order->fresh()->payment_state);
     }
 
     public function test_pay_returns_retryable_error_on_gateway_outage(): void
@@ -184,12 +378,9 @@ class OrderPaymentTest extends TestCase
             ]),
         ]);
 
-        $client = User::factory()->create();
-        $token = $client->createToken('t')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::OffersSent)->create();
-        $offer = Offer::factory()->for($order)->create(['price' => 3_000]);
+        [, $token, $order] = $this->activeUnpaidOrder(3_000);
 
-        $this->postJson("/api/v1/offers/{$offer->id}/accept", [], ['Authorization' => 'Bearer '.$token])->assertOk();
+        $this->postJson("/api/v1/orders/{$order->id}/pay", [], ['Authorization' => 'Bearer '.$token])->assertOk();
 
         Http::assertSent(fn ($request) => str_contains($request->url(), '/payment/invoice')
             && ! array_key_exists('ofd', (array) $request->data()));

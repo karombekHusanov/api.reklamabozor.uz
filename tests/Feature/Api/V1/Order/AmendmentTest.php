@@ -71,6 +71,7 @@ class AmendmentTest extends TestCase
             'items' => [['name' => 'Backprint 27x98', 'unit' => 'dona', 'quantity' => 30, 'unit_price' => 240_000]],
             'deadline_days' => 14,
             'reason' => 'Kengaytirilgan hajm',
+            'accept_contract' => true,
         ])
             ->assertCreated()
             ->assertJsonPath('data.status', AmendmentStatus::Pending->value)
@@ -82,7 +83,7 @@ class AmendmentTest extends TestCase
         $amendment = OrderAmendment::query()->firstOrFail();
         $this->assertSame('2400000.00', $amendment->extra_amount); // (30-20)*240000
 
-        $this->actingAs($agent)->postJson("/api/v1/amendments/{$amendment->id}/approve")
+        $this->actingAs($agent)->postJson("/api/v1/amendments/{$amendment->id}/approve", ['accept_contract' => true])
             ->assertOk()
             ->assertJsonPath('data.status', AmendmentStatus::Applied->value)
             ->assertJsonPath('data.approvals.agent', true);
@@ -106,6 +107,7 @@ class AmendmentTest extends TestCase
         $this->actingAs($agent)->postJson("/api/v1/orders/{$order->id}/amendments", [
             'items' => [['name' => 'Backprint 27x98', 'unit' => 'dona', 'quantity' => 20, 'unit_price' => 240_000]],
             'deadline_days' => 30, // deadline changed → formal doc + operator
+            'accept_contract' => true,
         ])
             ->assertCreated()
             ->assertJsonPath('data.requires_operator', true)
@@ -114,12 +116,12 @@ class AmendmentTest extends TestCase
         $amendment = OrderAmendment::query()->firstOrFail();
 
         // Client approves — still pending because the operator has not signed off.
-        $this->actingAs($client)->postJson("/api/v1/amendments/{$amendment->id}/approve")
+        $this->actingAs($client)->postJson("/api/v1/amendments/{$amendment->id}/approve", ['accept_contract' => true])
             ->assertOk()
             ->assertJsonPath('data.status', AmendmentStatus::Pending->value);
 
         // Operator approval finalizes it.
-        $this->actingAs($admin)->postJson("/api/v1/admin/amendments/{$amendment->id}/approve")
+        $this->actingAs($admin)->postJson("/api/v1/admin/amendments/{$amendment->id}/approve", ['accept_contract' => true])
             ->assertOk()
             ->assertJsonPath('data.status', AmendmentStatus::Applied->value);
     }
@@ -132,6 +134,7 @@ class AmendmentTest extends TestCase
         $this->actingAs($client)->postJson("/api/v1/orders/{$order->id}/amendments", [
             'items' => [['name' => 'Backprint 27x98', 'quantity' => 40, 'unit_price' => 240_000]],
             'deadline_days' => 14,
+            'accept_contract' => true,
         ])->assertCreated();
 
         $amendment = OrderAmendment::query()->firstOrFail();
@@ -154,6 +157,7 @@ class AmendmentTest extends TestCase
         $this->actingAs($client)->postJson("/api/v1/orders/{$order->id}/amendments", [
             'items' => [['name' => 'Backprint 27x98', 'quantity' => 25, 'unit_price' => 240_000]],
             'deadline_days' => 14,
+            'accept_contract' => true,
         ])->assertCreated();
 
         $amendment = OrderAmendment::query()->firstOrFail();
@@ -169,6 +173,7 @@ class AmendmentTest extends TestCase
         $order = $offer->order;
 
         $payload = [
+            'accept_contract' => true,
             'items' => [['name' => 'Backprint 27x98', 'quantity' => 25, 'unit_price' => 240_000]],
             'deadline_days' => 14,
         ];
@@ -185,6 +190,7 @@ class AmendmentTest extends TestCase
         $this->actingAs($client)->postJson("/api/v1/orders/{$offer->order->id}/amendments", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
             'deadline_days' => 14,
+            'accept_contract' => true,
         ])->assertUnprocessable();
     }
 
@@ -196,6 +202,7 @@ class AmendmentTest extends TestCase
         $this->actingAs($stranger)->postJson("/api/v1/orders/{$offer->order->id}/amendments", [
             'items' => [['name' => 'X', 'quantity' => 1, 'unit_price' => 1_000_000]],
             'deadline_days' => 14,
+            'accept_contract' => true,
         ])->assertForbidden();
     }
 

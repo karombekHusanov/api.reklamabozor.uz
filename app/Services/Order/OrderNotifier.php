@@ -8,6 +8,7 @@ use App\Enums\OrderDeadline;
 use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderAmendment;
 use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Telegram\AdminNotifier;
@@ -237,6 +238,165 @@ class OrderNotifier
         }
 
         $this->admin->dealMade($offer);
+    }
+
+    /**
+     * Someone proposed an additional agreement — tell the other party so they
+     * can read and answer it.
+     */
+    public function notifyAmendmentProposed(OrderAmendment $amendment): void
+    {
+        $amendment->loadMissing(['order.client', 'offer.agent']);
+
+        $recipient = $amendment->initiator_role === OrderAmendment::ROLE_CLIENT
+            ? $amendment->offer?->agent
+            : $amendment->order?->client;
+
+        $delta = $this->deltaLabel($amendment);
+
+        $this->sendToUser($recipient, implode("\n", array_filter([
+            "📝 <b>Qo'shimcha kelishuv taklif qilindi</b>",
+            '',
+            "🔖 Buyurtma: <b>#{$amendment->order_id}</b>",
+            "📄 Hujjat: {$amendment->number}",
+            $delta !== null ? "💰 O'zgarish: <b>{$delta}</b>" : null,
+            $amendment->reason ? '💬 Sabab: '.e($amendment->reason) : null,
+            '',
+            'Shartlarni ko\'rib chiqing va tasdiqlang.',
+        ])), '📄 Kelishuvni ko\'rish', $this->amendmentPath($amendment, $recipient));
+    }
+
+    /**
+     * The agreement took effect (or was refused) — tell both sides.
+     */
+    public function notifyAmendmentDecided(OrderAmendment $amendment, bool $applied): void
+    {
+        $amendment->loadMissing(['order.client', 'offer.agent']);
+
+        $delta = $this->deltaLabel($amendment);
+        $money = null;
+
+        if ($applied && $amendment->refundIsDue()) {
+            $money = '↩️ Sizga '.number_format((float) $amendment->refund_amount, 0, '.', ' ')
+                ." so'm qaytariladi — operator bog'lanadi.";
+        } elseif ($applied && (float) $amendment->extra_amount > 0) {
+            $money = "💳 Qo'shimcha summa buyurtma hisobiga qo'shildi — ilovadan to'lang.";
+        }
+
+        foreach ([$amendment->order?->client, $amendment->offer?->agent] as $recipient) {
+            $this->sendToUser($recipient, implode("\n", array_filter([
+                $applied
+                    ? "✅ <b>Qo'shimcha kelishuv kuchga kirdi</b>"
+                    : "🚫 <b>Qo'shimcha kelishuv rad etildi</b>",
+                '',
+                "🔖 Buyurtma: <b>#{$amendment->order_id}</b> · {$amendment->number}",
+                $delta !== null ? "💰 O'zgarish: <b>{$delta}</b>" : null,
+                ! $applied && $amendment->rejection_reason ? '💬 Sabab: '.e($amendment->rejection_reason) : null,
+                $recipient?->id === $amendment->order?->client_id ? $money : null,
+            ])), '📂 Buyurtmani ko\'rish', $this->amendmentPath($amendment, $recipient));
+        }
+    }
+
+    /**
+     * Nobody answered in time — the proposal is closed.
+     */
+    public function notifyAmendmentExpired(OrderAmendment $amendment): void
+    {
+        $amendment->loadMissing(['order.client', 'offer.agent']);
+
+        foreach ([$amendment->order?->client, $amendment->offer?->agent] as $recipient) {
+            $this->sendToUser($recipient, implode("\n", [
+                "⏳ <b>Qo'shimcha kelishuv muddati tugadi</b>",
+                '',
+                "🔖 Buyurtma: <b>#{$amendment->order_id}</b> · {$amendment->number}",
+                'Kelishuv yopildi. Kerak bo\'lsa yangisini taklif qiling.',
+            ]), '📂 Buyurtmani ko\'rish', $this->amendmentPath($amendment, $recipient));
+        }
+    }
+
+    /**
+     * A proposal is about to expire and the recipient has not answered yet.
+     */
+    public function notifyAmendmentReminder(OrderAmendment $amendment): void
+    {
+        $amendment->loadMissing(['order.client', 'offer.agent']);
+
+        $recipient = match ($amendment->awaitingParty()) {
+            OrderAmendment::ROLE_CLIENT => $amendment->order?->client,
+            OrderAmendment::ROLE_AGENT => $amendment->offer?->agent,
+            default => null,
+        };
+
+        if ($recipient === null) {
+            return;
+        }
+
+        $this->sendToUser($recipient, implode("\n", [
+            "⏰ <b>Qo'shimcha kelishuv javob kutmoqda</b>",
+            '',
+            "🔖 Buyurtma: <b>#{$amendment->order_id}</b> · {$amendment->number}",
+            '⌛ Muddat: '.($amendment->expires_at?->format('d.m.Y H:i') ?? '—'),
+        ]), '📄 Kelishuvni ko\'rish', $this->amendmentPath($amendment, $recipient));
+    }
+
+    /** Signed money label for an amendment (+/− so'm), or null when unchanged. */
+    private function deltaLabel(OrderAmendment $amendment): ?string
+    {
+        $delta = (float) $amendment->extra_amount;
+
+        if ($delta === 0.0) {
+            return null;
+        }
+
+        return ($delta > 0 ? '+' : '−').number_format(abs($delta), 0, '.', ' ')." so'm";
+    }
+
+    /** Deep-link target: the agent works from their offer page, the client from the order. */
+    private function amendmentPath(OrderAmendment $amendment, ?User $recipient): string
+    {
+        $isAgent = $recipient !== null && $recipient->id === $amendment->offer?->agent_id;
+
+        return $isAgent
+            ? "/offers/{$amendment->offer_id}"
+            : "/orders/{$amendment->order_id}";
+    }
+
+    /**
+     * Payment due date passed while the deal is already running: remind the
+     * client (and let the agent know the money has not arrived).
+     */
+    public function notifyPaymentOverdue(Order $order): void
+    {
+        $order->loadMissing(['client', 'acceptedOffer.agent']);
+
+        $amount = $order->acceptedOffer?->price;
+        $amountLabel = $amount !== null
+            ? number_format((float) $amount, 0, '.', ' ')." so'm"
+            : null;
+
+        $this->sendToUser($order->client, implode("\n", array_filter([
+            "⏰ <b>To'lov muddati o'tdi</b>",
+            '',
+            "🔖 Buyurtma: <b>#{$order->id}</b> — ".e((string) $order->title),
+            $amountLabel !== null ? "💰 To'lanadigan summa: <b>{$amountLabel}</b>" : null,
+            '',
+            "Ish davom etmoqda. To'lovni ilovadan amalga oshiring: karta orqali online, hisob (QR) yoki naqd/bank o'tkazmasi.",
+        ])), "💳 To'lash", "/orders/{$order->id}");
+
+        $agent = $order->acceptedOffer?->agent;
+
+        if ($agent?->telegram_id !== null) {
+            try {
+                $this->bot->sendMessage((int) $agent->telegram_id, implode("\n", [
+                    "⏰ <b>Buyurtma #{$order->id}</b> bo'yicha mijozning to'lovi hali kelmadi.",
+                    'Operator mijoz bilan bog\'lanmoqda.',
+                ]));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        $this->admin->paymentOverdue($order);
     }
 
     /**

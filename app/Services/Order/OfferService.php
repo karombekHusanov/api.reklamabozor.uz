@@ -4,9 +4,11 @@ namespace App\Services\Order;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
 use App\Models\Chat;
+use App\Models\ContractAcceptance;
 use App\Models\DirectChatMessage;
 use App\Models\Offer;
 use App\Models\Order;
@@ -15,6 +17,7 @@ use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -242,6 +245,7 @@ class OfferService
 
         $offer->load([
             'items',
+            'contractAcceptances',
             'order.category',
             'order.region',
             'order.district',
@@ -349,15 +353,57 @@ class OfferService
     }
 
     /**
+     * The contract the agent is about to accept, built from the pricelist rows
+     * they are composing (nothing is stored yet).
+     *
+     * @param  array<int, array{name: string, unit?: string|null, quantity: float|int|string, unit_price: float|int|string}>  $items
+     * @return array<string, mixed>
+     */
+    public function previewContractForAgent(User $agent, Offer $offer, array $items, ?int $deadlineDays = null): array
+    {
+        abort_unless($offer->agent_id === $agent->id, 404);
+
+        return $this->contracts->document($offer, array_values($items), $deadlineDays);
+    }
+
+    /**
+     * The contract the client is about to accept, built from the offer's stored
+     * pricelist. Only the order owner may read it, and only for a priced offer.
+     *
+     * @return array<string, mixed>
+     */
+    public function previewContractForClient(User $client, Offer $offer): array
+    {
+        $offer->loadMissing('order');
+
+        abort_unless($offer->order?->client_id === $client->id, 404);
+
+        if (! $offer->hasPrice()) {
+            throw ValidationException::withMessages([
+                'offer' => ['This response has no price yet — there is no contract to accept.'],
+            ]);
+        }
+
+        return $this->contracts->document($offer);
+    }
+
+    /**
      * Agent sends (or replaces) the pricelist on their pending offer — the
-     * priced step after negotiating in the order chat. Replaces every line,
-     * recomputes the cached total (interest → priced), posts an event into the
-     * order-scoped thread, and notifies the client.
+     * priced step after negotiating in the order chat. Sending is also the
+     * agent's acceptance of the per-order contract built from those lines, so
+     * the consent is logged before the offer reaches the client. Replaces every
+     * line, recomputes the cached total (interest → priced), posts an event into
+     * the order-scoped thread, and notifies the client.
      *
      * @param  array<int, array{name: string, unit?: string|null, quantity: float|int|string, unit_price: float|int|string}>  $items
      */
-    public function setPricelist(User $agent, Offer $offer, array $items, ?int $deadlineDays = null): Offer
-    {
+    public function setPricelist(
+        User $agent,
+        Offer $offer,
+        array $items,
+        ?int $deadlineDays = null,
+        ?Request $request = null,
+    ): Offer {
         abort_unless($offer->agent_id === $agent->id, 404);
 
         $offer->loadMissing('order');
@@ -375,7 +421,7 @@ class OfferService
             ]);
         }
 
-        DB::transaction(function () use ($offer, $items, $deadlineDays): void {
+        DB::transaction(function () use ($agent, $offer, $items, $deadlineDays, $request): void {
             $offer->items()->delete();
 
             foreach (array_values($items) as $index => $item) {
@@ -396,6 +442,16 @@ class OfferService
                 'price_updated_at' => now(),
                 'deadline_days' => $deadlineDays,
             ]);
+
+            // The agent's "accept" on the contract drawer — logged against the
+            // exact document (parties, lines, clause text) they were shown.
+            $this->contracts->recordAcceptance(
+                $offer,
+                $agent,
+                ContractAcceptance::PARTY_AGENT,
+                $this->contracts->document($offer->fresh()->load('items')),
+                $request,
+            );
         });
 
         $chat = $this->directChats->findForOffer($offer)
@@ -426,13 +482,19 @@ class OfferService
     /**
      * Client picks a winning offer: it becomes accepted and the rest rejected.
      *
-     * When the payment gateway is enabled the order moves to `awaiting_payment`
-     * and the deal only activates once payment is confirmed (see
-     * {@see activateDeal()}, called from the payment webhook). When the gateway
-     * is off, the order activates immediately (offline MVP flow).
+     * Accepting the contract activates the deal immediately — work starts while
+     * the money runs on its own track ({@see Order::$payment_state}). With the
+     * gateway enabled the order is activated as `unpaid` with a payment due
+     * date, and the client then settles it however they like (in-app checkout,
+     * invoice link/QR, cash or bank transfer). With the gateway off nothing is
+     * collected (`not_required`), as in the offline MVP flow.
      */
-    public function acceptOffer(User $client, Offer $offer): Offer
-    {
+    public function acceptOffer(
+        User $client,
+        Offer $offer,
+        ?string $expectedContractHash = null,
+        ?Request $request = null,
+    ): Offer {
         $order = $offer->order;
 
         abort_unless($order->client_id === $client->id, 404);
@@ -440,6 +502,16 @@ class OfferService
         if (! $offer->hasPrice()) {
             throw ValidationException::withMessages([
                 'offer' => ['This response has no price yet and cannot be accepted.'],
+            ]);
+        }
+
+        // The contract the client is accepting right now. When the drawer sent
+        // back the hash it read, refuse a stale accept (agent revised meanwhile).
+        $document = $this->contracts->document($offer);
+
+        if ($expectedContractHash !== null && ! hash_equals($document['hash'], $expectedContractHash)) {
+            throw ValidationException::withMessages([
+                'accept_contract' => ['The contract changed — reopen it and accept the current version.'],
             ]);
         }
 
@@ -451,9 +523,19 @@ class OfferService
 
         $paymentEnabled = (bool) config('services.multicard.enabled');
 
-        DB::transaction(function () use ($order, $offer, $paymentEnabled, $client): void {
+        DB::transaction(function () use ($order, $offer, $paymentEnabled, $client, $document, $request): void {
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
+
+            // Aksept: the client's tap on the contract drawer is the binding
+            // moment — log it before the deal (or the checkout) starts.
+            $this->contracts->recordAcceptance(
+                $offer,
+                $client,
+                ContractAcceptance::PARTY_CLIENT,
+                $document,
+                $request,
+            );
 
             // Accepting is explicit consent — reopen a previously ended order thread.
             $pair = $this->directChats->findPair($order->client_id, $offer->agent_id, $order->id);
@@ -472,29 +554,29 @@ class OfferService
                 );
             }
 
-            if ($paymentEnabled) {
-                $order->update([
-                    'status' => OrderStatus::AwaitingPayment,
-                    'awaiting_payment_at' => now(),
-                ]);
-            } else {
-                $this->activateInTransaction($order, $offer);
-            }
+            $this->activateInTransaction($order, $offer);
+
+            $order->update($paymentEnabled ? [
+                'payment_state' => OrderPaymentState::Unpaid,
+                'payment_due_at' => now()->addDays($this->paymentDueDays()),
+                'awaiting_payment_at' => now(),
+            ] : [
+                'payment_state' => OrderPaymentState::NotRequired,
+            ]);
         });
 
-        if (! $paymentEnabled) {
-            $this->notifyDeal($offer);
-            $this->generateContract($offer);
-        }
+        $this->notifyDeal($offer);
+        $this->generateContract($offer);
 
         return $offer->load(['agent', 'agentProfile.companyLogoFile']);
     }
 
     /**
      * Activate the deal for an already-accepted offer: move the order to
-     * in_progress and open the client ↔ agent conversation. Invoked by the
-     * payment webhook once a payment succeeds. Idempotent — a second webhook
-     * (Multicard retries) is a no-op once in_progress.
+     * in_progress and open the client ↔ agent conversation. Used by
+     * {@see acceptOffer()} and, for legacy orders parked in `awaiting_payment`,
+     * by the payment webhook. Idempotent — a repeat call is a no-op once
+     * in_progress.
      */
     public function activateDeal(Offer $offer): void
     {
@@ -514,7 +596,11 @@ class OfferService
 
     private function activateInTransaction(Order $order, Offer $offer): void
     {
-        $order->update(['status' => OrderStatus::InProgress]);
+        $order->update([
+            'status' => OrderStatus::InProgress,
+            // Frozen start of the deal — amendment windows are measured from it.
+            'activated_at' => $order->activated_at ?? now(),
+        ]);
 
         // Open the client ↔ agent conversation for this deal.
         Chat::firstOrCreate(
@@ -526,9 +612,14 @@ class OfferService
             ],
         );
 
-        // Queue the agent's advance payout out of escrow (gateway flow only;
-        // no-op when payments are disabled). A manager releases it later.
-        $this->payouts->planAdvance($order);
+        // Payouts follow the money, not the activation: the advance is planned
+        // when the payment actually settles (PaymentService::onOrderPaid).
+    }
+
+    /** Grace period, in days, between activation and the payment due date. */
+    private function paymentDueDays(): int
+    {
+        return max(1, (int) config('services.multicard.payment_due_days', 3));
     }
 
     private function notifyDeal(Offer $offer): void

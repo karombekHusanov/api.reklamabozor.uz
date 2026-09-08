@@ -2,10 +2,15 @@
 
 namespace App\Models;
 
+use App\Enums\AmendmentStatus;
 use App\Enums\CategoryType;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentPurpose;
+use App\Enums\PaymentStatus;
+use App\Enums\PayoutStatus;
 use App\Enums\ReviewDirection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -17,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class Order extends Model
@@ -45,6 +51,11 @@ class Order extends Model
         'region_id',
         'district_id',
         'status',
+        'payment_state',
+        'activated_at',
+        'payment_due_at',
+        'payment_reminded_at',
+        'paid_at',
         'awaiting_payment_at',
         'work_submitted_at',
         'completion_reminder_sent_at',
@@ -66,6 +77,7 @@ class Order extends Model
         'targetAgent.profile',
         'offers.agentProfile.companyLogoFile',
         'offers.items',
+        'offers.contractAcceptances',
         'acceptedOffer.agentProfile',
         'review',
         'providerReview',
@@ -310,6 +322,217 @@ class Order extends Model
             ->doesntHave('offers');
     }
 
+    // --- Payment ledger ---------------------------------------------------
+    //
+    // The money side is derived, never hand-set: what the deal costs comes from
+    // the accepted offer (which an applied amendment rewrites), what came in is
+    // the sum of settled payments. `payment_state` follows from the difference.
+
+    /** What this deal costs right now, in tiyin (accepted offer total). */
+    public function dueTiyin(): int
+    {
+        $offer = $this->relationLoaded('acceptedOffer')
+            ? $this->acceptedOffer
+            : $this->acceptedOffer()->first();
+
+        if ($offer?->price === null) {
+            return 0;
+        }
+
+        return (int) round(((float) $offer->price) * 100);
+    }
+
+    /**
+     * Money actually settled for this deal, in tiyin: the order's own payments
+     * plus any extra charged through its amendments. Reverted payments are not
+     * `success`, so a refund drops out of the sum on its own.
+     */
+    public function paidTiyin(): int
+    {
+        $amendmentIds = $this->amendments()->pluck('id');
+
+        // Money handed back through a settled addendum refund leaves the ledger
+        // (the gateway cannot reverse it, a manager returns it by hand).
+        $refunded = (float) $this->amendments()
+            ->where('refund_state', OrderAmendment::REFUND_REFUNDED)
+            ->sum('refund_amount');
+
+        $settled = (int) Payment::query()
+            ->where('status', PaymentStatus::Success)
+            ->where(function ($query) use ($amendmentIds): void {
+                $query->where(function ($q): void {
+                    $q->where('payable_type', $this->getMorphClass())
+                        ->where('payable_id', $this->id)
+                        ->where('purpose', PaymentPurpose::Order);
+                });
+
+                if ($amendmentIds->isNotEmpty()) {
+                    $query->orWhere(function ($q) use ($amendmentIds): void {
+                        $q->where('payable_type', (new OrderAmendment)->getMorphClass())
+                            ->whereIn('payable_id', $amendmentIds)
+                            ->where('purpose', PaymentPurpose::Amendment);
+                    });
+                }
+            })
+            ->sum('amount');
+
+        return $settled - (int) round($refunded * 100);
+    }
+
+    /** Still owed, in tiyin. Negative means the client overpaid (owed a refund). */
+    public function outstandingTiyin(): int
+    {
+        return $this->dueTiyin() - $this->paidTiyin();
+    }
+
+    /**
+     * Re-derive `payment_state` from the ledger. Called whenever money settles
+     * or the deal amount changes (an applied amendment).
+     *
+     * Terminal-ish states are left alone: `not_required` means this deal never
+     * collects (gateway off), `refunded` belongs to a cancelled/reverted order.
+     */
+    public function recalculatePaymentState(): void
+    {
+        if (in_array($this->payment_state, [
+            OrderPaymentState::NotRequired,
+            OrderPaymentState::Refunded,
+        ], true)) {
+            return;
+        }
+
+        // Overpayment (an amendment cut the price after payment) settles as paid
+        // here; the refund obligation itself is tracked on the amendment.
+        if ($this->outstandingTiyin() > 0) {
+            $this->update(['payment_state' => OrderPaymentState::Unpaid]);
+
+            return;
+        }
+
+        $this->update([
+            'payment_state' => OrderPaymentState::Paid,
+            'paid_at' => $this->paid_at ?? now(),
+            'payment_due_at' => null,
+            'payment_reminded_at' => null,
+        ]);
+    }
+
+    // --- Amendment window -------------------------------------------------
+
+    /**
+     * End of the client's window for proposing an additional agreement: the
+     * first slice (default a third) of the committed delivery time, measured
+     * from activation. Null when it cannot be computed (deal not started).
+     */
+    public function amendmentWindowEndsAt(): ?Carbon
+    {
+        $start = $this->activated_at;
+
+        if ($start === null) {
+            return null;
+        }
+
+        $offer = $this->relationLoaded('acceptedOffer')
+            ? $this->acceptedOffer
+            : $this->acceptedOffer()->first();
+
+        $days = $offer?->deadline_days !== null
+            ? (int) ceil((int) $offer->deadline_days / max(1, (int) config('orders.amendment_client_window_divisor', 3)))
+            : (int) config('orders.amendment_client_window_fallback_days', 3);
+
+        return $start->copy()->addDays(max(1, $days));
+    }
+
+    /**
+     * Why this user may (not) propose an amendment right now.
+     *
+     * Returns one of: `ok`, `not_active`, `not_participant`, `pending_exists`,
+     * `window_closed`. The agent doing the work is never time-limited.
+     */
+    public function amendmentProposalState(?User $user): string
+    {
+        if ($this->status !== OrderStatus::InProgress) {
+            return 'not_active';
+        }
+
+        if ($this->amendments()->where('status', AmendmentStatus::Pending)->exists()) {
+            return 'pending_exists';
+        }
+
+        $offer = $this->relationLoaded('acceptedOffer')
+            ? $this->acceptedOffer
+            : $this->acceptedOffer()->first();
+
+        if ($user === null) {
+            return 'not_participant';
+        }
+
+        if ($user->id === $offer?->agent_id) {
+            return 'ok'; // the executor may always propose a change
+        }
+
+        if ($user->id !== $this->client_id) {
+            return 'not_participant';
+        }
+
+        $endsAt = $this->amendmentWindowEndsAt();
+
+        return $endsAt === null || $endsAt->isFuture() ? 'ok' : 'window_closed';
+    }
+
+    public function canProposeAmendment(?User $user): bool
+    {
+        return $this->amendmentProposalState($user) === 'ok';
+    }
+
+    /**
+     * Deadline for the client's own cancellation, or null when the order can be
+     * cancelled without a time limit (nothing has been paid yet).
+     */
+    public function clientCancelDeadline(): ?Carbon
+    {
+        if ($this->payment_state !== OrderPaymentState::Paid) {
+            return null;
+        }
+
+        $hours = max(1, (int) config('orders.paid_cancel_window_hours', 24));
+
+        return ($this->paid_at ?? $this->updated_at)?->copy()->addHours($hours);
+    }
+
+    /**
+     * May the client still cancel this order themselves?
+     *
+     * - open for offers / legacy awaiting_payment → yes;
+     * - active but unpaid → yes (no money moved);
+     * - active and paid → only inside the cooling-off window, and only while no
+     *   agent payout has actually been released;
+     * - delivered, completed or cancelled → no.
+     */
+    public function isCancellableByClient(): bool
+    {
+        if ($this->status->isOpenForOffers() || $this->status === OrderStatus::AwaitingPayment) {
+            return true;
+        }
+
+        if ($this->status !== OrderStatus::InProgress) {
+            return false;
+        }
+
+        if ($this->payment_state !== OrderPaymentState::Paid) {
+            return true;
+        }
+
+        // Money already handed to the agent — support has to sort it out.
+        if ($this->payouts()->where('status', PayoutStatus::Paid)->exists()) {
+            return false;
+        }
+
+        $deadline = $this->clientCancelDeadline();
+
+        return $deadline === null || $deadline->isFuture();
+    }
+
     /**
      * @return array<string, string>
      */
@@ -321,6 +544,11 @@ class Order extends Model
             'lat' => 'decimal:7',
             'lng' => 'decimal:7',
             'status' => OrderStatus::class,
+            'payment_state' => OrderPaymentState::class,
+            'activated_at' => 'datetime',
+            'payment_due_at' => 'datetime',
+            'payment_reminded_at' => 'datetime',
+            'paid_at' => 'datetime',
             'category_type' => CategoryType::class,
             'deadline' => OrderDeadline::class,
             'attachment_file_ids' => 'array',

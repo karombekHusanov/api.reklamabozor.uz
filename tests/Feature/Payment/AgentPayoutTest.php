@@ -2,13 +2,17 @@
 
 namespace Tests\Feature\Payment;
 
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentPurpose;
+use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Payout;
 use App\Models\User;
 use App\Services\Payout\PayoutService;
@@ -28,11 +32,29 @@ class AgentPayoutTest extends TestCase
         ]);
     }
 
-    /** An order with an accepted offer (from an agency with a profile) at the given price (som). */
-    private function orderWithAcceptedOffer(int $priceSom): Order
+    /**
+     * An active, paid order with an accepted offer (from an agency with a
+     * profile) at the given price (som). Payouts only follow settled money.
+     */
+    private function orderWithAcceptedOffer(int $priceSom, bool $paid = true): Order
     {
         $profile = AgentProfile::factory()->create();
-        $order = Order::factory()->status(OrderStatus::InProgress)->create();
+        $order = Order::factory()->status(OrderStatus::InProgress)->create([
+            'payment_state' => $paid ? OrderPaymentState::Paid : OrderPaymentState::Unpaid,
+            'paid_at' => $paid ? now() : null,
+        ]);
+
+        if ($paid) {
+            // Payouts follow settled money, so the ledger needs a real payment.
+            Payment::factory()->create([
+                'payable_type' => Order::class,
+                'payable_id' => $order->id,
+                'purpose' => PaymentPurpose::Order,
+                'status' => PaymentStatus::Success,
+                'amount' => $priceSom * 100,
+                'paid_at' => now(),
+            ]);
+        }
         Offer::factory()->for($order)->accepted()->create([
             'price' => $priceSom,
             'agent_id' => $profile->user_id,
@@ -84,10 +106,57 @@ class AgentPayoutTest extends TestCase
     public function test_no_payout_when_gateway_disabled(): void
     {
         config(['services.multicard.enabled' => false]);
-        $order = $this->orderWithAcceptedOffer(5_000_000);
+        // Gateway off → the platform collects nothing (payment_state stays
+        // not_required), so there is no money to pay out.
+        $order = Order::factory()->status(OrderStatus::InProgress)->create();
+        $profile = AgentProfile::factory()->create();
+        Offer::factory()->for($order)->accepted()->create([
+            'price' => 5_000_000,
+            'agent_id' => $profile->user_id,
+            'agent_profile_id' => $profile->id,
+        ]);
+
+        $this->assertNull(app(PayoutService::class)->planAdvance($order->fresh()));
+        $this->assertSame(0, $order->payouts()->count());
+    }
+
+    public function test_no_payout_while_the_active_order_is_still_unpaid(): void
+    {
+        $this->configureSplit();
+        // Deal activated on contract acceptance, money not in yet.
+        $order = $this->orderWithAcceptedOffer(5_000_000, paid: false);
 
         $this->assertNull(app(PayoutService::class)->planAdvance($order));
+        $this->assertNull(app(PayoutService::class)->planFinal($order));
         $this->assertSame(0, $order->payouts()->count());
+    }
+
+    public function test_final_payout_is_held_while_the_deal_still_owes(): void
+    {
+        $this->configureSplit();
+        $payouts = app(PayoutService::class);
+        $order = $this->orderWithAcceptedOffer(10_000_000);
+
+        $payouts->planAdvance($order);
+
+        // An applied amendment raises the deal amount — the extra is not in yet.
+        $order->acceptedOffer->update(['price' => 12_000_000]);
+        $order->refresh();
+
+        $this->assertSame(200_000_000, $order->outstandingTiyin()); // 2 mln som
+        $this->assertNull($payouts->planFinal($order));
+
+        // Client settles the difference → the final tranche can be planned.
+        Payment::factory()->create([
+            'payable_type' => Order::class,
+            'payable_id' => $order->id,
+            'purpose' => PaymentPurpose::Order,
+            'status' => PaymentStatus::Success,
+            'amount' => 200_000_000,
+            'paid_at' => now(),
+        ]);
+
+        $this->assertNotNull($payouts->planFinal($order->fresh()));
     }
 
     public function test_plan_advance_is_idempotent(): void
