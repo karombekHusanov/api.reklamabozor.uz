@@ -70,6 +70,8 @@ class AdminOrderResource extends JsonResource
                 'contract',
                 fn () => $this->contract ? new ContractResource($this->contract) : null,
             ),
+            // Acts closing the order, once it completed.
+            'documents' => OrderDocumentResource::collection($this->whenLoaded('documents')),
             'payments' => AdminPaymentResource::collection($this->whenLoaded('payments')),
             'offers_count' => $this->whenCounted('offers'),
             'created_at' => $this->created_at,

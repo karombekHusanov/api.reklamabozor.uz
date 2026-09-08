@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\OrderDocumentType;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -80,6 +81,14 @@ class OrderResource extends JsonResource
             'contract' => $this->whenLoaded(
                 'contract',
                 fn () => $this->contract ? new ContractResource($this->contract) : null,
+            ),
+            // Acts closing the order, once it completed. The commission act is
+            // between the platform and the agent — never the client's business.
+            'documents' => OrderDocumentResource::collection(
+                $this->whenLoaded('documents', fn () => $this->documents->where(
+                    'type',
+                    OrderDocumentType::WorkAct,
+                )->values()),
             ),
             'offers' => OfferResource::collection($this->whenLoaded('offers')),
             'offers_count' => $this->whenCounted('offers'),

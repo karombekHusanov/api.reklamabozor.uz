@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Admin\AmendmentController as AdminAmendmentContr
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\V1\Admin\FinanceController as AdminFinanceController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagController;
 use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
@@ -38,6 +39,7 @@ use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
+use App\Http\Controllers\Api\V1\Order\OrderDocumentController;
 use App\Http\Controllers\Api\V1\Payment\MulticardCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
 use App\Http\Controllers\Api\V1\Profile\ActivityController;
@@ -129,6 +131,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
+    // Acts closing the order (work + commission) — client, agent or manager.
+    Route::get('/orders/{order}/documents', [OrderDocumentController::class, 'index']);
+
     // Three-party contract the client confirms in the accept drawer.
     Route::get('/offers/{offer}/contract-preview', [OfferController::class, 'contractPreview']);
     Route::post('/offers/{offer}/accept', [OfferController::class, 'accept']);
@@ -297,6 +302,11 @@ Route::prefix('admin')
         Route::post('/mxik-codes', [AdminMxikCodeController::class, 'store']);
         Route::patch('/mxik-codes/{mxikCode}', [AdminMxikCodeController::class, 'update']);
         Route::delete('/mxik-codes/{mxikCode}', [AdminMxikCodeController::class, 'destroy']);
+
+        // Finance reporting: period totals + the two registers as CSV.
+        Route::get('/finance/summary', [AdminFinanceController::class, 'summary']);
+        Route::get('/finance/payments.csv', [AdminFinanceController::class, 'paymentsRegister']);
+        Route::get('/finance/payouts.csv', [AdminFinanceController::class, 'payoutsRegister']);
 
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);

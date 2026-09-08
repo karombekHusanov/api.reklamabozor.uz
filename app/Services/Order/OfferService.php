@@ -254,6 +254,7 @@ class OfferService
             'order.hashtags',
             'order.client.avatarFile',
             'order.contract.pdfFile',
+            'order.documents.pdfFile',
             'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
                 ->where('reviewer_id', $agent->id),
         ]);

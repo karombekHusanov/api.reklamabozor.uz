@@ -83,6 +83,7 @@ class Order extends Model
         'providerReview',
         'latestPayment',
         'contract.pdfFile',
+        'documents.pdfFile',
     ];
 
     /** Max files a client may attach to one order. */
@@ -220,6 +221,16 @@ class Order extends Model
     /**
      * The generated per-order service contract (present once the deal started).
      */
+    /**
+     * Accounting documents generated when the order completed (acts).
+     *
+     * @return HasMany<OrderDocument, $this>
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(OrderDocument::class);
+    }
+
     public function contract(): HasOne
     {
         return $this->hasOne(Contract::class);

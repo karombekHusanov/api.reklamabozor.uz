@@ -28,6 +28,7 @@ class OrderService
         private readonly PaymentService $payments,
         private readonly HashtagService $hashtags,
         private readonly AdminNotifier $admin,
+        private readonly OrderActService $acts,
     ) {}
 
     /**
@@ -369,6 +370,15 @@ class OrderService
             } catch (\Throwable $e) {
                 report($e);
             }
+        }
+
+        // Close the books: the act of completed work and the commission act.
+        // A failure here must not roll the completion back — they are
+        // regenerated on demand.
+        try {
+            $this->acts->generateForOrder($order->fresh());
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         $this->dispatchRatingRecompute($order);

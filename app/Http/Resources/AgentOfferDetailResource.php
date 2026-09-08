@@ -90,6 +90,11 @@ class AgentOfferDetailResource extends JsonResource
                 'contract' => $order->relationLoaded('contract') && $order->contract
                     ? new ContractResource($order->contract)
                     : null,
+                // Acts closing the deal — the agent needs both (the commission
+                // act is their own expense document).
+                'documents' => OrderDocumentResource::collection(
+                    $order->relationLoaded('documents') ? $order->documents : collect(),
+                ),
                 'client' => [
                     'id' => $order->client?->id,
                     'first_name' => $order->client?->first_name,
