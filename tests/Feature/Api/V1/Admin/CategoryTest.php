@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1\Admin;
 
 use App\Enums\CategoryType;
 use App\Models\Category;
+use App\Models\File;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -136,6 +137,81 @@ class CategoryTest extends TestCase
             'id' => $other->id,
             'is_other' => true,
             'is_active' => true,
+        ]);
+    }
+
+    public function test_admin_can_create_category_with_image(): void
+    {
+        $file = File::factory()->create();
+
+        $this->postJson('/api/v1/admin/categories', [
+            'name_uz' => 'Bannerlar',
+            'name_ru' => 'Баннеры',
+            'type' => 'agent',
+            'image_file_id' => $file->id,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.image_file_id', $file->id)
+            ->assertJsonPath('data.image', $file->url());
+
+        $this->assertDatabaseHas('categories', [
+            'name_uz' => 'Bannerlar',
+            'image_file_id' => $file->id,
+        ]);
+    }
+
+    public function test_admin_can_replace_and_clear_the_category_image(): void
+    {
+        $file = File::factory()->create();
+        $replacement = File::factory()->create();
+        $category = Category::factory()->create(['image_file_id' => $file->id]);
+        $token = $this->adminToken();
+
+        $this->patchJson("/api/v1/admin/categories/{$category->id}", [
+            'image_file_id' => $replacement->id,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.image_file_id', $replacement->id);
+
+        $this->patchJson("/api/v1/admin/categories/{$category->id}", [
+            'image_file_id' => null,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.image_file_id', null)
+            ->assertJsonPath('data.image', null);
+
+        $this->assertDatabaseHas('categories', [
+            'id' => $category->id,
+            'image_file_id' => null,
+        ]);
+    }
+
+    public function test_category_image_must_reference_an_existing_file(): void
+    {
+        $this->postJson('/api/v1/admin/categories', [
+            'name_uz' => 'SMM',
+            'name_ru' => 'СММ',
+            'type' => 'agent',
+            'image_file_id' => 999999,
+        ], [
+            'Authorization' => 'Bearer '.$this->adminToken(),
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('image_file_id');
+    }
+
+    public function test_deleting_the_image_file_keeps_the_category(): void
+    {
+        $file = File::factory()->create();
+        $category = Category::factory()->create(['image_file_id' => $file->id]);
+
+        $file->delete();
+
+        $this->assertDatabaseHas('categories', [
+            'id' => $category->id,
+            'image_file_id' => null,
         ]);
     }
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Models\Category;
+use App\Models\File;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -60,6 +61,28 @@ class CategoryTest extends TestCase
             ->assertOk()
             ->assertJsonCount(2, 'data')
             ->assertJsonPath('data.1.type', 'designer');
+    }
+
+    public function test_exposes_the_category_image_url(): void
+    {
+        $file = File::factory()->create();
+        Category::factory()->create(['image_file_id' => $file->id, 'name_uz' => 'Bannerlar']);
+
+        $response = $this->getJson('/api/v1/categories?type=agent', [
+            'Authorization' => 'Bearer '.$this->userToken(),
+        ])->assertOk();
+
+        $withImage = collect($response->json('data'))
+            ->firstWhere('name_uz', 'Bannerlar');
+
+        $this->assertSame($file->id, $withImage['image_file_id']);
+        $this->assertSame($file->url(), $withImage['image']);
+
+        // A category without an image still renders — the mini app falls back to its icon.
+        $withoutImage = collect($response->json('data'))
+            ->first(fn (array $c) => $c['name_uz'] !== 'Bannerlar');
+
+        $this->assertNull($withoutImage['image']);
     }
 
     public function test_rejects_invalid_type(): void

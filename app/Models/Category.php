@@ -8,6 +8,7 @@ use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -23,10 +24,28 @@ class Category extends Model
         'name_uz',
         'name_ru',
         'type',
+        'image_file_id',
         'is_active',
         'is_other',
         'sort_order',
     ];
+
+    /**
+     * The illustration is part of how a category is rendered everywhere it is
+     * embedded (orders, agent profiles, marketplace), so eager-load it by
+     * default rather than N+1 through a dozen resources.
+     *
+     * @var list<string>
+     */
+    protected $with = ['imageFile'];
+
+    /**
+     * Optional illustration shown instead of the generated category icon.
+     */
+    public function imageFile(): BelongsTo
+    {
+        return $this->belongsTo(File::class, 'image_file_id');
+    }
 
     /**
      * Default MXIK (fiscal classifier) code for pricelist rows in this

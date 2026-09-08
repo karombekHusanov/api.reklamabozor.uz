@@ -22,6 +22,7 @@ class UpdateCategoryRequest extends FormRequest
             'name_uz' => ['sometimes', 'required', 'string', 'max:100'],
             'name_ru' => ['sometimes', 'required', 'string', 'max:100'],
             'type' => ['sometimes', Rule::enum(CategoryType::class)],
+            'image_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ];

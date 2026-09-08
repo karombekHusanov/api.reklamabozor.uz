@@ -22,6 +22,7 @@ class StoreCategoryRequest extends FormRequest
             'name_uz' => ['required', 'string', 'max:100'],
             'name_ru' => ['required', 'string', 'max:100'],
             'type' => ['required', Rule::enum(CategoryType::class)],
+            'image_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ];

@@ -66,6 +66,7 @@ class CategoryAdminService
             'name_uz' => $data['name_uz'],
             'name_ru' => $data['name_ru'],
             'type' => $data['type'],
+            'image_file_id' => $data['image_file_id'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,
             'is_active' => $data['is_active'] ?? true,
             'is_other' => false,
