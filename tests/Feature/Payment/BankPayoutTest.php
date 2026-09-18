@@ -186,6 +186,11 @@ class BankPayoutTest extends TestCase
         ]);
         Payout::factory()->create(['order_id' => $locked->id]);
 
+        // Cooling-off has closed, but the order has an open problem report.
+        $flaggedOrder = $this->unlockedOrder();
+        $flaggedOrder->update(['problem_state' => OrderProblemState::Flagged]);
+        Payout::factory()->create(['order_id' => $flaggedOrder->id]);
+
         $response = $this->getJson('/api/v1/admin/payouts?ready=1', [
             'Authorization' => 'Bearer '.$token,
         ])->assertOk();
@@ -207,6 +212,17 @@ class BankPayoutTest extends TestCase
         $this->artisan('payouts:notify-due')
             ->expectsOutputToContain('No payouts are waiting')
             ->assertExitCode(0);
+    }
+
+    public function test_a_flagged_order_payout_is_not_announced(): void
+    {
+        $order = $this->unlockedOrder();
+        $order->update(['problem_state' => OrderProblemState::Flagged]);
+        $payout = Payout::factory()->create(['order_id' => $order->id]);
+
+        $this->artisan('payouts:notify-due')->assertExitCode(0);
+
+        $this->assertNull($payout->fresh()->notified_at);
     }
 
     public function test_a_frozen_payout_is_not_announced(): void

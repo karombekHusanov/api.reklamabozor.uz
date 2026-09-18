@@ -294,6 +294,12 @@ class OrderService
             report($e);
         }
 
+        try {
+            $this->notifier->notifyReportedNoStart($order->fresh());
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return $this->withClientRelations($order->fresh());
     }
 

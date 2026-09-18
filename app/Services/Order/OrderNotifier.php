@@ -550,12 +550,29 @@ class OrderNotifier
     }
 
     /**
+     * The client reported "agent never started" — the agent should hear it
+     * directly (not just find out later from a refund), so they have a
+     * chance to respond before a manager reviews the report.
+     */
+    public function notifyReportedNoStart(Order $order): void
+    {
+        $order->loadMissing('acceptedOffer.agent');
+
+        $this->sendToUser($order->acceptedOffer?->agent, implode("\n", [
+            "🚩 Buyurtma <b>#{$order->id}</b> (".e($order->title).') bo\'yicha mijoz sizni ishni hali boshlamagansiz deb shikoyat qildi.',
+            "Agar ish boshlangan bo'lsa, darhol chatda mijozga yozing yoki topshiriqni yuklang — admin tez orada ko'rib chiqadi.",
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+    }
+
+    /**
      * A manager resolved a problem-order report (quality dispute past its
-     * correction window, or "agent never started") — tell the client.
+     * correction window, or "agent never started") — tell both the client
+     * and the agent (a refund affects the agent's earnings; a dismissal
+     * clears their name).
      */
     public function notifyOrderProblemResolved(Order $order, bool $refunded): void
     {
-        $order->loadMissing('client');
+        $order->loadMissing('client', 'acceptedOffer.agent');
 
         $this->sendToUser($order->client, implode("\n", [
             $refunded
@@ -565,6 +582,17 @@ class OrderNotifier
                 ? "Operator siz bilan bog'lanadi."
                 : 'Buyurtma odatdagidek davom etadi.',
         ]), '📂 Buyurtmani ko\'rish', "/orders/{$order->id}");
+
+        // The agent's earnings are affected by a refund (and they should know
+        // a dismissed report cleared their name either way).
+        $this->sendToUser($order->acceptedOffer?->agent, implode("\n", [
+            $refunded
+                ? "↩️ <b>Buyurtma #{$order->id}</b> bo'yicha shikoyat bo'yicha mijozga qaytarish rasmiylashtirildi."
+                : "✅ <b>Buyurtma #{$order->id}</b> bo'yicha sizga qarshi shikoyat asossiz deb topildi.",
+            $refunded
+                ? "Bu chiqimingizga (payout) ta'sir qilishi mumkin — tafsilot uchun operatorga murojaat qiling."
+                : 'Buyurtma odatdagidek davom etadi, qo\'shimcha choralar ko\'rish shart emas.',
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderProblemState;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use Database\Factories\PayoutFactory;
@@ -42,8 +43,12 @@ class Payout extends Model
     ];
 
     /**
-     * Payouts a manager may transfer right now: still pending, and the client's
-     * cooling-off window on the order has closed ({@see Order::payoutsLocked()}).
+     * Payouts a manager may transfer right now: still pending, the client's
+     * cooling-off window on the order has closed ({@see Order::payoutsLocked()}),
+     * and the order has no open problem report ({@see PayoutService::assertReleasable()}
+     * enforces the same rule at release time — kept in sync here so the
+     * "ready to pay" queue and its ops notification never mention a payout
+     * that release would actually reject).
      *
      * @param  Builder<Payout>  $query
      * @return Builder<Payout>
@@ -54,12 +59,14 @@ class Payout extends Model
 
         return $query
             ->where('status', PayoutStatus::Pending->value)
-            ->whereHas('order', fn (Builder $order): Builder => $order->where(
-                fn (Builder $q): Builder => $q
-                    ->where('payment_state', '!=', OrderPaymentState::Paid->value)
-                    ->orWhereNull('paid_at')
-                    ->orWhere('paid_at', '<=', now()->subMinutes($minutes)),
-            ));
+            ->whereHas('order', fn (Builder $order): Builder => $order
+                ->where(
+                    fn (Builder $q): Builder => $q
+                        ->where('payment_state', '!=', OrderPaymentState::Paid->value)
+                        ->orWhereNull('paid_at')
+                        ->orWhere('paid_at', '<=', now()->subMinutes($minutes)),
+                )
+                ->where('problem_state', '!=', OrderProblemState::Flagged->value));
     }
 
     public function order(): BelongsTo

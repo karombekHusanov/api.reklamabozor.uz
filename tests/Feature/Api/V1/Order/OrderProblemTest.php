@@ -233,7 +233,53 @@ class OrderProblemTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_reporting_no_start_notifies_the_agent(): void
+    {
+        Http::fake();
+        config(['orders.no_start_report_min_days' => 3]);
+        [$client, $agent, $order] = $this->paidActiveDeal(activatedDaysAgo: 4);
+        $token = $client->createToken('test')->plainTextToken;
+
+        $this->postJson("/api/v1/orders/{$order->id}/report-no-start", [], $this->auth($token))->assertOk();
+
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $agent->telegram_id
+            && str_contains($request['text'] ?? '', 'shikoyat qildi'));
+    }
+
     // --- Admin resolution ------------------------------------------------------
+
+    public function test_refund_notifies_both_the_client_and_the_agent(): void
+    {
+        Http::fake();
+        [$client, $agent, $order] = $this->activeDeal();
+        $order->update(['problem_state' => OrderProblemState::Flagged, 'problem_flagged_at' => now()]);
+        [, $token] = $this->admin();
+
+        $this->postJson("/api/v1/admin/order-problems/{$order->id}/refund", [
+            'amount' => 500_000_00,
+            'method' => 'bank_transfer',
+        ], $this->auth($token))->assertOk();
+
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $client->telegram_id
+            && str_contains($request['text'] ?? '', 'qaytarish rasmiylashtirildi'));
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $agent->telegram_id
+            && str_contains($request['text'] ?? '', 'qaytarish rasmiylashtirildi'));
+    }
+
+    public function test_dismissal_notifies_both_the_client_and_the_agent(): void
+    {
+        Http::fake();
+        [$client, $agent, $order] = $this->activeDeal();
+        $order->update(['problem_state' => OrderProblemState::Flagged, 'problem_flagged_at' => now()]);
+        [, $token] = $this->admin();
+
+        $this->postJson("/api/v1/admin/order-problems/{$order->id}/dismiss", [], $this->auth($token))
+            ->assertOk();
+
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $client->telegram_id);
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $agent->telegram_id
+            && str_contains($request['text'] ?? '', 'asossiz'));
+    }
 
     public function test_admin_can_record_a_refund_for_a_flagged_order(): void
     {
@@ -362,8 +408,8 @@ class OrderProblemTest extends TestCase
         $this->artisan('orders:sweep-quality-disputes')->assertSuccessful();
 
         $this->assertNotNull($order->fresh()->correction_reminder_sent_at);
-        Http::assertSent(fn ($request) => str_contains($request->url(), (string) $agent->telegram_id)
-            || str_contains($request['text'] ?? '', 'tugamoqda'));
+        Http::assertSent(fn ($request) => (int) ($request['chat_id'] ?? 0) === (int) $agent->telegram_id
+            && str_contains($request['text'] ?? '', 'tugamoqda'));
     }
 
     public function test_sweep_does_not_remind_outside_the_24_hour_window(): void
