@@ -32,4 +32,32 @@ return [
     'amendment_client_window_fallback_days' => (int) env('AMENDMENT_CLIENT_WINDOW_FALLBACK_DAYS', 3),
     // How long the other party has to answer a proposal before it expires.
     'amendment_response_hours' => (int) env('AMENDMENT_RESPONSE_HOURS', 72),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Problem orders
+    |--------------------------------------------------------------------------
+    |
+    | Two risk scenarios feed the "problem orders" admin queue:
+    |  - a quality dispute (client rejected the delivered work) has this many
+    |    days to reach `completed` before the daily sweep flags it;
+    |  - a paid, active order whose agent never reported starting work lets the
+    |    client report it once this many days have passed since activation.
+    |
+    */
+    'quality_correction_window_days' => (int) env('ORDER_QUALITY_CORRECTION_DAYS', 3),
+    'no_start_report_min_days' => (int) env('ORDER_NO_START_REPORT_MIN_DAYS', 3),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stale (unanswered) orders
+    |--------------------------------------------------------------------------
+    |
+    | An order still open for offers (new / offers_sent) that has received
+    | zero offers after this many days gets a single one-time reminder to the
+    | client (and a heads-up to ops) — no automatic re-broadcast or
+    | cancellation, that stays a manual/product decision.
+    |
+    */
+    'stale_order_reminder_days' => (int) env('ORDER_STALE_REMINDER_DAYS', 3),
 ];

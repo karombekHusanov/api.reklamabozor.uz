@@ -27,3 +27,22 @@ Schedule::command('orders:cancel-expired-awaiting-payments')->hourly()->withoutO
 // Cooling-off window closed → tell ops which agent payouts are ready for their
 // bank transfer (the gateway cannot send money to a settlement account).
 Schedule::command('payouts:notify-due')->hourly()->withoutOverlapping();
+
+// Poll Kapitalbank's statement and auto-confirm bank-transfer payments whose
+// contract number + exact amount match an incoming transfer. No-op until
+// KAPITALBANK_ENABLED=true, so this is safe to schedule unconditionally.
+Schedule::command('orders:reconcile-bank-payments')->everyFiveMinutes()->withoutOverlapping();
+
+// Queue releasable agent payouts as unsigned orders at Kapitalbank (a manager
+// still signs/sends them from the bank's website). No-op until
+// PAYOUT_BANK_QUEUE_ENABLED=true.
+Schedule::command('payouts:queue-bank-transfers')->hourly()->withoutOverlapping();
+
+// Quality dispute: nudge the agent a day before the correction window closes,
+// then flag into the problem-orders admin queue if it still elapsed without
+// the order reaching completed.
+Schedule::command('orders:sweep-quality-disputes')->dailyAt('09:00')->withoutOverlapping();
+
+// Order sat open-for-offers with zero offers too long → one-time reminder to
+// the client (and ops) — no automatic re-broadcast or cancellation.
+Schedule::command('orders:remind-stale')->dailyAt('10:30')->withoutOverlapping();

@@ -2,6 +2,7 @@
 
 namespace App\Services\Telegram;
 
+use App\Enums\OrderProblemReason;
 use App\Enums\PaymentMethod;
 use App\Models\Offer;
 use App\Models\Order;
@@ -221,6 +222,64 @@ class AdminNotifier
             "↩️ <b>Qaytarish kerak — {$amendment->number}</b>",
             "Buyurtma #{$amendment->order_id} · {$som} so'm",
             'Qo\'shimcha kelishuv summani kamaytirdi. Admin panelda qaytarishni qayd eting.',
+        ]));
+    }
+
+    /**
+     * An order landed in the problem-orders queue — either the scheduled sweep
+     * (unresolved quality dispute) or the client's own "agent never started"
+     * report.
+     */
+    public function orderProblemFlagged(Order $order, OrderProblemReason $reason): void
+    {
+        $order->loadMissing('client');
+
+        $reasonLabel = match ($reason) {
+            OrderProblemReason::QualityUnresolved => "Sifat bo'yicha e'tiroz hal qilinmadi",
+            OrderProblemReason::AgentNoStart => 'Agent avans oldi, ishni boshlamadi',
+        };
+
+        $this->send('order_problem_flagged', implode("\n", [
+            "🚩 <b>Muammoli buyurtma — #{$order->id}</b>",
+            '👤 Klient: '.$this->userLabel($order->client),
+            "Sabab: {$reasonLabel}",
+            'Admin panel → Muammoli buyurtmalar.',
+        ]));
+    }
+
+    /**
+     * An order with an open (unresolved) problem report reached `completed`
+     * through the normal flow anyway — the payout gate still holds the money,
+     * but a human should look at this one first.
+     */
+    public function orderCompletedWhileFlagged(Order $order): void
+    {
+        $order->loadMissing('client');
+
+        $this->send('order_completed_while_flagged', implode("\n", [
+            "⚠️ <b>Muammoli buyurtma yakunlandi — #{$order->id}</b>",
+            '👤 Klient: '.$this->userLabel($order->client),
+            "Buyurtma hali ochiq muammo hisoboti bilan turib 'completed' bo'ldi — chiqim hamon bloklangan, lekin ustuvor ko'rib chiqing.",
+            'Admin panel → Muammoli buyurtmalar.',
+        ]));
+    }
+
+    /**
+     * An order sat open-for-offers with zero offers for longer than the
+     * configured grace period — a one-time nudge to ops, mirroring the
+     * client-facing reminder ({@see OrderNotifier::notifyOrderStale()}).
+     */
+    public function orderStale(Order $order): void
+    {
+        $order->loadMissing('client');
+
+        $this->send('order_stale', implode("\n", [
+            "\u{1F634} <b>Javobsiz buyurtma — #{$order->id}</b>",
+            '👤 Klient: '.$this->userLabel($order->client),
+            $order->target_agent_id !== null
+                ? 'Yo\'naltirilgan agentlik hali javob bermadi.'
+                : 'Hali birorta otklik kelmadi.',
+            'Kerak bo\'lsa qo\'lda yordam bering.',
         ]));
     }
 

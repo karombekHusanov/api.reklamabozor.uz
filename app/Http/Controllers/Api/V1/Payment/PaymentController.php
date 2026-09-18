@@ -70,6 +70,7 @@ class PaymentController extends ApiController
         $payment = $this->payments->startOfflineOrderPayment(
             $order,
             PaymentMethod::from((string) $request->validated('method')),
+            (int) ($request->validated('percent') ?? 100),
         );
 
         return $this->success(new PaymentResource($payment), 'Invoice ready');

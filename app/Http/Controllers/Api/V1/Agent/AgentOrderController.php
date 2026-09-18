@@ -89,6 +89,16 @@ class AgentOrderController extends ApiController
     }
 
     /**
+     * Agent pulls back their own pending offer/interest.
+     */
+    public function withdrawOffer(Request $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->offers->withdraw($request->user(), $offer);
+
+        return $this->success(new AgentOfferResource($offer), 'Offer withdrawn');
+    }
+
+    /**
      * Adjust a pending offer's price (hard cap: Offer::MAX_PRICE_EDITS).
      */
     public function updateOffer(UpdateOfferPriceRequest $request, Offer $offer): JsonResponse

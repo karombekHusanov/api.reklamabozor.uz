@@ -7,6 +7,8 @@ use App\Enums\CategoryType;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderProblemReason;
+use App\Enums\OrderProblemState;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
@@ -62,6 +64,13 @@ class Order extends Model
         'completed_at',
         'auto_completed',
         'disputed_at',
+        'problem_state',
+        'problem_reason',
+        'problem_flagged_at',
+        'correction_deadline_at',
+        'correction_reminder_sent_at',
+        'problem_resolved_at',
+        'stale_reminder_sent_at',
     ];
 
     /**
@@ -234,6 +243,23 @@ class Order extends Model
     public function contract(): HasOne
     {
         return $this->hasOne(Contract::class);
+    }
+
+    /**
+     * Audit trail for this order's problem-queue history (flagged / refunded /
+     * dismissed).
+     */
+    public function problemEvents(): HasMany
+    {
+        return $this->hasMany(OrderProblemEvent::class);
+    }
+
+    /**
+     * How each problem-queue episode on this order was closed.
+     */
+    public function problemResolutions(): HasMany
+    {
+        return $this->hasMany(OrderProblemResolution::class);
     }
 
     /**
@@ -566,6 +592,51 @@ class Order extends Model
         return $deadline === null || $deadline->isFuture();
     }
 
+    // --- Problem orders ----------------------------------------------------
+    //
+    // Second risk scenario (the first, a stalled quality dispute, is flagged
+    // by the scheduled sweep — see OrderProblemService::flagFromDispute()):
+    // the client reports an agent who took the advance and never started.
+
+    /**
+     * When the client may report "agent took the advance, never started" —
+     * not before the platform gives the agent a fair grace period.
+     */
+    public function noStartReportEligibleAt(): ?Carbon
+    {
+        if ($this->activated_at === null) {
+            return null;
+        }
+
+        $days = max(0, (int) config('orders.no_start_report_min_days', 3));
+
+        return $this->activated_at->copy()->addDays($days);
+    }
+
+    /**
+     * True only when every condition holds: the deal is active and paid, the
+     * agent has not submitted anything yet, no problem report is already open
+     * or resolved on this order, and the grace period has passed.
+     */
+    public function canReportNoStart(): bool
+    {
+        if ($this->status !== OrderStatus::InProgress || $this->payment_state !== OrderPaymentState::Paid) {
+            return false;
+        }
+
+        if ($this->work_submitted_at !== null) {
+            return false;
+        }
+
+        if ($this->problem_state !== OrderProblemState::None) {
+            return false;
+        }
+
+        $eligibleAt = $this->noStartReportEligibleAt();
+
+        return $eligibleAt !== null && now()->greaterThanOrEqualTo($eligibleAt);
+    }
+
     /**
      * @return array<string, string>
      */
@@ -592,6 +663,13 @@ class Order extends Model
             'completed_at' => 'datetime',
             'auto_completed' => 'boolean',
             'disputed_at' => 'datetime',
+            'problem_state' => OrderProblemState::class,
+            'problem_reason' => OrderProblemReason::class,
+            'problem_flagged_at' => 'datetime',
+            'correction_deadline_at' => 'datetime',
+            'correction_reminder_sent_at' => 'datetime',
+            'problem_resolved_at' => 'datetime',
+            'stale_reminder_sent_at' => 'datetime',
         ];
     }
 }

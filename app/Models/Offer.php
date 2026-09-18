@@ -161,6 +161,16 @@ class Offer extends Model
     }
 
     /**
+     * The agent may pull back their own offer while it is still pending — once
+     * the client accepts a different one, this offer is auto-rejected and can
+     * no longer be withdrawn (nothing left to pull back).
+     */
+    public function canWithdraw(): bool
+    {
+        return $this->status === OfferStatus::Pending;
+    }
+
+    /**
      * @param  Builder<self>  $query
      * @return Builder<self>
      */

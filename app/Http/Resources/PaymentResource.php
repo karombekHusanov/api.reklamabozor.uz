@@ -29,6 +29,8 @@ class PaymentResource extends JsonResource
             'share_url' => $this->short_link ?: $this->checkout_url,
             'invoice_url' => $this->invoiceFile?->url(),
             'reference' => $this->reference,
+            'percent' => $this->percent,
+            'matched_via' => $this->matched_via,
             'confirmed_at' => $this->confirmed_at,
             'card_pan' => $this->card_pan,
             'ps' => $this->ps,

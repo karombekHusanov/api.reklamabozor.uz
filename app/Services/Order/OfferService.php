@@ -268,6 +268,29 @@ class OfferService
     }
 
     /**
+     * Agent pulls back their own pending offer/interest. A distinct status
+     * from Rejected (the client picking someone else) so stats and the
+     * "you lost this deal" notification don't misattribute an agent's own
+     * change of mind. The same (order_id, agent_id) row stays unique — an
+     * agent who withdraws cannot re-offer on this order (same rule that
+     * already applies to a rejected offer).
+     */
+    public function withdraw(User $agent, Offer $offer): Offer
+    {
+        abort_unless($offer->agent_id === $agent->id, 404);
+
+        if (! $offer->canWithdraw()) {
+            throw ValidationException::withMessages([
+                'offer' => ['This offer can no longer be withdrawn.'],
+            ]);
+        }
+
+        $offer->update(['status' => OfferStatus::Withdrawn]);
+
+        return $offer;
+    }
+
+    /**
      * Agent adjusts the bid while it is still pending (max {@see Offer::MAX_PRICE_EDITS}).
      *
      * @param  array{price: float|int|string, comment?: string|null}  $data

@@ -29,4 +29,21 @@ return [
 
     'card_withdrawal_enabled' => env('PAYOUT_CARD_WITHDRAWAL_ENABLED', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Kapitalbank SendPaymentIBK queueing
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, releasable payouts are pushed to Kapitalbank's
+    | internet-bank system as unsigned payment orders (input only — the bank
+    | requires signing/sending to happen on their website, see
+    | config/kapitalbank.php). Off by default: this creates real pending
+    | payment orders at the bank, so it should only be switched on once the
+    | Kapitalbank payout fields (client_id, sender identity, purpose code)
+    | are confirmed and tested with a real small transfer.
+    |
+    */
+
+    'bank_queue_enabled' => env('PAYOUT_BANK_QUEUE_ENABLED', false),
+
 ];

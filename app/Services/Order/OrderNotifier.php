@@ -402,6 +402,26 @@ class OrderNotifier
     }
 
     /**
+     * The order sat open-for-offers with zero offers for too long — a single
+     * one-time nudge to the client. No automatic re-broadcast or cancellation.
+     */
+    public function notifyOrderStale(Order $order): void
+    {
+        $order->loadMissing('client');
+
+        $body = $order->target_agent_id !== null
+            ? "Siz tanlagan agentlik hali javob bermadi. Kuting, chatda so'rang, yoki qo'llab-quvvatlashga murojaat qiling."
+            : "Hali birorta agentlik/dizayner otklik bildirmadi. TZ'ni aniqlashtirib ko'ring yoki qo'llab-quvvatlashga murojaat qiling.";
+
+        $this->sendToUser($order->client, implode("\n", [
+            "\u{1F634} <b>Buyurtma #{$order->id}</b> (".e((string) $order->title).') hali javob olmadi.',
+            $body,
+        ]), "📂 Buyurtmani ko'rish", "/orders/{$order->id}");
+
+        $this->admin->orderStale($order);
+    }
+
+    /**
      * The manager transferred an agent's tranche to their bank account. The
      * transfer happens outside the platform, so this is the only moment the
      * agent hears about it.
@@ -497,12 +517,54 @@ class OrderNotifier
     {
         $order->loadMissing('client', 'acceptedOffer.agent');
 
-        $this->sendToUser($order->acceptedOffer?->agent, implode("\n", [
+        $deadlineLine = $order->correction_deadline_at
+            ? "Tuzatish uchun muddat: <b>{$order->correction_deadline_at->format('d.m.Y H:i')}</b>gacha."
+            : null;
+
+        $this->sendToUser($order->acceptedOffer?->agent, implode("\n", array_filter([
             "⚠️ Buyurtma <b>#{$order->id}</b> (".e($order->title).') bo\'yicha klient ishni qabul qilmadi.',
-            'Buyurtma yana "jarayonda" holatiga qaytdi. Administratsiya tez orada bog\'lanadi.',
-        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+            'Buyurtma yana "jarayonda" holatiga qaytdi.',
+            $deadlineLine,
+            'Shu muddatgacha tuzatib, qayta topshiring — aks holda buyurtma ko\'rib chiqish uchun administratsiyaga yuboriladi.',
+        ])), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
 
         $this->admin->disputeOpened($order);
+    }
+
+    /**
+     * The correction window on a quality dispute is about to run out — nudge
+     * the agent once, a day before the sweep would flag the order as a
+     * problem report.
+     */
+    public function notifyCorrectionDeadlineApproaching(Order $order): void
+    {
+        $order->loadMissing('acceptedOffer.agent');
+
+        $deadline = $order->correction_deadline_at?->format('d.m.Y H:i') ?? '—';
+
+        $this->sendToUser($order->acceptedOffer?->agent, implode("\n", [
+            "⏳ Buyurtma <b>#{$order->id}</b> (".e($order->title).') bo\'yicha tuzatish muddati tugamoqda.',
+            "Muddat: <b>{$deadline}</b>gacha.",
+            'Shu vaqtgacha ishni tuzatib topshirmasangiz, buyurtma admin ko\'rib chiqishiga yuboriladi.',
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+    }
+
+    /**
+     * A manager resolved a problem-order report (quality dispute past its
+     * correction window, or "agent never started") — tell the client.
+     */
+    public function notifyOrderProblemResolved(Order $order, bool $refunded): void
+    {
+        $order->loadMissing('client');
+
+        $this->sendToUser($order->client, implode("\n", [
+            $refunded
+                ? "↩️ <b>Buyurtma #{$order->id}</b> bo'yicha qaytarish rasmiylashtirildi."
+                : "✅ <b>Buyurtma #{$order->id}</b> bo'yicha shikoyat ko'rib chiqildi — muammo topilmadi.",
+            $refunded
+                ? "Operator siz bilan bog'lanadi."
+                : 'Buyurtma odatdagidek davom etadi.',
+        ]), '📂 Buyurtmani ko\'rish', "/orders/{$order->id}");
     }
 
     /**

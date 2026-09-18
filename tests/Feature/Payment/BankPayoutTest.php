@@ -3,6 +3,7 @@
 namespace Tests\Feature\Payment;
 
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderProblemState;
 use App\Enums\OrderStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\Role;
@@ -10,6 +11,7 @@ use App\Models\AgentProfile;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\User;
+use App\Services\Order\OrderProblemService;
 use App\Services\Payout\PayoutService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -71,6 +73,40 @@ class BankPayoutTest extends TestCase
         $this->expectException(ValidationException::class);
 
         app(PayoutService::class)->release($payout, User::factory()->create());
+    }
+
+    public function test_release_is_refused_while_the_order_has_an_open_problem_report(): void
+    {
+        $profile = AgentProfile::factory()->create();
+        $order = $this->unlockedOrder();
+        $order->update(['problem_state' => OrderProblemState::Flagged]);
+        $payout = Payout::factory()->create([
+            'order_id' => $order->id,
+            'agent_profile_id' => $profile->id,
+            'agent_id' => $profile->user_id,
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(PayoutService::class)->release($payout, User::factory()->create(), ['reference' => 'PO-1']);
+    }
+
+    public function test_release_works_again_once_the_problem_report_is_dismissed(): void
+    {
+        $profile = AgentProfile::factory()->create();
+        $order = $this->unlockedOrder();
+        $order->update(['problem_state' => OrderProblemState::Flagged]);
+        $payout = Payout::factory()->create([
+            'order_id' => $order->id,
+            'agent_profile_id' => $profile->id,
+            'agent_id' => $profile->user_id,
+        ]);
+
+        app(OrderProblemService::class)->dismiss($order, User::factory()->create(['role' => Role::Admin]));
+
+        $released = app(PayoutService::class)->release($payout, User::factory()->create(), ['reference' => 'PO-2']);
+
+        $this->assertSame(PayoutStatus::Paid, $released->status);
     }
 
     public function test_released_payout_records_the_bank_transfer(): void

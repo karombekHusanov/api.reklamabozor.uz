@@ -4,6 +4,7 @@ namespace App\Services\Payout;
 
 use App\Enums\OfferStatus;
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderProblemState;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use App\Models\Offer;
@@ -184,13 +185,27 @@ class PayoutService
     /**
      * Money may only leave the platform once the client's cooling-off window has
      * closed — until then they can still cancel the deal and get the payment
-     * back, and a released payout would have nothing to reverse.
+     * back, and a released payout would have nothing to reverse. It is also
+     * held while the order has an open problem report (a quality dispute past
+     * its correction window, or an agent who never started) — a manager must
+     * resolve that report first, so money never leaves while a complaint is
+     * still under review.
      */
     private function assertReleasable(Payout $payout): void
     {
         $order = $payout->order()->first();
 
-        if ($order === null || ! $order->payoutsLocked()) {
+        if ($order === null) {
+            return;
+        }
+
+        if ($order->problem_state === OrderProblemState::Flagged) {
+            throw ValidationException::withMessages([
+                'payout' => ['This order has an open problem report — resolve it in Problem Orders first.'],
+            ]);
+        }
+
+        if (! $order->payoutsLocked()) {
             return;
         }
 

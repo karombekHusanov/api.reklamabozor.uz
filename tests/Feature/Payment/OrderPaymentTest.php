@@ -177,6 +177,141 @@ class OrderPaymentTest extends TestCase
         $this->assertNull($fresh->payment_due_at);
         // Money is in — the agent's advance payout is planned.
         $this->assertSame(1, $fresh->payouts()->count());
+        // Manual admin confirmation is tagged, distinct from a future
+        // Kapitalbank auto-reconciliation match.
+        $this->assertSame('admin', $payment->fresh()->matched_via);
+    }
+
+    public function test_offline_invoice_defaults_to_100_percent_of_outstanding(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.percent', 100)
+            ->assertJsonPath('data.matched_via', null);
+
+        $payment = Payment::firstOrFail();
+        $this->assertSame(2_000_000 * 100, $payment->amount);
+        $this->assertSame(100, $payment->percent);
+    }
+
+    public function test_client_can_request_half_of_the_outstanding_amount(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 50,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.percent', 50);
+
+        $payment = Payment::firstOrFail();
+        $this->assertSame(1_000_000 * 100, $payment->amount); // half of 2,000,000 som
+        $this->assertSame(50, $payment->percent);
+    }
+
+    public function test_second_offline_invoice_after_a_half_payment_bills_only_the_remainder(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 50,
+        ], ['Authorization' => 'Bearer '.$token])->assertOk();
+
+        $first = Payment::firstOrFail();
+        $admin = User::factory()->admin()->create();
+        $adminToken = $admin->createToken('a')->plainTextToken;
+
+        // The sanctum guard caches the resolved user for the request it was
+        // first built against; switching actor (client → admin → client) in
+        // one test needs a forgetGuards() between calls or the later request
+        // keeps authenticating as whoever resolved first.
+        $this->app['auth']->forgetGuards();
+
+        $this->postJson("/api/v1/admin/payments/{$first->id}/confirm", [
+            'reference' => 'BT-1',
+        ], ['Authorization' => 'Bearer '.$adminToken])->assertOk();
+
+        $this->assertSame(1_000_000 * 100, $order->fresh()->outstandingTiyin());
+
+        $this->app['auth']->forgetGuards();
+
+        // Client now asks to pay "the rest" — no tranche bookkeeping needed,
+        // outstandingTiyin() has already shrunk.
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 100,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.percent', 100);
+
+        $second = Payment::where('id', '!=', $first->id)->firstOrFail();
+        $this->assertSame(1_000_000 * 100, $second->amount); // remaining half only
+
+        // The stale 50%-flavoured intent from before was superseded, not reused.
+        $this->assertSame(PaymentStatus::Success, $first->fresh()->status);
+    }
+
+    public function test_changing_percent_voids_the_stale_pending_offline_intent(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 100,
+        ], ['Authorization' => 'Bearer '.$token])->assertOk();
+
+        $first = Payment::firstOrFail();
+
+        // Client changes their mind before anyone confirms the first invoice.
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 50,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.percent', 50);
+
+        $this->assertSame(PaymentStatus::Error, $first->fresh()->status);
+        $this->assertSame(2, Payment::count());
+    }
+
+    public function test_offline_invoice_rejects_an_unsupported_percent(): void
+    {
+        $this->enableGateway();
+        Http::fake();
+        Storage::fake((string) config('files.disk'));
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", [
+            'method' => 'bank_transfer',
+            'percent' => 30,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('percent');
+
+        $this->assertSame(0, Payment::count());
     }
 
     public function test_offline_payment_can_be_rejected_by_admin(): void

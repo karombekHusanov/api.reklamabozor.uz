@@ -34,6 +34,8 @@ class Payment extends Model
         'invoice_file_id',
         'reference',
         'note',
+        'percent',
+        'matched_via',
         'confirmed_by',
         'confirmed_at',
         'card_pan',
@@ -92,6 +94,7 @@ class Payment extends Model
     {
         return [
             'amount' => 'integer',
+            'percent' => 'integer',
             'status' => PaymentStatus::class,
             'purpose' => PaymentPurpose::class,
             'method' => PaymentMethod::class,

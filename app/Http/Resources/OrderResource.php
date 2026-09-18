@@ -69,6 +69,14 @@ class OrderResource extends JsonResource
             'work_submitted_at' => $this->work_submitted_at,
             'completed_at' => $this->completed_at,
             'auto_completed' => $this->auto_completed,
+            // "Problem orders" track (quality dispute past its correction
+            // window, or agent-never-started) — orthogonal to `status`.
+            'problem_state' => $this->problem_state?->value,
+            'problem_reason' => $this->problem_reason?->value,
+            'problem_flagged_at' => $this->problem_flagged_at,
+            'correction_deadline_at' => $this->correction_deadline_at,
+            'can_report_no_start' => $this->canReportNoStart(),
+            'no_start_report_eligible_at' => $this->noStartReportEligibleAt(),
             // Latest payment attempt (checkout / invoice / offline) so the
             // client can settle or retry. Null when the gateway is off.
             'payment' => $this->whenLoaded(

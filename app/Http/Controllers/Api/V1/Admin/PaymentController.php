@@ -50,7 +50,8 @@ class PaymentController extends ApiController
             $query->where(function ($q) use ($search): void {
                 $q->where('payment_uuid', 'like', "%{$search}%")
                     ->orWhere('gateway_uuid', 'like', "%{$search}%")
-                    ->orWhere('billing_id', 'like', "%{$search}%");
+                    ->orWhere('billing_id', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%");
             });
         }
 

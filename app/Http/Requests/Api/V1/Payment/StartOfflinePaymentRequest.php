@@ -27,6 +27,9 @@ class StartOfflinePaymentRequest extends FormRequest
                 'required',
                 Rule::in(array_map(fn (PaymentMethod $m) => $m->value, PaymentMethod::offline())),
             ],
+            // Fraction of the outstanding amount this invoice covers. Defaults
+            // to 100% when omitted.
+            'percent' => ['sometimes', 'integer', 'in:50,100'],
         ];
     }
 }

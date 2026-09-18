@@ -5,11 +5,14 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderProblemReason;
+use App\Enums\OrderProblemState;
 use App\Enums\OrderStatus;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\Order;
+use App\Models\OrderProblemEvent;
 use App\Models\Region;
 use App\Models\User;
 use App\Services\Hashtag\HashtagService;
@@ -29,6 +32,7 @@ class OrderService
         private readonly HashtagService $hashtags,
         private readonly AdminNotifier $admin,
         private readonly OrderActService $acts,
+        private readonly OrderProblemService $problems,
     ) {}
 
     /**
@@ -204,7 +208,10 @@ class OrderService
 
     /**
      * The client rejects the delivered work — back to in_progress, and the
-     * ops team is signalled to step in.
+     * ops team is signalled to step in. A correction deadline starts (or
+     * restarts, on a repeat dispute): if the order has not reached
+     * `completed` by then, the daily sweep flags it as a problem order
+     * ({@see OrderProblemService::flagFromDispute()}).
      */
     public function disputeCompletion(User $client, Order $order): Order
     {
@@ -217,6 +224,11 @@ class OrderService
             'work_submitted_at' => null,
             'completion_reminder_sent_at' => null,
             'disputed_at' => now(),
+            'correction_deadline_at' => now()->addDays(
+                (int) config('orders.quality_correction_window_days', 3),
+            ),
+            // A fresh dispute cycle gets its own approaching-deadline nudge.
+            'correction_reminder_sent_at' => null,
         ]);
 
         $this->dispatchRatingRecompute($order);
@@ -228,6 +240,61 @@ class OrderService
         }
 
         return $this->withClientRelations($order);
+    }
+
+    /**
+     * The client reports that the winning agent took the advance but never
+     * reported starting the work — flags the order into the problem-orders
+     * admin queue immediately (no waiting for a sweep, unlike a quality
+     * dispute: there is nothing to auto-resolve here).
+     */
+    public function reportNoStart(User $client, Order $order): Order
+    {
+        abort_unless($order->client_id === $client->id, 404);
+
+        if ($order->problem_state !== OrderProblemState::None) {
+            throw ValidationException::withMessages([
+                'order' => ['This order already has an open or resolved problem report.'],
+            ]);
+        }
+
+        if ($order->status !== OrderStatus::InProgress || $order->payment_state !== OrderPaymentState::Paid) {
+            throw ValidationException::withMessages([
+                'order' => ['This report is only available for an active, paid deal.'],
+            ]);
+        }
+
+        if ($order->work_submitted_at !== null) {
+            throw ValidationException::withMessages([
+                'order' => ['The agent has already submitted the work for this order.'],
+            ]);
+        }
+
+        if (! $order->canReportNoStart()) {
+            throw ValidationException::withMessages([
+                'order' => ['The minimum waiting period has not passed yet.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($client, $order): void {
+            $order->update([
+                'problem_state' => OrderProblemState::Flagged,
+                'problem_reason' => OrderProblemReason::AgentNoStart,
+                'problem_flagged_at' => now(),
+            ]);
+
+            $this->problems->logEvent($order, $client, 'client', OrderProblemEvent::FLAGGED, [
+                'reason' => OrderProblemReason::AgentNoStart->value,
+            ]);
+        });
+
+        try {
+            $this->admin->orderProblemFlagged($order->fresh(), OrderProblemReason::AgentNoStart);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->withClientRelations($order->fresh());
     }
 
     /**
@@ -367,6 +434,19 @@ class OrderService
         if ($final === null && $outstanding > 0) {
             try {
                 $this->admin->finalPayoutHeld($order, $outstanding);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        // The order still has an open problem report — the payout gate keeps
+        // the money in, but flag this for ops so it isn't lost in the normal
+        // completion flow.
+        if ($order->problem_state === OrderProblemState::Flagged) {
+            $this->problems->logEvent($order, null, 'system', OrderProblemEvent::COMPLETED_WHILE_FLAGGED);
+
+            try {
+                $this->admin->orderCompletedWhileFlagged($order);
             } catch (\Throwable $e) {
                 report($e);
             }

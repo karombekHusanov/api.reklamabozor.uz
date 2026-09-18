@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\OrderProblemState;
 use App\Models\Payout;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -41,8 +42,21 @@ class AdminPayoutResource extends JsonResource
             'releasable_at' => $this->relationLoaded('order') && $this->order
                 ? $this->order->payoutsUnlockAt()
                 : null,
+            // Payouts are also frozen while the order has an open problem
+            // report (quality dispute past its window, or agent never started)
+            // — a manager must resolve it in Problem Orders before this can
+            // release.
+            'problem_flagged' => $this->relationLoaded('order') && $this->order
+                ? $this->order->problem_state === OrderProblemState::Flagged
+                : false,
             'paid_at' => $this->paid_at,
             'created_at' => $this->created_at,
+            // Kapitalbank SendPaymentIBK queue state — "queued" means the order
+            // is waiting on the bank's website for a manager's ECP+OTP sign-off,
+            // not that the money has moved yet.
+            'bank_queue_status' => $this->bank_queue_status,
+            'bank_queued_at' => $this->bank_queued_at,
+            'bank_queue_error' => $this->bank_queue_error,
             'agent' => $this->when($profile !== null || $agent !== null, fn (): array => [
                 'id' => $this->agent_id,
                 'name' => $agent

@@ -125,11 +125,17 @@ class PaymentService
      * or by bank transfer, and a manager confirms it in the admin panel. The
      * generated invoice (hisob-faktura) carries the platform's requisites.
      */
-    public function startOfflineOrderPayment(Order $order, PaymentMethod $method): Payment
+    public function startOfflineOrderPayment(Order $order, PaymentMethod $method, int $percent = 100): Payment
     {
         if (! $method->isOffline()) {
             throw ValidationException::withMessages([
                 'method' => ['This method is not an offline payment.'],
+            ]);
+        }
+
+        if (! in_array($percent, [50, 100], true)) {
+            throw ValidationException::withMessages([
+                'percent' => ['Only 50% or 100% of the outstanding amount can be paid at a time.'],
             ]);
         }
 
@@ -150,10 +156,19 @@ class PaymentService
             ->first();
 
         if ($existing !== null) {
-            return $this->attachInvoice($existing, $order);
+            if ((int) $existing->percent === $percent) {
+                return $this->attachInvoice($existing, $order);
+            }
+
+            // The client changed their mind about how much to pay (e.g. had a
+            // pending 100% invoice open and now wants 50% instead). Reusing it
+            // would hand back a PDF quoting the wrong amount, so void the stale
+            // intent the same way an abandoned checkout is retired elsewhere in
+            // this service — never leave two live offline intents on one order.
+            $existing->update(['status' => PaymentStatus::Error]);
         }
 
-        $amount = $this->amountDue($order);
+        $amount = intdiv($this->amountDue($order) * $percent, 100);
 
         /** @var Payment $payment */
         $payment = $order->payments()->create([
@@ -164,6 +179,7 @@ class PaymentService
             'payer_id' => $order->client_id,
             'amount' => $amount,
             'currency' => 'UZS',
+            'percent' => $percent,
             // Awaiting the manager's confirmation, not the gateway.
             'status' => PaymentStatus::Progress,
         ]);
@@ -208,7 +224,51 @@ class PaymentService
             'paid_at' => now(),
             'reference' => $reference,
             'note' => $note,
+            'matched_via' => 'admin',
             'confirmed_by' => $admin->id,
+            'confirmed_at' => now(),
+        ]);
+
+        $this->onOrderPaid($payment->fresh());
+
+        return $payment->refresh();
+    }
+
+    /**
+     * Kapitalbank auto-reconciliation confirms a bank-transfer payment: the
+     * client's incoming transfer was matched to this payment by contract
+     * number + exact amount (see `BankReconciliationService`). Settles the
+     * payment exactly like a webhook / manual admin confirm would, but tags
+     * `matched_via = 'auto'` and leaves `confirmed_by` null (no human acted).
+     *
+     * @param  array<string, mixed>  $matchedDocument  the matched GetDoc1C row
+     */
+    public function confirmBankTransferAutoMatch(Payment $payment, array $matchedDocument): Payment
+    {
+        if ($payment->method !== PaymentMethod::BankTransfer) {
+            throw ValidationException::withMessages([
+                'payment' => ['Only bank transfer payments are auto-matched.'],
+            ]);
+        }
+
+        if ($payment->status === PaymentStatus::Success) {
+            return $payment;
+        }
+
+        if (! $payment->status->canTransitionTo(PaymentStatus::Success)) {
+            throw ValidationException::withMessages([
+                'payment' => ['This payment can no longer be confirmed.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => PaymentStatus::Success,
+            'paid_at' => now(),
+            // `reference` is string(120) — the raw bank purpose text can run
+            // longer than that, so it is trimmed for storage.
+            'reference' => mb_substr((string) ($matchedDocument['purpose'] ?? ''), 0, 120),
+            'matched_via' => 'auto',
+            'confirmed_by' => null,
             'confirmed_at' => now(),
         ]);
 

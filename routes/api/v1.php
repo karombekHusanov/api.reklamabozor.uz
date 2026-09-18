@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagControlle
 use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
 use App\Http\Controllers\Api\V1\Admin\MxikCodeController as AdminMxikCodeController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\V1\Admin\OrderProblemController as AdminOrderProblemController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
@@ -144,6 +145,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
     // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    // Client reports an agent who took the advance but never started —
+    // flags the order into the admin problem-orders queue.
+    Route::post('/orders/{order}/report-no-start', [OrderController::class, 'reportNoStart']);
 
     // Order payment: in-app checkout, shareable invoice link (QR/SMS), or an
     // offline invoice (cash / bank transfer) a manager confirms.
@@ -225,6 +229,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/offers/{offer}', [AgentOrderController::class, 'showOffer']);
         Route::post('/offers/{offer}/chat', [AgentOrderController::class, 'openOfferChat'])
             ->middleware('throttle:20,1');
+        Route::post('/offers/{offer}/withdraw', [AgentOrderController::class, 'withdrawOffer'])
+            ->middleware('throttle:20,1');
         Route::patch('/offers/{offer}', [AgentOrderController::class, 'updateOffer'])
             ->middleware('throttle:10,1');
         // Contract built from the draft pricelist, shown before the agent sends it.
@@ -295,6 +301,14 @@ Route::prefix('admin')
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
         Route::get('/orders/{order}/chat', [AdminOrderController::class, 'chat']);
+
+        // Problem orders: an unresolved quality dispute past its correction
+        // window, or an agent who never started a paid deal — a manager
+        // records a manual refund or dismisses the report.
+        Route::get('/order-problems', [AdminOrderProblemController::class, 'index']);
+        Route::get('/order-problems/{order}', [AdminOrderProblemController::class, 'show']);
+        Route::post('/order-problems/{order}/refund', [AdminOrderProblemController::class, 'refund']);
+        Route::post('/order-problems/{order}/dismiss', [AdminOrderProblemController::class, 'dismiss']);
 
         // MXIK (IKPU) classifier catalogue — fiscal codes for pricelist rows.
         Route::get('/mxik-codes', [AdminMxikCodeController::class, 'index']);

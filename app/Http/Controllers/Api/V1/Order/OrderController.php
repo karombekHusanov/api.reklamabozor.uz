@@ -71,4 +71,15 @@ class OrderController extends ApiController
 
         return $this->success(new OrderResource($order), 'Order cancelled.');
     }
+
+    /**
+     * Client reports that the winning agent took the advance but never
+     * started the work — flags the order into the admin problem-orders queue.
+     */
+    public function reportNoStart(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->reportNoStart($request->user(), $order);
+
+        return $this->success(new OrderResource($order), 'We received your report — our team will contact you.');
+    }
 }
