@@ -98,14 +98,6 @@ class User extends Authenticatable
     }
 
     /**
-     * On-demand cash-outs of this user's escrow balance to their card.
-     */
-    public function withdrawals(): HasMany
-    {
-        return $this->hasMany(Withdrawal::class, 'agent_id');
-    }
-
-    /**
      * The approved profile if it serves the given category — the profile that
      * bids on an order in that category. Null when not approved or the profile
      * does not list the category. (1 user = 1 profile.)

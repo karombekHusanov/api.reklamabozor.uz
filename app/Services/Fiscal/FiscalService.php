@@ -93,9 +93,9 @@ class FiscalService
     }
 
     /**
-     * The OFD lines Multicard expects for an offer, or null when the pricelist
-     * is not fully coded — the caller then skips OFD instead of sending a
-     * placeholder receipt.
+     * The OFD receipt lines for an offer's pricelist, or null when the
+     * pricelist is not fully coded — the caller then skips OFD instead of
+     * sending a placeholder receipt.
      *
      * @return list<array<string, mixed>>|null
      */
@@ -108,7 +108,7 @@ class FiscalService
         $items = $offer->relationLoaded('items') ? $offer->items : $offer->items()->get();
 
         return $items->map(function ($item): array {
-            // Multicard takes money fields in tiyin.
+            // Money fields in tiyin.
             $unitPrice = (int) round(((float) $item->unit_price) * 100);
             $total = (int) round(((float) $item->lineTotal()) * 100);
 

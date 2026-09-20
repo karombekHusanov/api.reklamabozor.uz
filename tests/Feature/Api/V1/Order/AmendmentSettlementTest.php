@@ -34,13 +34,6 @@ class AmendmentSettlementTest extends TestCase
     {
         parent::setUp();
         Storage::fake((string) config('files.disk'));
-        config([
-            'services.multicard.enabled' => true,
-            'services.multicard.base_url' => 'https://dev-mesh.multicard.uz',
-            'services.multicard.application_id' => 'rhmt_test',
-            'services.multicard.secret' => 'test_secret',
-            'services.multicard.store_id' => '6',
-        ]);
     }
 
     /**
@@ -131,32 +124,6 @@ class AmendmentSettlementTest extends TestCase
         $this->assertNotNull($fresh->payment_due_at);
 
         $this->assertDatabaseHas('amendment_events', ['type' => AmendmentEvent::CHARGE_DUE]);
-    }
-
-    public function test_top_up_checkout_charges_only_the_difference(): void
-    {
-        Http::fake([
-            '*/auth' => Http::response(['token' => 'tok', 'expiry' => now()->addDay()->toDateTimeString()]),
-            '*/payment/invoice' => Http::response([
-                'success' => true,
-                'data' => ['uuid' => 'gw-top-up', 'checkout_url' => 'https://pay.test/gw-top-up'],
-            ]),
-        ]);
-
-        [$client, $agent, $order] = $this->paidDeal();
-        $this->agree($client, $agent, $order, 30);
-
-        $this->actingAs($client)->postJson("/api/v1/orders/{$order->id}/pay")
-            ->assertOk()
-            ->assertJsonPath('data.amount', 240_000_000); // only the extra
-
-        // Once the top-up settles, the deal is square again.
-        $payment = Payment::query()->where('gateway_uuid', 'gw-top-up')->firstOrFail();
-        $payment->update(['status' => PaymentStatus::Success, 'paid_at' => now()]);
-
-        $order->fresh()->recalculatePaymentState();
-        $this->assertSame(0, $order->fresh()->outstandingTiyin());
-        $this->assertSame(OrderPaymentState::Paid, $order->fresh()->payment_state);
     }
 
     public function test_price_cut_on_a_paid_deal_creates_a_refund_obligation(): void

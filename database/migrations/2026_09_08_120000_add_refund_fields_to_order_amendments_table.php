@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * An applied addendum can lower the deal price. When the client already paid,
- * the difference has to travel back — and Multicard has no partial refund, so
+ * the difference has to travel back — and there is no partial-refund API, so
  * the obligation lives here and a manager settles it by hand.
  */
 return new class extends Migration

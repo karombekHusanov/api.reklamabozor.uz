@@ -5,12 +5,16 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Central payment registry. One row per payment attempt against a gateway
- * (currently Multicard hosted checkout). Kept generic — `purpose` +
- * polymorphic `payable` let the same table back order payments today and
- * future subscriptions, commissions, holds and payouts (see PROJECT_LOGIC
- * finance phases). Amounts are stored in **tiyin** (1 som = 100 tiyin), the
- * unit Multicard expects.
+ * Central payment registry. One row per payment attempt. Kept generic —
+ * `purpose` + polymorphic `payable` let the same table back order payments
+ * today and future subscriptions, commissions, holds and payouts (see
+ * PROJECT_LOGIC finance phases). Amounts are stored in **tiyin** (1 som =
+ * 100 tiyin).
+ *
+ * NOTE: several columns below (`gateway`, `gateway_uuid`, `checkout_url`,
+ * `card_pan`, `ps`, `billing_id`, `short_link`) were added for a hosted
+ * payment gateway that the platform no longer uses; a later migration drops
+ * them. Left as originally written (additive history), not edited here.
  */
 return new class extends Migration
 {
@@ -23,9 +27,8 @@ return new class extends Migration
             // to correlate callbacks. Random UUID, never reused.
             $table->uuid('payment_uuid')->unique();
 
-            $table->string('gateway', 32)->default('multicard');
-            // Gateway-side transaction id (Multicard `uuid`). Null until the
-            // invoice is created.
+            $table->string('gateway', 32)->default('');
+            // Gateway-side transaction id. Null until the invoice is created.
             $table->string('gateway_uuid')->nullable()->index();
 
             $table->string('purpose', 32)->default('order'); // PaymentPurpose

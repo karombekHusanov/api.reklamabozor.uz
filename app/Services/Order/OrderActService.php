@@ -163,7 +163,7 @@ class OrderActService
         $contract = $this->contracts->document($offer);
 
         $dealTotal = (float) ($offer->price ?? 0);
-        $percent = (float) config('services.multicard.commission_percent', 7);
+        $percent = (float) config('payments.commission_percent', 7);
         $commission = round($dealTotal * $percent / 100, 2);
 
         return [

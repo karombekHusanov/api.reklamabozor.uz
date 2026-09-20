@@ -122,7 +122,7 @@ class FinanceService
             'method' => (string) $payment->method?->value,
             'status' => $payment->status->value,
             'amount_som' => $this->som($payment->amount),
-            'reference' => (string) ($payment->reference ?? $payment->gateway_uuid ?? ''),
+            'reference' => (string) ($payment->reference ?? ''),
             'refunded_at' => $payment->refunded_at?->format('d.m.Y H:i') ?? '',
         ])->values()->all();
     }
@@ -178,7 +178,7 @@ class FinanceService
      */
     private function commissionAccrued(Carbon $from, Carbon $to): int
     {
-        $percent = (float) config('services.multicard.commission_percent', 0);
+        $percent = (float) config('payments.commission_percent', 0);
 
         $dealTotalSom = (float) Order::query()
             ->where('orders.status', OrderStatus::Completed)

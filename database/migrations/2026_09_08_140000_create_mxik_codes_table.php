@@ -7,9 +7,10 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Catalogue of MXIK (IKPU) classifier codes used on fiscal receipts.
  *
- * Multicard's OFD line needs `mxik` + `package_code` + a VAT rate per item, and
- * a partial refund is refused without them. Codes are entered by an operator
- * from the official classifier — never invented — and reused across pricelists.
+ * A fiscal OFD receipt line needs `mxik` + `package_code` + a VAT rate per
+ * item, and a partial refund is refused without them. Codes are entered by an
+ * operator from the official classifier — never invented — and reused across
+ * pricelists.
  */
 return new class extends Migration
 {

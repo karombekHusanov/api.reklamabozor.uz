@@ -163,8 +163,6 @@ class BankReconciliationTest extends TestCase
             'method' => PaymentMethod::BankTransfer,
             'status' => PaymentStatus::Progress,
             'amount' => $priceSom * 100,
-            'gateway_uuid' => null,
-            'checkout_url' => null,
         ]);
 
         return [$order->fresh(), $payment, $contractNumber];

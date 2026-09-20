@@ -227,7 +227,7 @@ class OrderContractService
     private function sections(array $document, ?Order $order): array
     {
         $money = fn ($v) => number_format((float) $v, 0, '.', ' ')." so'm";
-        $commission = (float) config('services.multicard.commission_percent', 7);
+        $commission = (float) config('payments.commission_percent', 7);
 
         $subject = ['1.1. Ijrochi Buyurtmachiga quyida ko\'rsatilgan reklama/poligrafiya xizmatlarini '
             ."ko'rsatadi, Buyurtmachi esa ularni qabul qilib, kelishilgan narxni to'laydi."];
@@ -371,7 +371,7 @@ class OrderContractService
             'email' => $platform['email'] ?? null,
             'website' => $platform['website'] ?? null,
             'role' => "Marketplace va to'lov operatori",
-            'commission_percent' => (float) config('services.multicard.commission_percent', 7),
+            'commission_percent' => (float) config('payments.commission_percent', 7),
         ];
     }
 

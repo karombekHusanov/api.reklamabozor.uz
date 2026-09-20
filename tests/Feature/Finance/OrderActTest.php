@@ -27,7 +27,7 @@ class OrderActTest extends TestCase
     /** @return array{0: Order, 1: User, 2: User} */
     private function completedDeal(int $priceSom = 1_000_000): array
     {
-        config(['services.multicard.commission_percent' => 7]);
+        config(['payments.commission_percent' => 7]);
 
         $profile = AgentProfile::factory()->create(['company_name' => 'MIRON']);
         $client = User::factory()->create();

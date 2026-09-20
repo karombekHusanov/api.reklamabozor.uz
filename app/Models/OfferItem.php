@@ -36,7 +36,7 @@ class OfferItem extends Model
 
     /**
      * Whether this row carries everything a fiscal receipt line needs. Without
-     * it Multicard refuses the OFD payload (and, later, a partial refund).
+     * it a fiscal (OFD) receipt cannot be built for the line.
      */
     public function hasFiscalData(): bool
     {

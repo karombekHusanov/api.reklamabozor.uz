@@ -19,8 +19,6 @@ class Payment extends Model
      */
     protected $fillable = [
         'payment_uuid',
-        'gateway',
-        'gateway_uuid',
         'purpose',
         'payable_type',
         'payable_id',
@@ -29,8 +27,6 @@ class Payment extends Model
         'currency',
         'status',
         'method',
-        'checkout_url',
-        'short_link',
         'invoice_file_id',
         'reference',
         'note',
@@ -38,9 +34,6 @@ class Payment extends Model
         'matched_via',
         'confirmed_by',
         'confirmed_at',
-        'card_pan',
-        'ps',
-        'billing_id',
         'paid_at',
         'refunded_at',
         'meta',

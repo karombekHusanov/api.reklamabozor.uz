@@ -14,7 +14,6 @@ use App\Models\Payment;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class PaymentController extends ApiController
 {
@@ -49,8 +48,6 @@ class PaymentController extends ApiController
         if ($search = trim((string) $request->query('search', ''))) {
             $query->where(function ($q) use ($search): void {
                 $q->where('payment_uuid', 'like', "%{$search}%")
-                    ->orWhere('gateway_uuid', 'like', "%{$search}%")
-                    ->orWhere('billing_id', 'like', "%{$search}%")
                     ->orWhere('reference', 'like', "%{$search}%");
             });
         }
@@ -76,7 +73,7 @@ class PaymentController extends ApiController
     /**
      * Confirm money that arrived outside the gateway (cash desk or bank
      * statement): settles the payment, marks the order paid and plans the
-     * agent's advance payout — exactly what a gateway webhook would do.
+     * agent's advance payout.
      */
     public function confirm(ConfirmOfflinePaymentRequest $request, Payment $payment): JsonResponse
     {
@@ -111,24 +108,13 @@ class PaymentController extends ApiController
     }
 
     /**
-     * Full Multicard refund (DELETE /payment/{uuid}). Cancels the related
-     * order and voids unpaid payouts. Blocked if an agent payout is already paid.
+     * Full refund of a settled offline payment: the manager returns the money
+     * by hand and records it here. Cancels the related order and voids unpaid
+     * payouts. Blocked if an agent payout is already paid.
      */
     public function refund(Request $request, Payment $payment): JsonResponse
     {
-        if (! config('services.multicard.enabled')) {
-            return $this->error('Payments are not enabled.', 422);
-        }
-
-        try {
-            $payment = $this->payments->refundByAdmin($payment, $request->user());
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            report($e);
-
-            return $this->error('Refund failed at the payment gateway. Please try again.', 503);
-        }
+        $payment = $this->payments->refundByAdmin($payment, $request->user());
 
         if ($payment->payable instanceof Order) {
             $order = $payment->payable;

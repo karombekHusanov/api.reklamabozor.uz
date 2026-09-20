@@ -298,7 +298,7 @@ class AmendmentService
         if ($outstanding > 0) {
             $order->update([
                 'payment_due_at' => $order->payment_due_at
-                    ?? now()->addDays(max(1, (int) config('services.multicard.payment_due_days', 3))),
+                    ?? now()->addDays(max(1, (int) config('payments.payment_due_days', 3))),
             ]);
             $order->refresh()->recalculatePaymentState();
 

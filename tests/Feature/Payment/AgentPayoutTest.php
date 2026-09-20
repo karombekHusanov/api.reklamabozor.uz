@@ -27,9 +27,9 @@ class AgentPayoutTest extends TestCase
     private function configureSplit(): void
     {
         config([
-            'services.multicard.enabled' => true,
-            'services.multicard.commission_percent' => 7,
-            'services.multicard.payout_advance_percent' => 40,
+            'payments.enabled' => true,
+            'payments.commission_percent' => 7,
+            'payments.advance_percent' => 40,
         ]);
     }
 
@@ -135,10 +135,10 @@ class AgentPayoutTest extends TestCase
         $this->assertSame(PayoutStatus::Paid, $released->status);
     }
 
-    public function test_no_payout_when_gateway_disabled(): void
+    public function test_no_payout_when_payments_disabled(): void
     {
-        config(['services.multicard.enabled' => false]);
-        // Gateway off → the platform collects nothing (payment_state stays
+        config(['payments.enabled' => false]);
+        // Payments off → the platform collects nothing (payment_state stays
         // not_required), so there is no money to pay out.
         $order = Order::factory()->status(OrderStatus::InProgress)->create();
         $profile = AgentProfile::factory()->create();
@@ -243,5 +243,21 @@ class AgentPayoutTest extends TestCase
 
         $this->getJson('/api/v1/admin/payouts', ['Authorization' => 'Bearer '.$token])
             ->assertStatus(403);
+    }
+
+    public function test_duplicate_tranche_is_blocked_by_the_unique_index_and_swallowed(): void
+    {
+        $this->configureSplit();
+        $payouts = app(PayoutService::class);
+        $order = $this->orderWithAcceptedOffer(5_000_000);
+        $advance = $payouts->planAdvance($order);
+
+        // Simulate a racing request that passed the exists() check already.
+        $method = new \ReflectionMethod($payouts, 'createPayout');
+        $again = $method->invoke($payouts, $order, $order->acceptedOffer, PayoutTranche::Advance, 1);
+
+        $this->assertNull($again);
+        $this->assertSame(1, $order->payouts()->count());
+        $this->assertNotNull($advance);
     }
 }

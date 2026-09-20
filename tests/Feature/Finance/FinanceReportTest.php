@@ -35,7 +35,7 @@ class FinanceReportTest extends TestCase
     /** A completed, settled deal: one payment in, one payout out. */
     private function settledDeal(int $priceSom = 1_000_000): Order
     {
-        config(['services.multicard.commission_percent' => 7]);
+        config(['payments.commission_percent' => 7]);
 
         $profile = AgentProfile::factory()->create([
             'company_name' => 'MIRON',
@@ -61,7 +61,7 @@ class FinanceReportTest extends TestCase
             'payable_id' => $order->id,
             'purpose' => PaymentPurpose::Order,
             'status' => PaymentStatus::Success,
-            'method' => PaymentMethod::Multicard,
+            'method' => PaymentMethod::BankTransfer,
             'amount' => $priceSom * 100,
             'paid_at' => now()->subDay(),
         ]);
@@ -91,7 +91,7 @@ class FinanceReportTest extends TestCase
         // 7% of the completed deal.
         $this->assertEquals(70_000, $response->json('data.commission.som'));
         $this->assertEquals(372_000, $response->json('data.paid_to_agents.som'));
-        $this->assertSame('multicard', $response->json('data.collected_by_method.0.method'));
+        $this->assertSame('bank_transfer', $response->json('data.collected_by_method.0.method'));
         $this->assertSame(1, $response->json('data.counts.orders_completed'));
     }
 
@@ -146,7 +146,7 @@ class FinanceReportTest extends TestCase
             ->streamedContent();
 
         $this->assertStringContainsString('1000000.00', $csv);
-        $this->assertStringContainsString('multicard', $csv);
+        $this->assertStringContainsString('bank_transfer', $csv);
     }
 
     public function test_registers_are_admin_only(): void

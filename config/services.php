@@ -35,49 +35,6 @@ return [
         ],
     ],
 
-    'multicard' => [
-        // Master switch. When false the marketplace keeps its offline flow
-        // (accept → in_progress directly, no invoice). Enable once credentials
-        // are configured.
-        'enabled' => env('MULTICARD_ENABLED', false),
-        // dev: https://dev-mesh.multicard.uz  •  prod: https://mesh.multicard.uz
-        'base_url' => env('MULTICARD_BASE_URL', 'https://dev-mesh.multicard.uz'),
-        'application_id' => env('MULTICARD_APPLICATION_ID'),
-        'secret' => env('MULTICARD_SECRET'),
-        'store_id' => env('MULTICARD_STORE_ID'),
-        // Where Multicard POSTs payment status changes. Must be the public API URL.
-        'callback_url' => env('MULTICARD_CALLBACK_URL'),
-        // Invoice lifetime, seconds. After this Multicard cancels the invoice,
-        // so we must not reuse its checkout_url — we mint a fresh invoice.
-        // Independent of how long the order may stay in awaiting_payment.
-        'invoice_ttl' => (int) env('MULTICARD_INVOICE_TTL', 3600),
-        // How long an order may stay awaiting_payment before auto-cancel (hours).
-        // Contract-tunable; default 72h = 3 days.
-        'awaiting_payment_timeout_hours' => (int) env('AWAITING_PAYMENT_TIMEOUT_HOURS', 72),
-        // Attach an OFD (fiscal receipt) line to invoices. Off until real MXIK
-        // codes are configured — placeholder OFD breaks checkout on some stands.
-        'ofd_enabled' => (bool) env('MULTICARD_OFD_ENABLED', false),
-        // Source IP Multicard sends webhooks from (comma-separated allowlist).
-        'callback_ips' => env('MULTICARD_CALLBACK_IPS', '195.158.26.90'),
-        // Callback signature algorithm (docs.multicard.uz callback-webhooks):
-        //   sha1 — sha1(uuid + invoice_id + amount + secret)  ← docs
-        //   md5  — md5(store_id + invoice_id + amount + secret) ← real stand often
-        //   both — accept either (default — avoids prod/dev sign mismatch)
-        'callback_sign' => env('MULTICARD_CALLBACK_SIGN', 'both'),
-        // How long the client has to pay once the deal is active (contract
-        // accepted). Overdue orders are not cancelled — the client, the agent
-        // and the ops group are reminded (orders:remind-unpaid).
-        'payment_due_days' => (int) env('PAYMENT_DUE_DAYS', 3),
-        // Lifetime of a shareable invoice link (QR / SMS), seconds. Longer than
-        // an in-app checkout because the client pays it later, elsewhere.
-        'invoice_link_ttl' => (int) env('MULTICARD_INVOICE_LINK_TTL', 259200), // 3 days
-        // Platform commission on order payments, percent (deducted from payouts).
-        'commission_percent' => env('MULTICARD_COMMISSION_PERCENT', 7),
-        // Default advance slice of an agent payout, percent (final = remainder).
-        // A manager can override the amount per payout at release time.
-        'payout_advance_percent' => env('PAYOUT_ADVANCE_PERCENT', 40),
-    ],
-
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         // HMAC verification of Mini App initData on login. Only disable in

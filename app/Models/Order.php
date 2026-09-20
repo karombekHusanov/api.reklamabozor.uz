@@ -289,7 +289,7 @@ class Order extends Model
     }
 
     /**
-     * Payment attempts against this order (Multicard hosted checkout).
+     * Payment attempts against this order (cash / bank transfer).
      *
      * @return MorphMany<Payment, $this>
      */

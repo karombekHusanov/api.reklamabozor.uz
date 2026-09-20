@@ -329,7 +329,7 @@ class OrderService
                 ->first()
                 ?->agent;
 
-            $this->payments->cancelAwaitingPayment($order, 'client');
+            $this->payments->cancelAwaitingPayment($order);
 
             try {
                 $this->notifier->notifyAwaitingPaymentCancelled($order->fresh(), $acceptedAgent);

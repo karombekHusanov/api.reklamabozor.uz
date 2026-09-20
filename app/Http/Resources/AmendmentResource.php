@@ -121,7 +121,6 @@ class AmendmentResource extends JsonResource
             'can_cancel' => $isOpen && $user?->id === $this->initiator_id,
             'payment' => $this->when($this->relationLoaded('payment') && $this->payment !== null, fn () => [
                 'status' => $this->payment?->status->value,
-                'checkout_url' => $this->payment?->checkout_url,
             ]),
             'pdf_url' => $this->pdfFile?->url(),
             'applied_at' => $this->applied_at,

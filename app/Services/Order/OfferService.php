@@ -552,7 +552,7 @@ class OfferService
             ]);
         }
 
-        $paymentEnabled = (bool) config('services.multicard.enabled');
+        $paymentEnabled = (bool) config('payments.enabled');
 
         DB::transaction(function () use ($order, $offer, $paymentEnabled, $client, $document, $request): void {
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
@@ -650,7 +650,7 @@ class OfferService
     /** Grace period, in days, between activation and the payment due date. */
     private function paymentDueDays(): int
     {
-        return max(1, (int) config('services.multicard.payment_due_days', 3));
+        return max(1, (int) config('payments.payment_due_days', 3));
     }
 
     private function notifyDeal(Offer $offer): void

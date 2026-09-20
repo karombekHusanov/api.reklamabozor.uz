@@ -7,10 +7,10 @@ return [
     | Payout channel
     |--------------------------------------------------------------------------
     |
-    | How the agent's share leaves the platform. Multicard exposes no API for
-    | transfers to a settlement account (only card credit), so the bank channel
-    | is executed by a manager against the agent's KYC requisites and recorded
-    | with a payment-order reference.
+    | How the agent's share leaves the platform. There is no gateway API for
+    | transfers to a settlement account, so the bank channel is executed by a
+    | manager against the agent's KYC requisites and recorded with a
+    | payment-order reference.
     |
     */
 
@@ -21,9 +21,10 @@ return [
     | Agent self-service card cash-out
     |--------------------------------------------------------------------------
     |
-    | The Multicard credit flow (hosted card form → credit → OTP). Off by
+    | A gateway card-credit flow (hosted card form → credit → OTP). Off by
     | product decision: earnings are paid to the agent's bank account, not to a
-    | card. Kept behind a flag so the built flow can be switched back on.
+    | card. The endpoints that drove this flow have been removed; this flag is
+    | kept as a display switch (`GET /agent/payouts`) for a future re-build.
     |
     */
 

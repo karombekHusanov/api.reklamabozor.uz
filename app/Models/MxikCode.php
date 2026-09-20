@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * One entry of the MXIK (IKPU) classifier as used on fiscal receipts.
  *
  * The code, its packaging code and VAT rate travel onto every pricelist row so
- * Multicard can build (and later cancel) the OFD receipt.
+ * a fiscal (OFD) receipt can be built from it.
  */
 class MxikCode extends Model
 {

@@ -288,13 +288,12 @@ class AdminNotifier
         return match ($payment->method) {
             PaymentMethod::Cash => 'naqd',
             PaymentMethod::BankTransfer => 'bank o\'tkazmasi',
-            default => 'Multicard',
         };
     }
 
     /**
-     * Gateway reversed a charge (Multicard status `revert`). Ops must check
-     * whether any agent payout was already released.
+     * A payment was reverted (admin refund or client-cancel refund). Ops must
+     * check whether any agent payout was already released.
      */
     public function paymentRefunded(
         Payment $payment,
@@ -308,7 +307,7 @@ class AdminNotifier
 
         $lines = [
             "↩️ <b>To'lov qaytarildi — buyurtma #{$orderId}</b>",
-            "💰 {$som} so'm (Multicard revert)",
+            "💰 {$som} so'm ({$this->methodLabel($payment)})",
             $orderCancelled
                 ? 'Buyurtma bekor qilindi (admin refund).'
                 : '⚠️ Buyurtma hali ochiq — kutilmagan revert. Ops tekshirib cancel/qayta to\'lov qaror qilsin.',

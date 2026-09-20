@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Models\Payout;
 use App\Models\User;
 use App\Services\Order\OrderNotifier;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -35,7 +36,7 @@ class PayoutService
      */
     public function agentNet(int $totalTiyin): int
     {
-        $commissionPercent = max(0.0, (float) config('services.multicard.commission_percent', 0));
+        $commissionPercent = max(0.0, (float) config('payments.commission_percent', 0));
         $commission = (int) floor($totalTiyin * $commissionPercent / 100);
 
         return max(0, $totalTiyin - $commission);
@@ -46,7 +47,7 @@ class PayoutService
      */
     public function advanceAmount(int $net): int
     {
-        $percent = min(100.0, max(0.0, (float) config('services.multicard.payout_advance_percent', 40)));
+        $percent = min(100.0, max(0.0, (float) config('payments.advance_percent', 40)));
 
         return (int) floor($net * $percent / 100);
     }
@@ -126,7 +127,6 @@ class PayoutService
             ->whereIn('status', [PayoutStatus::Pending->value, PayoutStatus::Processing->value])
             ->update([
                 'status' => PayoutStatus::Cancelled->value,
-                'withdrawal_id' => null,
             ]);
 
         $paidTiyin = (int) $order->payouts()
@@ -285,15 +285,23 @@ class PayoutService
         return (int) round(((float) $offer->price) * 100);
     }
 
-    private function createPayout(Order $order, Offer $offer, PayoutTranche $tranche, int $amount): Payout
+    /**
+     * The unique (order_id, tranche) index makes a concurrent duplicate fail —
+     * that just means another request already planned it, so return null.
+     */
+    private function createPayout(Order $order, Offer $offer, PayoutTranche $tranche, int $amount): ?Payout
     {
-        return $order->payouts()->create([
-            'agent_profile_id' => $offer->agent_profile_id,
-            'agent_id' => $offer->agent_id,
-            'tranche' => $tranche,
-            'amount' => $amount,
-            'currency' => 'UZS',
-            'status' => PayoutStatus::Pending,
-        ]);
+        try {
+            return $order->payouts()->create([
+                'agent_profile_id' => $offer->agent_profile_id,
+                'agent_id' => $offer->agent_id,
+                'tranche' => $tranche,
+                'amount' => $amount,
+                'currency' => 'UZS',
+                'status' => PayoutStatus::Pending,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return null;
+        }
     }
 }

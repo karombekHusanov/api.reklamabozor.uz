@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
@@ -24,16 +25,14 @@ class PaymentFactory extends Factory
     {
         return [
             'payment_uuid' => (string) Str::uuid(),
-            'gateway' => 'multicard',
-            'gateway_uuid' => (string) Str::uuid(),
             'purpose' => PaymentPurpose::Order,
             'payable_type' => Order::class,
             'payable_id' => Order::factory(),
             'payer_id' => User::factory(),
+            'method' => PaymentMethod::BankTransfer,
             'amount' => fake()->numberBetween(500_000, 50_000_000),
             'currency' => 'UZS',
             'status' => PaymentStatus::Draft,
-            'checkout_url' => 'https://app.rhmt.uz/invoice/'.Str::uuid(),
         ];
     }
 

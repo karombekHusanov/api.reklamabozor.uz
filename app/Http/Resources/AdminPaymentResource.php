@@ -20,8 +20,6 @@ class AdminPaymentResource extends JsonResource
         return [
             'id' => $this->id,
             'uuid' => $this->payment_uuid,
-            'gateway' => $this->gateway,
-            'gateway_uuid' => $this->gateway_uuid,
             'purpose' => $this->purpose->value,
             'method' => $this->method->value,
             'status' => $this->status->value,
@@ -34,9 +32,6 @@ class AdminPaymentResource extends JsonResource
                 'name' => trim($payer->first_name.' '.($payer->last_name ?? '')),
                 'phone' => $payer->phone,
             ] : null,
-            'card_pan' => $this->card_pan,
-            'ps' => $this->ps,
-            'billing_id' => $this->billing_id,
             'invoice_url' => $this->invoiceFile?->url(),
             'reference' => $this->reference,
             'percent' => $this->percent,

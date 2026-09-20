@@ -36,18 +36,6 @@ class BankPayoutTest extends TestCase
         ]);
     }
 
-    public function test_agent_cannot_start_a_card_withdrawal(): void
-    {
-        $agent = User::factory()->create(['phone' => '+998901234567']);
-        $token = $agent->createToken('t')->plainTextToken;
-
-        Payout::factory()->create(['agent_id' => $agent->id]);
-
-        $this->postJson('/api/v1/agent/withdrawals', [], [
-            'Authorization' => 'Bearer '.$token,
-        ])->assertStatus(422);
-    }
-
     public function test_earnings_show_the_bank_account_the_money_goes_to(): void
     {
         $profile = AgentProfile::factory()->create(['bank_name' => 'Ipoteka Bank', 'mfo' => '00123']);

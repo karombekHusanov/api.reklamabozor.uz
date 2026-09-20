@@ -38,7 +38,7 @@ class AgentContractService
             'profile' => $profile,
             'version' => self::VERSION,
             'generatedAt' => now(),
-            'commissionPercent' => (float) config('services.multicard.commission_percent', 7),
+            'commissionPercent' => (float) config('payments.commission_percent', 7),
         ])->setPaper('a4');
 
         $contents = $pdf->output();

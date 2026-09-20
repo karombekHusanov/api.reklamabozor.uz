@@ -25,7 +25,6 @@ use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
 use App\Http\Controllers\Api\V1\Agent\AgentPortfolioController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
 use App\Http\Controllers\Api\V1\Agent\PayoutController as AgentPayoutController;
-use App\Http\Controllers\Api\V1\Agent\WithdrawalController;
 use App\Http\Controllers\Api\V1\Assistant\AssistantController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
@@ -41,7 +40,6 @@ use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Order\OrderDocumentController;
-use App\Http\Controllers\Api\V1\Payment\MulticardCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
 use App\Http\Controllers\Api\V1\Profile\ActivityController;
 use App\Http\Controllers\Api\V1\ProfileController;
@@ -60,9 +58,6 @@ Route::get('/health', HealthController::class);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);
-
-// Multicard payment webhook — called by Multicard, guarded by source-IP allowlist + SHA1 sign.
-Route::post('/payment/multicard/callback', MulticardCallbackController::class);
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
@@ -149,9 +144,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // flags the order into the admin problem-orders queue.
     Route::post('/orders/{order}/report-no-start', [OrderController::class, 'reportNoStart']);
 
-    // Order payment: in-app checkout, shareable invoice link (QR/SMS), or an
-    // offline invoice (cash / bank transfer) a manager confirms.
-    Route::post('/orders/{order}/pay', [PaymentController::class, 'pay']);
+    // Order payment: an offline invoice (cash / bank transfer) a manager
+    // confirms (or Kapitalbank auto-reconciliation matches for bank transfer).
     Route::post('/orders/{order}/pay/offline', [PaymentController::class, 'payOffline']);
     Route::get('/orders/{order}/payment', [PaymentController::class, 'show']);
     Route::get('/orders/{order}/payments', [PaymentController::class, 'index']);
@@ -241,12 +235,6 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
         // Earnings: escrow payouts owed/paid + withdrawable balance.
         Route::get('/payouts', [AgentPayoutController::class, 'index']);
-
-        // On-demand cash-out to card (Multicard hosted form → credit → OTP).
-        Route::post('/withdrawals', [WithdrawalController::class, 'store']);
-        Route::get('/withdrawals/{withdrawal}', [WithdrawalController::class, 'show']);
-        Route::post('/withdrawals/{withdrawal}/confirm', [WithdrawalController::class, 'confirm']);
-        Route::post('/withdrawals/{withdrawal}/cancel', [WithdrawalController::class, 'cancel']);
     });
 });
 

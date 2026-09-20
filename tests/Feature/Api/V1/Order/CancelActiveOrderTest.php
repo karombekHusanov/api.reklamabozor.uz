@@ -32,11 +32,6 @@ class CancelActiveOrderTest extends TestCase
     {
         parent::setUp();
         config([
-            'services.multicard.enabled' => true,
-            'services.multicard.base_url' => 'https://dev-mesh.multicard.uz',
-            'services.multicard.application_id' => 'rhmt_test',
-            'services.multicard.secret' => 'test_secret',
-            'services.multicard.store_id' => '6',
             'orders.paid_cancel_window_minutes' => 60,
         ]);
     }
@@ -68,14 +63,13 @@ class CancelActiveOrderTest extends TestCase
         Http::fake();
         [$client, $order] = $this->activeDeal(OrderPaymentState::Unpaid);
 
-        // An open Multicard invoice the client never paid.
+        // An open bank-transfer invoice the client never paid.
         $invoice = Payment::factory()->create([
             'payable_type' => Order::class,
             'payable_id' => $order->id,
             'purpose' => PaymentPurpose::Order,
-            'method' => PaymentMethod::Multicard,
+            'method' => PaymentMethod::BankTransfer,
             'status' => PaymentStatus::Draft,
-            'gateway_uuid' => 'gw-open',
         ]);
 
         $this->actingAs($client)->postJson("/api/v1/orders/{$order->id}/cancel")
@@ -89,10 +83,7 @@ class CancelActiveOrderTest extends TestCase
 
     public function test_client_cancels_a_paid_order_inside_the_window_and_is_refunded(): void
     {
-        Http::fake([
-            '*/auth' => Http::response(['token' => 'tok', 'expiry' => now()->addDay()->toDateTimeString()]),
-            '*/payment/gw-paid' => Http::response(['success' => true, 'data' => ['status' => 'revert']]),
-        ]);
+        Http::fake();
 
         [$client, $order] = $this->activeDeal(OrderPaymentState::Paid);
         $order->update(['paid_at' => now()->subMinutes(10)]); // inside the 60-minute window
@@ -102,9 +93,8 @@ class CancelActiveOrderTest extends TestCase
             'payable_id' => $order->id,
             'payer_id' => $client->id,
             'purpose' => PaymentPurpose::Order,
-            'method' => PaymentMethod::Multicard,
+            'method' => PaymentMethod::BankTransfer,
             'status' => PaymentStatus::Success,
-            'gateway_uuid' => 'gw-paid',
             'amount' => 200_000_000,
             'paid_at' => now()->subMinutes(10),
         ]);
@@ -140,7 +130,6 @@ class CancelActiveOrderTest extends TestCase
             'payable_id' => $order->id,
             'purpose' => PaymentPurpose::Order,
             'status' => PaymentStatus::Success,
-            'gateway_uuid' => 'gw-late',
             'paid_at' => now()->subHours(2),
         ]);
 
@@ -160,7 +149,6 @@ class CancelActiveOrderTest extends TestCase
             'payable_id' => $order->id,
             'purpose' => PaymentPurpose::Order,
             'status' => PaymentStatus::Success,
-            'gateway_uuid' => 'gw-out',
             'paid_at' => now(),
         ]);
         Payout::factory()->create([
@@ -188,9 +176,7 @@ class CancelActiveOrderTest extends TestCase
             'payer_id' => $client->id,
             'purpose' => PaymentPurpose::Order,
             'method' => PaymentMethod::Cash,
-            'gateway' => 'offline',
             'status' => PaymentStatus::Success,
-            'gateway_uuid' => null,
             'paid_at' => now(),
         ]);
 
