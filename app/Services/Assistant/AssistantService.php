@@ -117,7 +117,7 @@ class AssistantService
             return [$text, null];
         }
 
-        $category = $this->resolveCategory($decoded['category_id'] ?? null);
+        $category = $this->prompt->resolveCategory($decoded['category_id'] ?? null);
 
         return [$text, [
             'category_id' => $category?->id,
@@ -125,18 +125,6 @@ class AssistantService
             'title' => mb_substr(trim((string) ($decoded['title'] ?? '')), 0, 200),
             'description' => mb_substr($description, 0, 2000),
         ]];
-    }
-
-    /** A hallucinated or inactive category id is dropped, never trusted. */
-    private function resolveCategory(mixed $id): ?Category
-    {
-        if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
-            return null;
-        }
-
-        return Category::query()
-            ->where('is_active', true)
-            ->find((int) $id);
     }
 
     /**

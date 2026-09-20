@@ -36,6 +36,8 @@ class StoreOrderRequest extends FormRequest
             // to the category label.
             'title' => ['nullable', 'string', 'max:200'],
             'description' => ['required', 'string', 'max:2000'],
+            // Single budget figure in so'm; stored as orders.budget_max.
+            'budget' => ['required', 'integer', 'min:1', 'max:100000000000'],
             // Free-text hashtags (normalized server-side to a shared catalog).
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
             'hashtags.*' => ['string', 'max:40'],

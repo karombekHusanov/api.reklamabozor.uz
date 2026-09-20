@@ -15,10 +15,13 @@ use RuntimeException;
 class AssistantClient
 {
     /**
+     * The optional overrides let short one-shot calls (e.g. the category
+     * classifier) use a tighter timeout/budget than the interactive chat.
+     *
      * @param  array<int, array{role: string, content: string}>  $messages
      * @return array{content: string, model: string, latency_ms: int, usage: array<string, mixed>}
      */
-    public function chat(array $messages, ?string $model = null): array
+    public function chat(array $messages, ?string $model = null, ?int $timeout = null, ?int $maxTokens = null, ?float $temperature = null): array
     {
         $config = config('services.assistant');
         $key = (string) ($config['api_key'] ?? '');
@@ -30,7 +33,7 @@ class AssistantClient
         $startedAt = microtime(true);
 
         $response = Http::withToken($key)
-            ->timeout((int) $config['timeout'])
+            ->timeout($timeout ?? (int) $config['timeout'])
             // Fail fast on a dead endpoint instead of burning the whole budget.
             ->connectTimeout(5)
             // Retry only when the connection never landed — retrying a slow
@@ -42,8 +45,8 @@ class AssistantClient
             ->post(rtrim((string) $config['base_url'], '/').'/chat/completions', [
                 'model' => $model ?? $config['model'],
                 'messages' => $messages,
-                'max_tokens' => (int) $config['max_tokens'],
-                'temperature' => (float) $config['temperature'],
+                'max_tokens' => $maxTokens ?? (int) $config['max_tokens'],
+                'temperature' => $temperature ?? (float) $config['temperature'],
             ]);
 
         $latency = (int) round((microtime(true) - $startedAt) * 1000);

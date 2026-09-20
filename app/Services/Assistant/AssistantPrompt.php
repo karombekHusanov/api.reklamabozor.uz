@@ -38,6 +38,18 @@ class AssistantPrompt
         });
     }
 
+    /** A hallucinated or inactive category id is dropped, never trusted. */
+    public function resolveCategory(mixed $id): ?Category
+    {
+        if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
+            return null;
+        }
+
+        return Category::query()
+            ->where('is_active', true)
+            ->find((int) $id);
+    }
+
     private function platformBrief(): string
     {
         return <<<'TXT'

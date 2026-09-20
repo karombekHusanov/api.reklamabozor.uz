@@ -33,6 +33,7 @@ return [
         'inn' => env('LEGAL_PLATFORM_INN'),
         'address' => env('LEGAL_PLATFORM_ADDRESS'),
         'phone' => env('LEGAL_PLATFORM_PHONE'),
+        'work_hours' => env('LEGAL_PLATFORM_WORK_HOURS', '09:00–18:00'),
         'email' => env('LEGAL_PLATFORM_EMAIL', 'support@reklamabozor.uz'),
         'website' => env('LEGAL_PLATFORM_WEBSITE', 'reklamabozor.uz'),
         // Bank requisites printed on the invoice (hisob-faktura) a client pays

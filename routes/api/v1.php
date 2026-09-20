@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Order\OrderDocumentController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
+use App\Http\Controllers\Api\V1\PlatformContactController;
 use App\Http\Controllers\Api\V1\Profile\ActivityController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicAgentController;
@@ -55,6 +56,7 @@ use App\Http\Controllers\Api\V1\Telegram\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
+Route::get('/platform-contact', PlatformContactController::class);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);

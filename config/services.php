@@ -65,6 +65,9 @@ return [
         'model' => env('ASSISTANT_MODEL', 'minimax/minimax-m3:free'),
         // Chat needs to feel instant — a slow provider is a broken feature.
         'timeout' => (int) env('ASSISTANT_TIMEOUT', 20),
+        // Order-category auto-detection runs synchronously inside POST /orders,
+        // so it gets its own, much shorter budget (seconds).
+        'classify_timeout' => (int) env('ASSISTANT_CLASSIFY_TIMEOUT', 6),
         'max_tokens' => (int) env('ASSISTANT_MAX_TOKENS', 700),
         'temperature' => (float) env('ASSISTANT_TEMPERATURE', 0.4),
         // Per-user daily message cap on top of the per-minute route throttle.

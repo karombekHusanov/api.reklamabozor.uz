@@ -15,6 +15,7 @@ use App\Models\Order;
 use App\Models\OrderProblemEvent;
 use App\Models\Region;
 use App\Models\User;
+use App\Services\Assistant\CategoryClassifier;
 use App\Services\Hashtag\HashtagService;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
@@ -33,6 +34,7 @@ class OrderService
         private readonly AdminNotifier $admin,
         private readonly OrderActService $acts,
         private readonly OrderProblemService $problems,
+        private readonly CategoryClassifier $classifier,
     ) {}
 
     /**
@@ -48,6 +50,14 @@ class OrderService
         $category = isset($data['category_id'])
             ? Category::find($data['category_id'])
             : null;
+
+        // No category picked and not a directed order: let the assistant infer it
+        // from the description so the order is not broadcast to every provider.
+        // Null (disabled / timeout / unsure) keeps the broadcast behaviour.
+        if ($category === null && empty($data['agent_profile_id'])) {
+            $classifiedId = $this->classifier->classify((string) $data['description']);
+            $category = $classifiedId !== null ? Category::find($classifiedId) : null;
+        }
 
         $targetAgentId = $this->resolveTargetAgent($data['agent_profile_id'] ?? null, $category);
 
@@ -76,6 +86,7 @@ class OrderService
             'target_agent_id' => $targetAgentId,
             'title' => $title,
             'description' => $data['description'],
+            'budget_max' => $data['budget'] ?? null,
             'deadline' => $data['deadline'] ?? null,
             'attachment_file_ids' => $data['attachment_file_ids'] ?? [],
             'show_files_in_showcase' => $data['show_files_in_showcase'] ?? true,
