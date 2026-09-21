@@ -44,7 +44,6 @@ class HashtagTest extends TestCase
     private function placeOrder(string $token, Category $category, File $file, array $hashtags = []): TestResponse
     {
         return $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'Need outdoor ads.',

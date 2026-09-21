@@ -24,6 +24,7 @@ class UserController extends ApiController
         $paginator = $this->userAdminService->list([
             'role' => $validated['role'] ?? null,
             'search' => $validated['search'] ?? null,
+            'tender_access' => $validated['tender_access'] ?? null,
             'is_active' => array_key_exists('is_active', $validated)
                 ? (bool) $validated['is_active']
                 : null,

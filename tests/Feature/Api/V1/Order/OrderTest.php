@@ -57,7 +57,6 @@ class OrderTest extends TestCase
         $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $response = $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Metro banner campaign',
             'description' => 'Need a banner campaign across Tashkent metro.',
@@ -94,7 +93,6 @@ class OrderTest extends TestCase
         $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Private attachments',
             'description' => 'Hide files on showcase.',
@@ -118,7 +116,6 @@ class OrderTest extends TestCase
         $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Default showcase files',
             'description' => 'Flag omitted.',
@@ -159,7 +156,6 @@ class OrderTest extends TestCase
         $file3 = File::factory()->create(['uploaded_by' => $client->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'Urgent outdoor campaign.',
@@ -188,7 +184,6 @@ class OrderTest extends TestCase
         $stranger = File::factory()->create(['uploaded_by' => User::factory()->create()->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'x',
@@ -219,7 +214,6 @@ class OrderTest extends TestCase
         [, $token] = $this->authedUser();
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'description' => 'Kafe uchun banner kerak.',
             'lat' => 41.31,
         ], ['Authorization' => 'Bearer '.$token])
@@ -233,7 +227,6 @@ class OrderTest extends TestCase
         [$client, $token] = $this->authedUser();
 
         $response = $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'description' => '  Do\'kon ochilishi uchun bayram reklamasi kerak.  ',
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
@@ -255,7 +248,6 @@ class OrderTest extends TestCase
         $category = Category::factory()->create(['name_uz' => 'Boshqa']);
 
         $response = $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'description' => 'Need a 3x6m billboard for one month.',
             ...$this->locationPayload(),
@@ -278,7 +270,6 @@ class OrderTest extends TestCase
         $file = File::factory()->create(['uploaded_by' => $client->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Nationwide campaign',
             'description' => 'All Uzbekistan.',
@@ -306,7 +297,6 @@ class OrderTest extends TestCase
         $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Chilonzor campaign',
             'description' => 'Local work.',
@@ -337,7 +327,6 @@ class OrderTest extends TestCase
         $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Mismatch',
             'description' => 'Bad district.',
@@ -360,7 +349,6 @@ class OrderTest extends TestCase
         $district = Region::query()->where('code', 'chilonzor')->firstOrFail();
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Derived label',
             'description' => 'No map label.',
@@ -381,7 +369,6 @@ class OrderTest extends TestCase
         $strangerFile = File::factory()->create(['uploaded_by' => User::factory()->create()->id]);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'x',
@@ -404,7 +391,6 @@ class OrderTest extends TestCase
         $profile->categories()->attach($category);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'Need outdoor billboards.',
@@ -449,7 +435,6 @@ class OrderTest extends TestCase
             ->categories()->attach($otherCategory);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $orderCategory->id,
             'title' => 'Test project',
             'description' => 'Only my category should hear about this.',
@@ -478,7 +463,6 @@ class OrderTest extends TestCase
             ->categories()->attach($servedCategory);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $emptyCategory->id,
             'title' => 'Test project',
             'description' => 'No one serves this category yet.',
@@ -503,7 +487,6 @@ class OrderTest extends TestCase
             ->categories()->attach($servedCategory);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $other->id,
             'title' => 'Test project',
             'description' => 'Something custom outside the list.',
@@ -527,7 +510,6 @@ class OrderTest extends TestCase
         $profile->categories()->attach($category);
 
         $this->postJson('/api/v1/orders', [
-            'budget' => 1000000,
             'category_id' => $category->id,
             'title' => 'Test project',
             'description' => 'Need a launch campaign.',

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1\Order;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OrderDeadline;
+use App\Enums\OrderRoute;
 use App\Models\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -17,6 +18,11 @@ class StoreOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        // Tender is manager-gated per account (OrderService::create re-checks).
+        if ($this->input('route') === OrderRoute::Tender->value) {
+            return (bool) $this->user()?->canCreateTender();
+        }
+
         return true;
     }
 
@@ -36,8 +42,9 @@ class StoreOrderRequest extends FormRequest
             // to the category label.
             'title' => ['nullable', 'string', 'max:200'],
             'description' => ['required', 'string', 'max:2000'],
-            // Single budget figure in so'm; stored as orders.budget_max.
-            'budget' => ['required', 'integer', 'min:1', 'max:100000000000'],
+            // Which rule set the request runs on (fixed at creation). Omitted =
+            // tender for accounts with Tender access, tezkor for everyone else.
+            'route' => ['nullable', Rule::enum(OrderRoute::class)],
             // Free-text hashtags (normalized server-side to a shared catalog).
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
             'hashtags.*' => ['string', 'max:40'],

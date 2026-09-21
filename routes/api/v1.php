@@ -13,12 +13,14 @@ use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityC
 use App\Http\Controllers\Api\V1\Admin\MxikCodeController as AdminMxikCodeController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\OrderProblemController as AdminOrderProblemController;
+use App\Http\Controllers\Api\V1\Admin\OrdersByRouteReportController as AdminOrdersByRouteReportController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
 use App\Http\Controllers\Api\V1\Admin\RatingController as AdminRatingController;
 use App\Http\Controllers\Api\V1\Admin\RegionController as AdminRegionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController as AdminReviewController;
+use App\Http\Controllers\Api\V1\Admin\TenderAccessController as AdminTenderAccessController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\AdvantageController;
 use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
@@ -142,6 +144,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
     // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    // Tezkor: client reopens the request (drops the claim) or closes it as agreed.
+    Route::post('/orders/{order}/release', [OrderController::class, 'release']);
+    Route::post('/orders/{order}/close', [OrderController::class, 'close']);
     // Client reports an agent who took the advance but never started —
     // flags the order into the admin problem-orders queue.
     Route::post('/orders/{order}/report-no-start', [OrderController::class, 'reportNoStart']);
@@ -220,6 +225,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/orders/{order}', [AgentOrderController::class, 'showOrder']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
+        // Tezkor: agent lets go of their claim.
+        Route::post('/orders/{order}/release', [AgentOrderController::class, 'release']);
         Route::post('/orders/{order}/review', [AgentOrderController::class, 'storeReview']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
         Route::get('/offers/{offer}', [AgentOrderController::class, 'showOffer']);
@@ -250,6 +257,9 @@ Route::prefix('admin')
         Route::get('/users/{user}', [UserController::class, 'show']);
         Route::patch('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/active', [UserController::class, 'toggleActive']);
+        // Manager-granted Tender permission (needs a verified legal entity).
+        Route::post('/users/{user}/tender-access', [AdminTenderAccessController::class, 'grant']);
+        Route::delete('/users/{user}/tender-access', [AdminTenderAccessController::class, 'revoke']);
 
         Route::get('/categories', [AdminCategoryController::class, 'index']);
         Route::post('/categories', [AdminCategoryController::class, 'store']);
@@ -311,6 +321,9 @@ Route::prefix('admin')
         Route::get('/finance/summary', [AdminFinanceController::class, 'summary']);
         Route::get('/finance/payments.csv', [AdminFinanceController::class, 'paymentsRegister']);
         Route::get('/finance/payouts.csv', [AdminFinanceController::class, 'payoutsRegister']);
+
+        // Per-account Tender vs Tezkor order counts (commission-leakage view).
+        Route::get('/reports/orders-by-route', AdminOrdersByRouteReportController::class);
 
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);

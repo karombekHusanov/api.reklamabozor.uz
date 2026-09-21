@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicOrderDetailResource;
@@ -10,13 +11,14 @@ use App\Models\Order;
 use App\Models\OrderView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class PublicOrderController extends ApiController
 {
     /**
      * Public "live orders" feed for the home carousel / list. Shows the most
      * recent real orders (with view / offer counters). Optional filters:
-     * `q` (title + hashtag), `hashtag`, `category_ids` (comma-separated ids,
+     * `route` (tender|tezkor), `q` (title + hashtag), `hashtag`, `category_ids` (comma-separated ids,
      * e.g. `1,3,5`), `region_id` / `district_id`, `created_from` /
      * `created_to`. `?limit` caps the result (default 10, max 50).
      */
@@ -24,6 +26,7 @@ class PublicOrderController extends ApiController
     {
         $validated = $request->validate([
             'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'route' => ['nullable', Rule::enum(OrderRoute::class)],
             'q' => ['nullable', 'string', 'max:100'],
             'hashtag' => ['nullable', 'string', 'max:40'],
             'category_ids' => ['nullable', 'string', 'max:500', 'regex:/^\d+(,\d+)*$/'],
@@ -40,6 +43,10 @@ class PublicOrderController extends ApiController
             ->where('status', '!=', OrderStatus::Cancelled)
             ->with(['category', 'region', 'district', 'hashtags', 'client.avatarFile'])
             ->withCount(['views', 'offers']);
+
+        if (! empty($validated['route'])) {
+            $query->where('route', $validated['route']);
+        }
 
         $hashtag = trim((string) ($validated['hashtag'] ?? ''));
         if ($hashtag !== '') {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Admin;
 
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -22,6 +23,7 @@ class IndexOrdersRequest extends FormRequest
             'status' => ['nullable', Rule::enum(OrderStatus::class)],
             // Ops-attention shortcuts surfaced on the dashboard.
             'attention' => ['nullable', Rule::in(['stuck', 'no_offers'])],
+            'route' => ['nullable', Rule::enum(OrderRoute::class)],
             'search' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],

@@ -422,6 +422,63 @@ class OrderNotifier
     }
 
     /**
+     * A claimed Tezkor request sat with the agent for too long — one nudge to
+     * the client to close it as agreed or reopen it.
+     */
+    public function notifyClaimStale(Order $order): void
+    {
+        $order->loadMissing('client');
+
+        $this->sendToUser($order->client, implode("\n", [
+            "\u{23F3} <b>So'rov #{$order->id}</b> (".e((string) $order->title).') hali band.',
+            "Kelishgan bo'lsangiz — so'rovni yoping, kelisha olmagan bo'lsangiz — uni qayta oching.",
+        ]), "📂 So'rovni ko'rish", "/orders/{$order->id}");
+
+        $this->admin->orderStale($order);
+    }
+
+    /**
+     * A Tezkor claim was let go. The other side hears about it: the agent when
+     * the client released, the client when the agent did.
+     */
+    public function notifyClaimReleased(Order $order, bool $byClient, ?int $agentId): void
+    {
+        $order->loadMissing('client');
+
+        if ($byClient) {
+            $this->sendToUser($agentId !== null ? User::find($agentId) : null, implode("\n", [
+                "🔓 So'rov <b>#{$order->id}</b> (".e((string) $order->title).') mijoz tomonidan bo\'shatildi.',
+                'So\'rov yana hamma uchun ochiq.',
+            ]));
+
+            return;
+        }
+
+        $this->sendToUser($order->client, implode("\n", [
+            "🔓 So'rov <b>#{$order->id}</b> (".e((string) $order->title).") bo'yicha agent ishtirokdan voz kechdi.",
+            "So'rovingiz yana hamma agentlar uchun ochiq.",
+        ]), "📂 So'rovni ko'rish", "/orders/{$order->id}");
+    }
+
+    /** Client closed the claimed Tezkor request as agreed. */
+    public function notifyClaimClosed(Order $order): void
+    {
+        $agent = $order->claimed_agent_id !== null ? User::find($order->claimed_agent_id) : null;
+
+        $this->sendToUser($agent, implode("\n", [
+            "✅ So'rov <b>#{$order->id}</b> (".e((string) $order->title).') mijoz tomonidan kelishilgan deb yopildi.',
+        ]));
+    }
+
+    /** Manager decision on the account's Tender access. */
+    public function notifyTenderAccess(User $user, bool $granted): void
+    {
+        $this->sendToUser($user, $granted
+            ? "✅ Sizning hisobingizga <b>Tender</b> yaratish ruxsati berildi. Endi tender so'rovlarini yarata olasiz."
+            : 'ℹ️ Hisobingizdagi <b>Tender</b> yaratish ruxsati bekor qilindi. Jarayondagi tenderlar davom etadi.');
+    }
+
+    /**
      * The manager transferred an agent's tranche to their bank account. The
      * transfer happens outside the platform, so this is the only moment the
      * agent hears about it.

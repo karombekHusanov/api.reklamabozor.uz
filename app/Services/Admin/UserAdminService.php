@@ -2,9 +2,11 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\LegalEntityStatus;
 use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 
 class UserAdminService
@@ -13,6 +15,7 @@ class UserAdminService
      * @param  array{
      *     role?: string|null,
      *     search?: string|null,
+     *     tender_access?: string|null,
      *     is_active?: bool|null,
      *     per_page?: int,
      *     sort?: string,
@@ -33,6 +36,10 @@ class UserAdminService
 
         if (isset($filters['is_active'])) {
             $query->where('is_active', $filters['is_active']);
+        }
+
+        if (! empty($filters['tender_access'])) {
+            $this->applyTenderAccessFilter($query, $filters['tender_access']);
         }
 
         if (! empty($filters['search'])) {
@@ -59,6 +66,26 @@ class UserAdminService
         return $query
             ->orderBy($sort, $direction)
             ->paginate($filters['per_page'] ?? 15);
+    }
+
+    /**
+     * Mirrors {@see User::tenderAccessStatus()} in SQL.
+     */
+    private function applyTenderAccessFilter(Builder $query, string $status): void
+    {
+        $pendingVerification = fn (Builder $q) => $q->whereHas(
+            'legalEntityVerification',
+            fn ($v) => $v->whereIn('status', [LegalEntityStatus::Pending->value, LegalEntityStatus::Approved->value]),
+        );
+
+        match ($status) {
+            'granted' => $query->whereNotNull('tender_access_at')->whereNull('tender_access_revoked_at'),
+            'revoked' => $query->whereNotNull('tender_access_revoked_at'),
+            'pending' => $query->whereNull('tender_access_at')->whereNull('tender_access_revoked_at')
+                ->where($pendingVerification),
+            default => $query->whereNull('tender_access_at')->whereNull('tender_access_revoked_at')
+                ->whereNot($pendingVerification),
+        };
     }
 
     public function update(User $user, array $data, User $actor): User

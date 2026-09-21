@@ -9,6 +9,7 @@ use App\Enums\OrderDeadline;
 use App\Enums\OrderPaymentState;
 use App\Enums\OrderProblemReason;
 use App\Enums\OrderProblemState;
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
@@ -26,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class Order extends Model
 {
@@ -53,6 +55,9 @@ class Order extends Model
         'region_id',
         'district_id',
         'status',
+        'route',
+        'claimed_agent_id',
+        'claimed_at',
         'payment_state',
         'activated_at',
         'payment_due_at',
@@ -84,6 +89,8 @@ class Order extends Model
         'district',
         'hashtags',
         'targetAgent.profile',
+        'claimedAgent.profile.companyLogoFile',
+        'claimedAgent.profile.cachedRating',
         'offers.agentProfile.companyLogoFile',
         'offers.items',
         'offers.contractAcceptances',
@@ -113,6 +120,46 @@ class Order extends Model
     public function targetAgent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'target_agent_id');
+    }
+
+    /** The agent who currently holds a Tezkor claim on this order. */
+    public function claimedAgent(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'claimed_agent_id');
+    }
+
+    public function isTezkor(): bool
+    {
+        return $this->route === OrderRoute::Tezkor;
+    }
+
+    public function isTender(): bool
+    {
+        return ! $this->isTezkor();
+    }
+
+    public function isClaimed(): bool
+    {
+        return $this->claimed_agent_id !== null;
+    }
+
+    /**
+     * Guard for everything that only makes sense on the Tender route (priced
+     * accept, pricelist, contract, payment, payout, amendments).
+     */
+    public function assertTender(): void
+    {
+        if ($this->isTezkor()) {
+            throw ValidationException::withMessages([
+                'order' => ['This action is not available for Tezkor requests.'],
+            ]);
+        }
+    }
+
+    /** A claimed Tezkor request that is still open (not closed/cancelled). */
+    public function hasActiveClaim(): bool
+    {
+        return $this->isTezkor() && $this->isClaimed() && $this->status->isOpenForOffers();
     }
 
     public function category(): BelongsTo
@@ -648,6 +695,8 @@ class Order extends Model
             'lat' => 'decimal:7',
             'lng' => 'decimal:7',
             'status' => OrderStatus::class,
+            'route' => OrderRoute::class,
+            'claimed_at' => 'datetime',
             'payment_state' => OrderPaymentState::class,
             'activated_at' => 'datetime',
             'payment_due_at' => 'datetime',

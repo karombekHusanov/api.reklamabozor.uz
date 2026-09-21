@@ -58,7 +58,7 @@ class PayoutService
      */
     public function planAdvance(Order $order): ?Payout
     {
-        if (! $this->orderIsPaid($order)) {
+        if ($order->isTezkor() || ! $this->orderIsPaid($order)) {
             return null;
         }
 
@@ -86,7 +86,7 @@ class PayoutService
      */
     public function planFinal(Order $order): ?Payout
     {
-        if (! $this->orderIsPaid($order)) {
+        if ($order->isTezkor() || ! $this->orderIsPaid($order)) {
             return null;
         }
 

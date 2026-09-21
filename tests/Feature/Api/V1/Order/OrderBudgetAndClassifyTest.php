@@ -55,36 +55,16 @@ class OrderBudgetAndClassifyTest extends TestCase
         ], ['Authorization' => 'Bearer '.$token]);
     }
 
-    public function test_budget_is_required(): void
-    {
-        Http::fake();
-        [, $token] = $this->authedUser();
-
-        $this->place($token)->assertUnprocessable()->assertJsonValidationErrors(['budget']);
-        $this->place($token, ['budget' => 0])->assertUnprocessable()->assertJsonValidationErrors(['budget']);
-    }
-
-    public function test_budget_is_stored_as_budget_max(): void
+    public function test_budget_is_not_required_or_stored(): void
     {
         Http::fake();
         [$client, $token] = $this->authedUser();
 
-        $this->place($token, ['budget' => 2500000])->assertCreated();
+        $this->place($token)->assertCreated();
 
         $order = Order::where('client_id', $client->id)->firstOrFail();
-        $this->assertEquals(2500000, $order->budget_max);
+        $this->assertNull($order->budget_max);
         $this->assertNull($order->budget_min);
-    }
-
-    public function test_budget_is_required_for_directed_orders(): void
-    {
-        Http::fake();
-        [, $token] = $this->authedUser();
-        $profile = AgentProfile::factory()->create(['status' => AgentProfileStatus::Approved]);
-
-        $this->place($token, ['agent_profile_id' => $profile->id])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['budget']);
     }
 
     public function test_category_is_inferred_from_description(): void
@@ -94,7 +74,7 @@ class OrderBudgetAndClassifyTest extends TestCase
         $category = Category::factory()->create(['is_active' => true]);
         $this->fakeAnswer((string) $category->id);
 
-        $this->place($token, ['budget' => 1000000])->assertCreated();
+        $this->place($token, [])->assertCreated();
 
         $order = Order::where('client_id', $client->id)->firstOrFail();
         $this->assertSame($category->id, $order->category_id);
@@ -109,7 +89,7 @@ class OrderBudgetAndClassifyTest extends TestCase
 
         foreach (['99999', 'null', 'Men tanlayman: '.$category->id] as $answer) {
             $this->fakeAnswer($answer);
-            $this->place($token, ['budget' => 1000000])->assertCreated();
+            $this->place($token, [])->assertCreated();
         }
 
         $this->assertSame(3, Order::where('client_id', $client->id)->whereNull('category_id')->count());
@@ -122,7 +102,7 @@ class OrderBudgetAndClassifyTest extends TestCase
         $category = Category::factory()->create(['is_active' => false]);
         $this->fakeAnswer((string) $category->id);
 
-        $this->place($token, ['budget' => 1000000])->assertCreated();
+        $this->place($token, [])->assertCreated();
 
         $this->assertNull(Order::where('client_id', $client->id)->firstOrFail()->category_id);
     }
@@ -134,7 +114,7 @@ class OrderBudgetAndClassifyTest extends TestCase
         [$client, $token] = $this->authedUser();
         Category::factory()->create(['is_active' => true]);
 
-        $this->place($token, ['budget' => 1000000])->assertCreated();
+        $this->place($token, [])->assertCreated();
 
         Http::assertNothingSent();
         $this->assertNull(Order::where('client_id', $client->id)->firstOrFail()->category_id);
@@ -147,10 +127,10 @@ class OrderBudgetAndClassifyTest extends TestCase
         Category::factory()->create(['is_active' => true]);
 
         Http::fake(['provider.test/*' => Http::response('boom', 500)]);
-        $this->place($token, ['budget' => 1000000])->assertCreated();
+        $this->place($token, [])->assertCreated();
 
         Http::fake(['provider.test/*' => fn () => throw new ConnectionException('timeout')]);
-        $this->place($token, ['budget' => 1000000])->assertCreated();
+        $this->place($token, [])->assertCreated();
 
         $this->assertSame(2, Order::where('client_id', $client->id)->whereNull('category_id')->count());
     }
@@ -162,7 +142,7 @@ class OrderBudgetAndClassifyTest extends TestCase
         [, $token] = $this->authedUser();
         $category = Category::factory()->create(['is_active' => true]);
 
-        $this->place($token, ['budget' => 1000000, 'category_id' => $category->id])->assertCreated();
+        $this->place($token, ['category_id' => $category->id])->assertCreated();
 
         Http::assertNothingSent();
     }
@@ -174,7 +154,7 @@ class OrderBudgetAndClassifyTest extends TestCase
         [, $token] = $this->authedUser();
         $profile = AgentProfile::factory()->create(['status' => AgentProfileStatus::Approved]);
 
-        $this->place($token, ['budget' => 1000000, 'agent_profile_id' => $profile->id])->assertCreated();
+        $this->place($token, ['agent_profile_id' => $profile->id])->assertCreated();
 
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'provider.test'));
     }

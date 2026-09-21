@@ -43,6 +43,10 @@ class User extends Authenticatable
         'person_type_selected_at',
         'accepted_terms_version',
         'accepted_terms_at',
+        'tender_access_at',
+        'tender_access_by',
+        'tender_access_note',
+        'tender_access_revoked_at',
         'avatar_file_id',
         'is_active',
     ];
@@ -332,6 +336,37 @@ class User extends Authenticatable
     }
 
     /**
+     * Tender access (manager-granted, per account). Single source of truth for
+     * "may this user open a new Tender order" — revoking only blocks new
+     * tenders, in-flight ones keep running.
+     */
+    public function canCreateTender(): bool
+    {
+        return $this->tender_access_at !== null && $this->tender_access_revoked_at === null;
+    }
+
+    /**
+     * none | pending | granted | revoked. `pending` = a legal-entity
+     * verification was submitted (and not rejected) but no grant exists yet.
+     */
+    public function tenderAccessStatus(): string
+    {
+        if ($this->canCreateTender()) {
+            return 'granted';
+        }
+
+        if ($this->tender_access_revoked_at !== null) {
+            return 'revoked';
+        }
+
+        $status = $this->legalEntityVerification?->status;
+
+        return in_array($status, [LegalEntityStatus::Pending, LegalEntityStatus::Approved], true)
+            ? 'pending'
+            : 'none';
+    }
+
+    /**
      * Add a role to the held set. Does not touch the active `role` and does
      * not save — the caller decides both.
      */
@@ -383,6 +418,8 @@ class User extends Authenticatable
             'person_type' => PersonType::class,
             'person_type_selected_at' => 'datetime',
             'accepted_terms_at' => 'datetime',
+            'tender_access_at' => 'datetime',
+            'tender_access_revoked_at' => 'datetime',
             'is_active' => 'boolean',
             'password' => 'hashed',
         ];

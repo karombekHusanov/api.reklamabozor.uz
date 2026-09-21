@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -48,6 +49,16 @@ class UserResource extends JsonResource
                 fn () => $this->profile?->status->value,
                 null,
             ),
+            // Tender permission (manager-granted). Status: none|pending|granted|revoked.
+            'can_create_tender' => $this->canCreateTender(),
+            'tender_access_status' => $this->tenderAccessStatus(),
+            // Audit trail — only shown to admins.
+            'tender_access' => $this->when($request->user()?->role === Role::Admin, fn () => [
+                'granted_at' => $this->tender_access_at,
+                'granted_by' => $this->tender_access_by,
+                'note' => $this->tender_access_note,
+                'revoked_at' => $this->tender_access_revoked_at,
+            ]),
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderPaymentState;
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
 use App\Models\Chat;
@@ -17,7 +18,9 @@ use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Fiscal\FiscalService;
 use App\Services\Payout\PayoutService;
+use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +33,7 @@ class OfferService
         private readonly DirectChatService $directChats,
         private readonly OrderContractService $contracts,
         private readonly FiscalService $fiscal,
+        private readonly PassGate $passes,
     ) {}
 
     /**
@@ -39,9 +43,10 @@ class OfferService
      * (if any).
      *
      * @param  int|null  $orderId  When set, return at most that one opportunity.
+     * @param  OrderRoute|null  $route  When set, only orders on that route.
      * @return Collection<int, Order>
      */
-    public function availableForAgent(User $agent, ?int $orderId = null): Collection
+    public function availableForAgent(User $agent, ?int $orderId = null, ?OrderRoute $route = null): Collection
     {
         // Categories served by the agent's approved profile (1 user = 1 profile).
         $profile = $agent->profile()
@@ -79,6 +84,7 @@ class OfferService
             ->where(fn ($q) => $q->whereNull('target_agent_id')->orWhere('target_agent_id', $agent->id))
             ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::openForOffers()))
             ->when($orderId !== null, fn ($q) => $q->whereKey($orderId))
+            ->when($route !== null, fn ($q) => $q->where('route', $route->value))
             ->withCount(['views', 'offers'])
             ->with([
                 'category',
@@ -178,24 +184,63 @@ class OfferService
             ]);
         }
 
-        if ($order->offers()->where('agent_id', $agent->id)->exists()) {
+        if ($order->isTezkor() && isset($data['price'])) {
             throw ValidationException::withMessages([
-                'order' => ['You have already sent an offer for this order.'],
+                'price' => ['Tezkor requests take an interest only — agree the price with the client directly.'],
             ]);
         }
 
-        /** @var Offer $offer */
-        $offer = $order->offers()->create([
-            'agent_id' => $agent->id,
-            'agent_profile_id' => $profile->id,
-            'price' => $data['price'] ?? null,
-            'comment' => $data['comment'] ?? null,
-            'status' => OfferStatus::Pending,
-        ]);
+        // Tezkor: the claim is the exclusive slot. Lock the order row so two
+        // agents tapping at once cannot both win (the loser gets 409).
+        $offer = DB::transaction(function () use ($agent, $order, $profile, $data): Offer {
+            if ($order->isTezkor()) {
+                /** @var Order $locked */
+                $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
-        if ($order->status === OrderStatus::New) {
-            $order->update(['status' => OrderStatus::OffersSent]);
-        }
+                if (! $locked->status->isOpenForOffers()) {
+                    throw ValidationException::withMessages([
+                        'order' => ['This order is no longer accepting offers.'],
+                    ]);
+                }
+
+                if ($locked->isClaimed()) {
+                    throw new HttpResponseException(
+                        ApiResponse::error('This request is already taken by another agent.', 409),
+                    );
+                }
+
+                $this->passes->assertCanClaim($agent, $locked);
+            }
+
+            if ($order->offers()->where('agent_id', $agent->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'order' => ['You have already sent an offer for this order.'],
+                ]);
+            }
+
+            /** @var Offer $offer */
+            $offer = $order->offers()->create([
+                'agent_id' => $agent->id,
+                'agent_profile_id' => $profile->id,
+                'price' => $data['price'] ?? null,
+                'comment' => $data['comment'] ?? null,
+                'status' => OfferStatus::Pending,
+            ]);
+
+            if ($order->isTezkor()) {
+                $order->update([
+                    'claimed_agent_id' => $agent->id,
+                    'claimed_at' => now(),
+                    'status' => OrderStatus::OffersSent,
+                    // A fresh claim gets its own "still waiting?" nudge.
+                    'stale_reminder_sent_at' => null,
+                ]);
+            } elseif ($order->status === OrderStatus::New) {
+                $order->update(['status' => OrderStatus::OffersSent]);
+            }
+
+            return $offer;
+        });
 
         // Eager-open the order-scoped thread for interests so the client notify
         // can deep-link into chat (priced offers still open chat on demand).
@@ -300,6 +345,7 @@ class OfferService
         abort_unless($offer->agent_id === $agent->id, 404);
 
         $offer->loadMissing('order');
+        $offer->order?->assertTender();
 
         if ($offer->isInterest()) {
             throw ValidationException::withMessages([
@@ -389,6 +435,8 @@ class OfferService
     {
         abort_unless($offer->agent_id === $agent->id, 404);
 
+        $offer->loadMissing('order')->order?->assertTender();
+
         return $this->contracts->document($offer, array_values($items), $deadlineDays);
     }
 
@@ -403,6 +451,8 @@ class OfferService
         $offer->loadMissing('order');
 
         abort_unless($offer->order?->client_id === $client->id, 404);
+
+        $offer->order->assertTender();
 
         if (! $offer->hasPrice()) {
             throw ValidationException::withMessages([
@@ -440,6 +490,8 @@ class OfferService
                 'order' => ['This order is no longer available.'],
             ]);
         }
+
+        $order->assertTender();
 
         if ($offer->status !== OfferStatus::Pending || ! $order->status->isOpenForOffers()) {
             throw ValidationException::withMessages([
@@ -529,6 +581,8 @@ class OfferService
         $order = $offer->order;
 
         abort_unless($order->client_id === $client->id, 404);
+
+        $order->assertTender();
 
         if (! $offer->hasPrice()) {
             throw ValidationException::withMessages([

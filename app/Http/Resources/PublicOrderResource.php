@@ -31,6 +31,9 @@ class PublicOrderResource extends JsonResource
             'district' => new RegionResource($this->whenLoaded('district')),
             'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
             'status' => $this->status->value,
+            'route' => $this->route->value,
+            // Tezkor: an agent already holds the exclusive claim ("Band").
+            'claimed' => $this->hasActiveClaim(),
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
             'attachments_count' => count($this->allAttachmentFileIds()),

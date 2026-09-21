@@ -25,6 +25,7 @@ class OrderController extends ApiController
         $paginator = $this->orders->list([
             'status' => $validated['status'] ?? null,
             'attention' => $validated['attention'] ?? null,
+            'route' => $validated['route'] ?? null,
             'search' => $validated['search'] ?? null,
             'per_page' => $validated['per_page'] ?? 15,
         ]);

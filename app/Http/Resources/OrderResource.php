@@ -34,6 +34,13 @@ class OrderResource extends JsonResource
             'lng' => $this->lng,
             'location_label' => $this->location_label,
             'status' => $this->status->value,
+            // tender | tezkor — fixed at creation.
+            'route' => $this->route->value,
+            // Tezkor: the agent holding the claim (phone only once claimed).
+            'claim' => $this->when($this->isTezkor(), fn () => $this->claimPayload()),
+            // Tezkor claim actions for the client.
+            'can_release' => $this->hasActiveClaim(),
+            'can_close' => $this->hasActiveClaim(),
             // Money runs on its own track: the deal is active from the moment
             // the contract is accepted, the payment may still be outstanding.
             'payment_state' => $this->payment_state?->value,
@@ -103,6 +110,40 @@ class OrderResource extends JsonResource
             'views_count' => $this->whenCounted('views'),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function claimPayload(): ?array
+    {
+        if (! $this->isClaimed()) {
+            return null;
+        }
+
+        $agent = $this->relationLoaded('claimedAgent')
+            ? $this->claimedAgent
+            : $this->claimedAgent()->with(['profile.companyLogoFile', 'profile.cachedRating'])->first();
+        $profile = $agent?->profile;
+        $rating = $profile?->cachedRating;
+
+        return [
+            'agent_id' => $this->claimed_agent_id,
+            'claimed_at' => $this->claimed_at,
+            'agent' => [
+                'first_name' => $agent?->first_name,
+                'last_name' => $agent?->last_name,
+                'phone' => $agent?->phone,
+                'username' => $agent?->username,
+                'profile_id' => $profile?->id,
+                'company_name' => $profile?->company_name,
+                'company_logo' => $profile?->companyLogoFile?->url(),
+                'location_label' => $profile?->location_label,
+                'stars' => $rating?->stars !== null ? (float) $rating->stars : null,
+                'stars_count' => (int) ($rating?->stars_count ?? 0),
+                'grade' => $rating?->grade ?? 50,
+            ],
         ];
     }
 }

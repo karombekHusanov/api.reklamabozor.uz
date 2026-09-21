@@ -7,6 +7,7 @@ use App\Enums\OfferStatus;
 use App\Enums\OrderPaymentState;
 use App\Enums\OrderProblemReason;
 use App\Enums\OrderProblemState;
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
@@ -20,7 +21,9 @@ use App\Services\Hashtag\HashtagService;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
+use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -47,6 +50,19 @@ class OrderService
      */
     public function create(User $client, array $data): Order
     {
+        // Route is fixed at creation. Permitted accounts default to Tender,
+        // everyone else to Tezkor; asking for Tender without access is a 403
+        // (also enforced in StoreOrderRequest — this is the second layer).
+        $route = isset($data['route'])
+            ? OrderRoute::from($data['route'])
+            : ($client->canCreateTender() ? OrderRoute::Tender : OrderRoute::Tezkor);
+
+        if ($route === OrderRoute::Tender && ! $client->canCreateTender()) {
+            throw new HttpResponseException(
+                ApiResponse::error('Tender access is required to create a tender request.', 403),
+            );
+        }
+
         $category = isset($data['category_id'])
             ? Category::find($data['category_id'])
             : null;
@@ -86,7 +102,6 @@ class OrderService
             'target_agent_id' => $targetAgentId,
             'title' => $title,
             'description' => $data['description'],
-            'budget_max' => $data['budget'] ?? null,
             'deadline' => $data['deadline'] ?? null,
             'attachment_file_ids' => $data['attachment_file_ids'] ?? [],
             'show_files_in_showcase' => $data['show_files_in_showcase'] ?? true,
@@ -96,6 +111,9 @@ class OrderService
             'region_id' => $regionId,
             'district_id' => $districtId,
             'status' => OrderStatus::New,
+            'route' => $route,
+            // Tezkor money never touches the platform.
+            ...($route === OrderRoute::Tezkor ? ['payment_state' => OrderPaymentState::NotRequired] : []),
         ]);
 
         $this->hashtags->syncForOrder($order, $data['hashtags'] ?? []);
@@ -430,6 +448,88 @@ class OrderService
     }
 
     /**
+     * Client (or agent) lets go of a Tezkor claim: the claiming agent's
+     * interest is withdrawn and the request reopens for everyone. There is no
+     * automatic release — only these two explicit actions.
+     */
+    public function releaseClaim(User $actor, Order $order, bool $asAgent = false): Order
+    {
+        $agentId = null;
+
+        DB::transaction(function () use ($actor, $order, $asAgent, &$agentId): void {
+            /** @var Order $locked */
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            abort_unless(
+                $asAgent ? $locked->claimed_agent_id === $actor->id : $locked->client_id === $actor->id,
+                404,
+            );
+
+            if (! $locked->hasActiveClaim()) {
+                throw ValidationException::withMessages([
+                    'order' => ['This request has no active claim to release.'],
+                ]);
+            }
+
+            $agentId = $locked->claimed_agent_id;
+
+            $locked->offers()
+                ->where('agent_id', $agentId)
+                ->where('status', OfferStatus::Pending)
+                ->update(['status' => OfferStatus::Withdrawn]);
+
+            $locked->update([
+                'claimed_agent_id' => null,
+                'claimed_at' => null,
+                'status' => OrderStatus::New,
+                'stale_reminder_sent_at' => null,
+            ]);
+        });
+
+        $order->refresh();
+
+        try {
+            $this->notifier->notifyClaimReleased($order, ! $asAgent, $agentId);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->withClientRelations($order);
+    }
+
+    /**
+     * Client marks a claimed Tezkor request as agreed ("kelishildi") — the
+     * request is closed as completed. No payout, acts or contract.
+     */
+    public function closeAgreed(User $client, Order $order): Order
+    {
+        abort_unless($order->client_id === $client->id, 404);
+
+        DB::transaction(function () use ($order): void {
+            /** @var Order $locked */
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if (! $locked->hasActiveClaim()) {
+                throw ValidationException::withMessages([
+                    'order' => ['Only a claimed Tezkor request can be closed as agreed.'],
+                ]);
+            }
+
+            $this->complete($locked, auto: false);
+        });
+
+        $order->refresh();
+
+        try {
+            $this->notifier->notifyClaimClosed($order);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->withClientRelations($order);
+    }
+
+    /**
      * Shared completion transition, used by the client confirmation and the
      * scheduler's auto-complete.
      */
@@ -440,6 +540,14 @@ class OrderService
             'completed_at' => now(),
             'auto_completed' => $auto,
         ]);
+
+        // Tezkor: no payout, acts or contract — the platform only connected
+        // the two sides.
+        if ($order->isTezkor()) {
+            RecalculateRating::dispatch($order->client_id);
+
+            return;
+        }
 
         // Queue the agent's final payout — the remainder after the advance.
         // Payouts follow settled money: an order that still owes (e.g. an

@@ -42,6 +42,7 @@ class OrderAdminService
      * @param  array{
      *     status?: string|null,
      *     attention?: string|null,
+     *     route?: string|null,
      *     search?: string|null,
      *     per_page?: int
      * }  $filters
@@ -49,11 +50,15 @@ class OrderAdminService
     public function list(array $filters): LengthAwarePaginator
     {
         $query = Order::query()
-            ->with(['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.profile'])
+            ->with(['category', 'region', 'district', 'hashtags', 'client', 'targetAgent.profile', 'claimedAgent.profile'])
             ->withCount('offers');
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
+        }
+
+        if (! empty($filters['route'])) {
+            $query->where('route', $filters['route']);
         }
 
         // Ops-attention shortcuts: same definitions the dashboard counts use.

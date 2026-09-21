@@ -30,6 +30,14 @@ class AdminOrderResource extends JsonResource
             'lng' => $this->lng,
             'location_label' => $this->location_label,
             'status' => $this->status->value,
+            'route' => $this->route->value,
+            // Tezkor: the agent currently holding the claim (null = open).
+            'claimed_at' => $this->claimed_at,
+            'claimed_agent' => $this->whenLoaded('claimedAgent', fn () => $this->claimedAgent ? [
+                'id' => $this->claimedAgent->id,
+                'first_name' => $this->claimedAgent->first_name,
+                'company_name' => $this->claimedAgent->profile?->company_name,
+            ] : null),
             'payment_state' => $this->payment_state?->value,
             'payment_due_at' => $this->payment_due_at,
             'paid_at' => $this->paid_at,

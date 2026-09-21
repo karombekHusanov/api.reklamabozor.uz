@@ -279,6 +279,8 @@ class PaymentService
      */
     private function assertPayable(Order $order): void
     {
+        $order->assertTender();
+
         $payableStatus = in_array($order->status, [
             OrderStatus::AwaitingPayment,
             OrderStatus::InProgress,

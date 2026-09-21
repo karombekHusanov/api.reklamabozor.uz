@@ -128,7 +128,7 @@ class Offer extends Model
 
         $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
 
-        if ($order === null) {
+        if ($order === null || $order->isTezkor()) {
             return false;
         }
 

@@ -43,6 +43,8 @@ class AmendmentService
      */
     public function previewDocument(User $user, Order $order, array $data): array
     {
+        $order->assertTender();
+
         $offer = $this->activeOffer($order);
         $role = $this->initiatorRole($user, $order, $offer);
 
@@ -78,6 +80,8 @@ class AmendmentService
      */
     public function propose(User $user, Order $order, array $data, ?Request $request = null): OrderAmendment
     {
+        $order->assertTender();
+
         $offer = $this->activeOffer($order);
         $role = $this->initiatorRole($user, $order, $offer);
 

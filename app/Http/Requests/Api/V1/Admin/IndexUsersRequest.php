@@ -26,6 +26,7 @@ class IndexUsersRequest extends FormRequest
                 Role::Designer->value,
                 Role::Seller->value,
             ])],
+            'tender_access' => ['nullable', Rule::in(['granted', 'pending', 'revoked', 'none'])],
             'search' => ['nullable', 'string', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
             'page' => ['nullable', 'integer', 'min:1'],

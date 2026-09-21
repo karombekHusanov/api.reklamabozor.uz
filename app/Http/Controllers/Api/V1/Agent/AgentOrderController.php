@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Agent;
 
+use App\Enums\OrderRoute;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Agent\PreviewOfferContractRequest;
 use App\Http\Requests\Api\V1\Agent\SetOfferPricelistRequest;
@@ -23,6 +24,7 @@ use App\Services\Order\OrderService;
 use App\Services\Review\ReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AgentOrderController extends ApiController
 {
@@ -34,11 +36,18 @@ class AgentOrderController extends ApiController
     ) {}
 
     /**
-     * Orders the agent can bid on (open, in their categories).
+     * Orders the agent can bid on (open, in their categories). Optional `?route=tender|tezkor`.
      */
     public function index(Request $request): JsonResponse
     {
-        $orders = $this->offers->availableForAgent($request->user());
+        $validated = $request->validate([
+            'route' => ['nullable', Rule::enum(OrderRoute::class)],
+        ]);
+
+        $orders = $this->offers->availableForAgent(
+            $request->user(),
+            route: isset($validated['route']) ? OrderRoute::from($validated['route']) : null,
+        );
 
         return $this->success(AgentOrderResource::collection($orders));
     }
@@ -161,6 +170,21 @@ class AgentOrderController extends ApiController
         $order = $this->orders->submitWork($request->user(), $order);
 
         return $this->success(new OrderResource($order), 'Work submitted — waiting for the client to confirm.');
+    }
+
+    /**
+     * Tezkor: the claiming agent lets go of the request.
+     */
+    public function release(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->releaseClaim($request->user(), $order, asAgent: true);
+
+        return $this->success([
+            'id' => $order->id,
+            'status' => $order->status->value,
+            'route' => $order->route->value,
+            'claimed' => false,
+        ], 'Claim released.');
     }
 
     /**
