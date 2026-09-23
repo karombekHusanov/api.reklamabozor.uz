@@ -39,3 +39,7 @@ Schedule::command('orders:sweep-quality-disputes')->dailyAt('09:00')->withoutOve
 // Order sat open-for-offers with zero offers too long → one-time reminder to
 // the client (and ops) — no automatic re-broadcast or cancellation.
 Schedule::command('orders:remind-stale')->dailyAt('10:30')->withoutOverlapping();
+
+// Online gateways without a paid-webhook (ATMOS): settle / expire pending
+// Propusk payments. Cheap no-op when nothing is pending.
+Schedule::command('gateway:reconcile-payments')->everyMinute()->withoutOverlapping();

@@ -188,6 +188,22 @@ class AgentOrderController extends ApiController
     }
 
     /**
+     * Tezkor: the claiming agent marks the request as agreed — closed as
+     * completed, symmetric with the client's own "Kelishildi" action.
+     */
+    public function close(Request $request, Order $order): JsonResponse
+    {
+        $order = $this->orders->closeAgreed($request->user(), $order, asAgent: true);
+
+        return $this->success([
+            'id' => $order->id,
+            'status' => $order->status->value,
+            'route' => $order->route->value,
+            'claimed' => false,
+        ], 'Request closed.');
+    }
+
+    /**
      * Provider rates the client on their completed order.
      */
     public function storeReview(StoreReviewRequest $request, Order $order): JsonResponse

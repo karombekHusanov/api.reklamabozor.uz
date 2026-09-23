@@ -19,7 +19,7 @@ class TelegramOpsPing extends Command
             return self::FAILURE;
         }
 
-        $notifier->ping('✅ Ops-guruh ulandi — Reklama Bozor bot marketplace eventlarini shu yerga yozadi.');
+        $notifier->ping('✅ Ops-guruh ulandi — PRB bot marketplace eventlarini shu yerga yozadi.');
         $this->info('Ping sent (check the group).');
 
         return self::SUCCESS;

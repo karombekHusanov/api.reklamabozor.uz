@@ -6,6 +6,8 @@ use App\Enums\AgentProfileStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\PayoutTranche;
+use App\Jobs\SendNewOrderNotification;
+use App\Models\AgentPass;
 use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
@@ -15,6 +17,7 @@ use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Telegram\AdminNotifier;
 use App\Services\Telegram\TelegramBotService;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Str;
 
 /**
@@ -54,6 +57,39 @@ class OrderNotifier
             ->when($order->target_agent_id !== null, fn ($q) => $q->whereKey($order->target_agent_id))
             ->get();
 
+        // Never send inline: a broadcast to many agencies would stall the
+        // request and trip Telegram's flood limit. One retryable job per
+        // recipient, released in per-second waves so the whole audience is
+        // reached at a safe pace and one failure cannot lose the others.
+        $perSecond = max(1, (int) config('services.telegram.broadcast_per_second', 20));
+        $sent = 0;
+
+        foreach ($recipients->values() as $index => $recipient) {
+            SendNewOrderNotification::dispatch($order->id, $recipient->id)
+                ->delay(now()->addSeconds(intdiv($index, $perSecond)));
+            $sent++;
+        }
+
+        $this->admin->orderPlaced($order, $sent);
+
+        return $sent;
+    }
+
+    /**
+     * Send one agent the "new order" message. Called from the queued
+     * {@see SendNewOrderNotification}; returns the Telegram response so the
+     * job can tell a retryable failure (429/5xx) from a dead chat (403).
+     * A failed document upload falls back to the plain text message.
+     */
+    public function deliverNewOrder(Order $order, User $recipient): ?Response
+    {
+        if ($recipient->telegram_id === null) {
+            return null;
+        }
+
+        $order->loadMissing('category');
+        Order::hydrateAttachmentFiles($order);
+
         $text = $this->buildMessage($order);
         $deepLink = $this->orderDeepLink($order);
         $markup = $deepLink !== null
@@ -63,27 +99,17 @@ class OrderNotifier
         // Telegram fetches the document over HTTP, so it needs the absolute URL.
         $firstFile = $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles->first() : null;
         $documentUrl = $firstFile?->absoluteUrl();
+        $chatId = (int) $recipient->telegram_id;
 
-        $sent = 0;
+        if ($documentUrl !== null) {
+            $response = $this->bot->sendDocument($chatId, $documentUrl, $text, $markup);
 
-        foreach ($recipients as $recipient) {
-            try {
-                if ($documentUrl !== null) {
-                    // Deliver the first attached file as a document with the order
-                    // summary as caption; agents open the mini app for the full set.
-                    $this->bot->sendDocument((int) $recipient->telegram_id, $documentUrl, $text, $markup);
-                } else {
-                    $this->bot->sendMessage((int) $recipient->telegram_id, $text, $markup);
-                }
-                $sent++;
-            } catch (\Throwable $e) {
-                report($e);
+            if ($response->successful() || in_array($response->status(), [403, 429], true)) {
+                return $response;
             }
         }
 
-        $this->admin->orderPlaced($order, $sent);
-
-        return $sent;
+        return $this->bot->sendMessage($chatId, $text, $markup);
     }
 
     /**
@@ -460,14 +486,33 @@ class OrderNotifier
         ]), "📂 So'rovni ko'rish", "/orders/{$order->id}");
     }
 
-    /** Client closed the claimed Tezkor request as agreed. */
-    public function notifyClaimClosed(Order $order): void
+    /** Either side closed the claimed Tezkor request as agreed — tell the other one. */
+    public function notifyClaimClosed(Order $order, bool $byAgent = false): void
     {
+        if ($byAgent) {
+            $order->loadMissing('client');
+
+            $this->sendToUser($order->client, implode("\n", [
+                "✅ So'rov <b>#{$order->id}</b> (".e((string) $order->title).') ijrochi tomonidan kelishilgan deb yopildi.',
+            ]));
+
+            return;
+        }
+
         $agent = $order->claimed_agent_id !== null ? User::find($order->claimed_agent_id) : null;
 
         $this->sendToUser($agent, implode("\n", [
             "✅ So'rov <b>#{$order->id}</b> (".e((string) $order->title).') mijoz tomonidan kelishilgan deb yopildi.',
         ]));
+    }
+
+    /** A Propusk became active (paid via the gateway/wallet or granted by a manager). */
+    public function notifyPassActivated(User $agent, AgentPass $pass): void
+    {
+        $this->sendToUser($agent, implode("\n", [
+            "\u{1F39F} <b>Propusk faollashtirildi.</b>",
+            'Amal qilish muddati: <b>'.$pass->expires_at->timezone(config('app.timezone'))->format('d.m.Y H:i').'</b> gacha.',
+        ]), "📂 So'rovlarni ko'rish", '/business?tab=orders');
     }
 
     /** Manager decision on the account's Tender access. */

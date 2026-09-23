@@ -334,6 +334,36 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->assertSame(0, $order->payouts()->count());
         $this->assertSame(0, $order->documents()->count());
         $this->assertNull($order->contract()->first());
+        // Never goes through accept() (Tender-only) — completion is what
+        // resolves it, so the agent's offer list stops showing it as pending.
+        $this->assertSame(OfferStatus::Accepted, $order->offers()->first()->status);
+    }
+
+    /** The agent holding the claim can close it as agreed too — the client doesn't have to act. */
+    public function test_claiming_agent_can_also_close_the_request_as_agreed(): void
+    {
+        Http::fake();
+        $client = User::factory()->create();
+        $order = $this->tezkorOrder($client);
+        $agent = $this->agent();
+        $stranger = $this->agent();
+
+        // Nobody without the claim may close it — not even another agent.
+        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($stranger))->assertNotFound();
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
+
+        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($agent))
+            ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.claimed', false);
+
+        $fresh = $order->fresh();
+        $this->assertSame(OrderStatus::Completed, $fresh->status);
+        $this->assertSame(0, $fresh->payouts()->count());
+        $this->assertFalse($fresh->hasActiveClaim());
+        $this->assertSame(OfferStatus::Accepted, $fresh->offers()->first()->status);
+
+        // Already closed — nothing left to close.
+        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($agent))->assertUnprocessable();
     }
 
     public function test_tezkor_accept_pay_pricelist_and_amendment_paths_are_422(): void

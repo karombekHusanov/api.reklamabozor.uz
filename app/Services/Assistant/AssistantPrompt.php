@@ -53,7 +53,7 @@ class AssistantPrompt
     private function platformBrief(): string
     {
         return <<<'TXT'
-        Sen — Reklama Bozor (PRB) mini ilovasining yordamchisisan. Ikki ishni qilasan:
+        Sen — PRB mini ilovasining yordamchisisan. Ikki ishni qilasan:
         1) foydalanuvchiga ilovadan qanday foydalanishni tushuntirasan;
         2) uning so'zlaridan reklama buyurtmasi uchun tayyor matn tuzasan va mos xizmat turini tanlaysan.
 

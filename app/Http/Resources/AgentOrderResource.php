@@ -44,6 +44,10 @@ class AgentOrderResource extends JsonResource
             // Tezkor: someone holds the exclusive claim (maybe this agent).
             'claimed' => $this->hasActiveClaim(),
             'claimed_by_me' => $this->isTezkor() && $this->claimed_agent_id === $request->user()?->id,
+            // Only the agent holding an active claim may release it or close
+            // it as agreed — same pair of actions the client has.
+            'can_release' => $this->hasActiveClaim() && $this->claimed_agent_id === $request->user()?->id,
+            'can_close' => $this->hasActiveClaim() && $this->claimed_agent_id === $request->user()?->id,
             'can_offer' => $this->canOffer($request, $myOffer),
             'views_count' => $this->whenCounted('views'),
             'offers_count' => $this->whenCounted('offers'),

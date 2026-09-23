@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\Admin\MxikCodeController as AdminMxikCodeControl
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\OrderProblemController as AdminOrderProblemController;
 use App\Http\Controllers\Api\V1\Admin\OrdersByRouteReportController as AdminOrdersByRouteReportController;
+use App\Http\Controllers\Api\V1\Admin\PassController as AdminPassController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\V1\Admin\PayoutController as AdminPayoutController;
 use App\Http\Controllers\Api\V1\Admin\PortfolioModerationController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Api\V1\AdvantageController;
 use App\Http\Controllers\Api\V1\Agent\AgentOrderController;
 use App\Http\Controllers\Api\V1\Agent\AgentPortfolioController;
 use App\Http\Controllers\Api\V1\Agent\AgentProfileController;
+use App\Http\Controllers\Api\V1\Agent\PassController as AgentPassController;
 use App\Http\Controllers\Api\V1\Agent\PayoutController as AgentPayoutController;
 use App\Http\Controllers\Api\V1\Assistant\AssistantController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
@@ -42,6 +44,7 @@ use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
 use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Order\OrderDocumentController;
+use App\Http\Controllers\Api\V1\Payment\GatewayCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
 use App\Http\Controllers\Api\V1\PlatformContactController;
 use App\Http\Controllers\Api\V1\Profile\ActivityController;
@@ -62,6 +65,15 @@ Route::get('/platform-contact', PlatformContactController::class);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);
+
+// Online payment gateway (Propusk / wallet top-up): provider callback (idempotent)
+// and the dev-only fake checkout completion.
+Route::post('/payments/gateway/callback', [GatewayCallbackController::class, 'callback'])
+    ->middleware('throttle:120,1');
+Route::post('/payments/atmos/callback', [GatewayCallbackController::class, 'atmosBilling'])
+    ->middleware('throttle:120,1');
+Route::match(['get', 'post'], '/payments/fake/{ref}/complete', [GatewayCallbackController::class, 'fakeComplete'])
+    ->middleware('throttle:30,1');
 
 // Public marketplace listing of approved agents (home slider / browse).
 Route::get('/agents', [PublicAgentController::class, 'index']);
@@ -225,8 +237,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/orders/{order}', [AgentOrderController::class, 'showOrder']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
-        // Tezkor: agent lets go of their claim.
+        // Tezkor: agent lets go of their claim, or closes it as agreed.
         Route::post('/orders/{order}/release', [AgentOrderController::class, 'release']);
+        Route::post('/orders/{order}/close', [AgentOrderController::class, 'close']);
         Route::post('/orders/{order}/review', [AgentOrderController::class, 'storeReview']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
         Route::get('/offers/{offer}', [AgentOrderController::class, 'showOffer']);
@@ -244,6 +257,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
         // Earnings: escrow payouts owed/paid + withdrawable balance.
         Route::get('/payouts', [AgentPayoutController::class, 'index']);
+
+        // Propusk (daily pass) + dormant wallet.
+        Route::get('/pass', [AgentPassController::class, 'show']);
+        Route::post('/pass/purchase', [AgentPassController::class, 'purchase'])->middleware('throttle:10,1');
+        // In-app card form (ATMOS merchant API): card → SMS code → confirm.
+        Route::post('/pass/card', [AgentPassController::class, 'cardStart'])->middleware('throttle:6,1');
+        Route::post('/pass/card/{reference}/confirm', [AgentPassController::class, 'cardConfirm'])
+            ->whereUuid('reference')->middleware('throttle:10,1');
+        Route::get('/pass/history', [AgentPassController::class, 'history']);
+        Route::get('/wallet', [AgentPassController::class, 'wallet']);
+        Route::post('/wallet/topup', [AgentPassController::class, 'topup'])->middleware('throttle:10,1');
     });
 });
 
@@ -260,6 +284,15 @@ Route::prefix('admin')
         // Manager-granted Tender permission (needs a verified legal entity).
         Route::post('/users/{user}/tender-access', [AdminTenderAccessController::class, 'grant']);
         Route::delete('/users/{user}/tender-access', [AdminTenderAccessController::class, 'revoke']);
+
+        // Propusk: manual grant + wallet (adjust works even while the wallet is off).
+        Route::post('/users/{user}/pass', [AdminPassController::class, 'grant']);
+        Route::get('/users/{user}/wallet', [AdminPassController::class, 'wallet']);
+        Route::post('/users/{user}/wallet/adjust', [AdminPassController::class, 'adjustWallet']);
+        Route::get('/passes', [AdminPassController::class, 'index']);
+        Route::get('/passes/summary', [AdminPassController::class, 'summary']);
+        Route::get('/passes/settings', [AdminPassController::class, 'settings']);
+        Route::put('/passes/settings', [AdminPassController::class, 'updateSettings']);
 
         Route::get('/categories', [AdminCategoryController::class, 'index']);
         Route::post('/categories', [AdminCategoryController::class, 'store']);

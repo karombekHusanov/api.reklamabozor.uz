@@ -498,12 +498,18 @@ class OrderService
     }
 
     /**
-     * Client marks a claimed Tezkor request as agreed ("kelishildi") — the
-     * request is closed as completed. No payout, acts or contract.
+     * Either side of a claimed Tezkor request marks it as agreed
+     * ("kelishildi") — the request is closed as completed. No payout, acts or
+     * contract. Symmetric with {@see releaseClaim()}: the client no longer
+     * has to be the one to act if the agent is confident it's done — either
+     * side closing it unblocks the slot the same way.
      */
-    public function closeAgreed(User $client, Order $order): Order
+    public function closeAgreed(User $actor, Order $order, bool $asAgent = false): Order
     {
-        abort_unless($order->client_id === $client->id, 404);
+        abort_unless(
+            $asAgent ? $order->claimed_agent_id === $actor->id : $order->client_id === $actor->id,
+            404,
+        );
 
         DB::transaction(function () use ($order): void {
             /** @var Order $locked */
@@ -521,7 +527,7 @@ class OrderService
         $order->refresh();
 
         try {
-            $this->notifier->notifyClaimClosed($order);
+            $this->notifier->notifyClaimClosed($order, $asAgent);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -542,8 +548,16 @@ class OrderService
         ]);
 
         // Tezkor: no payout, acts or contract — the platform only connected
-        // the two sides.
+        // the two sides. The claim's offer never goes through accept() (that
+        // path is Tender-only), so it would otherwise sit at "pending"
+        // forever — mark it accepted so the agent's offer list reflects the
+        // order's real (completed) outcome instead of looking unresolved.
         if ($order->isTezkor()) {
+            $order->offers()
+                ->where('agent_id', $order->claimed_agent_id)
+                ->where('status', OfferStatus::Pending)
+                ->update(['status' => OfferStatus::Accepted]);
+
             RecalculateRating::dispatch($order->client_id);
 
             return;

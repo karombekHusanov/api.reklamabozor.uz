@@ -10,7 +10,7 @@ class TelegramWebhookHandler
 {
     private const SHARE_PHONE_BUTTON = '📱 Telefon raqamni ulashish';
 
-    private const OPEN_APP_BUTTON = '🚀 Reklama Bozor’ni ochish';
+    private const OPEN_APP_BUTTON = '🚀 PRB’ni ochish';
 
     public function __construct(
         private readonly TelegramBotService $bot,
@@ -59,7 +59,7 @@ class TelegramWebhookHandler
 
         // Returning user who already shared a phone → straight to the app.
         if ($user?->phone) {
-            $this->presentApp($chatId, 'Qaytganingizdan xursandmiz! Davom etish uchun Reklama Bozor’ni oching.');
+            $this->presentApp($chatId, 'Qaytganingizdan xursandmiz! Davom etish uchun PRB’ni oching.');
 
             return;
         }
@@ -69,7 +69,7 @@ class TelegramWebhookHandler
 
         $this->bot->sendMessage(
             $chatId,
-            "Assalomu alaykum! Reklama Bozor’ga xush kelibsiz.\n\nDavom etish uchun telefon raqamingizni ulashing.",
+            "Assalomu alaykum! PRB’ga xush kelibsiz.\n\nDavom etish uchun telefon raqamingizni ulashing.",
             $this->bot->contactRequestKeyboard(self::SHARE_PHONE_BUTTON),
         );
     }
@@ -127,7 +127,7 @@ class TelegramWebhookHandler
             $this->bot->removeKeyboard(),
         );
 
-        $this->presentApp($chatId, 'Endi Reklama Bozor’dan to‘liq foydalanishingiz mumkin.');
+        $this->presentApp($chatId, 'Endi PRB’dan to‘liq foydalanishingiz mumkin.');
     }
 
     /**
@@ -144,7 +144,7 @@ class TelegramWebhookHandler
             return;
         }
 
-        $this->bot->setMenuButtonWebApp($chatId, 'Reklama Bozor', $miniAppUrl);
+        $this->bot->setMenuButtonWebApp($chatId, 'PRB', $miniAppUrl);
 
         $this->bot->sendMessage(
             $chatId,

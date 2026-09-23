@@ -30,7 +30,7 @@ class AdminNotifier
         $this->send('order_placed', implode("\n", [
             "🆕 <b>Buyurtma #{$order->id}</b> — ".e($order->category?->name_uz ?? ''),
             '👤 Klient: '.$this->userLabel($order->client),
-            "📤 {$notifiedAgents} ta agentlikka yuborildi",
+            "📤 {$notifiedAgents} ta agentlikka yuborish navbatga qo'yildi",
         ]));
     }
 
