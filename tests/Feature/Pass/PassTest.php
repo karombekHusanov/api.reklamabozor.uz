@@ -197,6 +197,52 @@ class PassTest extends TestCase
         $this->assertSame(100000, $wallet->balanceTiyin($other));
     }
 
+    public function test_per_response_charges_tender_otklik_the_same(): void
+    {
+        config(['passes.enforce' => true, 'passes.mode' => 'per_response', 'passes.wallet_enabled' => true]);
+        $agent = $this->agent();
+        $wallet = app(WalletService::class);
+        $wallet->credit($agent, WalletTransactionType::Topup, 150000, 'gp:tender');
+
+        $tender = Order::factory()->status(OrderStatus::New)->create([
+            'category_id' => null,
+            'route' => OrderRoute::Tender,
+            'payment_state' => OrderPaymentState::NotRequired,
+        ]);
+
+        $this->claim($agent, $tender)->assertCreated();
+        $this->assertSame(50000, $wallet->balanceTiyin($agent));
+
+        // A rejected otklik (duplicate) rolls the fee back with it.
+        $this->claim($agent, $tender)->assertStatus(422);
+        $this->assertSame(50000, $wallet->balanceTiyin($agent));
+
+        $second = Order::factory()->status(OrderStatus::New)->create([
+            'category_id' => null,
+            'route' => OrderRoute::Tender,
+            'payment_state' => OrderPaymentState::NotRequired,
+        ]);
+        $this->claim($agent, $second)
+            ->assertStatus(402)
+            ->assertJsonPath('code', 'insufficient_balance')
+            ->assertJsonPath('data.price_som', 1000)
+            ->assertJsonPath('data.balance_som', 500);
+    }
+
+    public function test_tender_otkliks_do_not_count_toward_the_claim_limit(): void
+    {
+        config(['passes.max_active_claims' => 1]);
+        $agent = $this->agent();
+        $this->claim($agent, $this->tezkor())->assertCreated();
+
+        $tender = Order::factory()->status(OrderStatus::New)->create([
+            'category_id' => null,
+            'route' => OrderRoute::Tender,
+            'payment_state' => OrderPaymentState::NotRequired,
+        ]);
+        $this->claim($agent, $tender)->assertCreated();
+    }
+
     public function test_per_response_without_wallet_is_payment_source_unavailable(): void
     {
         config(['passes.enforce' => true, 'passes.mode' => 'per_response', 'passes.wallet_enabled' => false]);

@@ -7,6 +7,7 @@ use App\Enums\GatewayPaymentStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Agent\ConfirmCardPaymentRequest;
 use App\Http\Requests\Api\V1\Agent\StartCardPaymentRequest;
+use App\Http\Requests\Api\V1\Agent\StartWalletTopupRequest;
 use App\Http\Resources\AgentPassResource;
 use App\Models\AgentPass;
 use App\Models\GatewayPayment;
@@ -93,7 +94,37 @@ class PassController extends ApiController
         ], 'SMS code sent', 201);
     }
 
-    /** Step 2: the SMS code. On success the pass is active in the returned summary. */
+    /**
+     * Wallet top-up from the in-app card form (per-otklik mode). Confirmed the
+     * same way as a Propusk card payment, via {@see cardConfirm()}.
+     */
+    public function walletCardStart(StartWalletTopupRequest $request): JsonResponse
+    {
+        if (! config('passes.wallet_enabled')) {
+            return $this->error('The wallet is not enabled.', 422);
+        }
+
+        $agent = $request->user();
+
+        if ($agent->approvedProfile() === null) {
+            return $this->error('Only approved providers can top up the balance.', 403);
+        }
+
+        $payment = $this->cards->startTopup(
+            $agent,
+            (int) $request->validated('amount_som') * 100,
+            (string) $request->validated('card_number'),
+            $request->expiryYymm(),
+        );
+
+        return $this->success([
+            'payment_ref' => $payment->reference,
+            'amount_som' => intdiv($payment->amount_tiyin, 100),
+            'card_mask' => $payment->meta['card_mask'] ?? null,
+        ], 'SMS code sent', 201);
+    }
+
+    /** Step 2: the SMS code. On success the pass is active / the balance credited in the returned summary. */
     public function cardConfirm(ConfirmCardPaymentRequest $request, string $reference): JsonResponse
     {
         $agent = $request->user();

@@ -35,5 +35,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Propusk defaults for tests, independent of a developer's local .env;
+             tests opt in per case via config(). -->
+        <env name="PASSES_ENFORCE" value="false"/>
+        <env name="PASSES_WALLET_ENABLED" value="false"/>
+        <env name="PASSES_MODE" value="daily_pass"/>
     </php>
 </phpunit>

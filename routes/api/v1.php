@@ -268,6 +268,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/pass/history', [AgentPassController::class, 'history']);
         Route::get('/wallet', [AgentPassController::class, 'wallet']);
         Route::post('/wallet/topup', [AgentPassController::class, 'topup'])->middleware('throttle:10,1');
+        // In-app card form top-up (confirm via /pass/card/{reference}/confirm).
+        Route::post('/wallet/card', [AgentPassController::class, 'walletCardStart'])->middleware('throttle:6,1');
     });
 });
 

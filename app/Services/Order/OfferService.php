@@ -193,6 +193,8 @@ class OfferService
         // Tezkor: the claim is the exclusive slot. Lock the order row so two
         // agents tapping at once cannot both win (the loser gets 409).
         $offer = DB::transaction(function () use ($agent, $order, $profile, $data): Offer {
+            $locked = $order;
+
             if ($order->isTezkor()) {
                 /** @var Order $locked */
                 $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
@@ -209,7 +211,6 @@ class OfferService
                     );
                 }
 
-                $this->passes->assertCanClaim($agent, $locked);
             }
 
             if ($order->offers()->where('agent_id', $agent->id)->exists()) {
@@ -217,6 +218,9 @@ class OfferService
                     'order' => ['You have already sent an offer for this order.'],
                 ]);
             }
+
+            // Propusk / per-otklik fee — same rule for Tezkor and Tender.
+            $this->passes->assertCanRespond($agent, $locked);
 
             /** @var Offer $offer */
             $offer = $order->offers()->create([

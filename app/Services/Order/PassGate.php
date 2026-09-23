@@ -14,9 +14,10 @@ use App\Services\Pass\WalletService;
 use Illuminate\Support\Str;
 
 /**
- * Propusk check at claim time (never at view time). Called inside the claim
- * transaction with the order row locked, so a response fee charged here rolls
- * back together with a failed claim. Applies to directed requests too.
+ * Propusk check when an agent responds (otklik) — Tezkor claim and Tender
+ * interest alike, never at view time. Called inside the offer transaction, so
+ * a response fee charged here rolls back together with a failed otklik.
+ * Applies to directed requests too. The open-claims cap is Tezkor-only.
  *
  * Failures are HTTP 402 with a stable `code`:
  *  - claim_limit_reached  the agent holds the admin-set max of open claims
@@ -32,10 +33,12 @@ class PassGate
         private readonly WalletService $wallet,
     ) {}
 
-    public function assertCanClaim(User $agent, Order $order): void
+    public function assertCanRespond(User $agent, Order $order): void
     {
         // Independent of `enforce`: an admin-set number is always honoured.
-        $this->assertClaimLimit($agent);
+        if ($order->isTezkor()) {
+            $this->assertClaimLimit($agent);
+        }
 
         if (! config('passes.enforce')) {
             return;
@@ -52,7 +55,7 @@ class PassGate
             return;
         }
 
-        // per_response: one fee per claim, through the wallet ledger.
+        // per_response: one fee per otklik (both routes), through the wallet ledger.
         if (! config('passes.wallet_enabled')) {
             throw PassService::paymentRequired('payment_source_unavailable', 'Pay-per-response is not available right now.');
         }
@@ -61,11 +64,12 @@ class PassGate
 
         if ($this->wallet->balanceTiyin($agent) < $fee) {
             throw PassService::paymentRequired('insufficient_balance', 'Insufficient wallet balance for this response.', [
-                'price_som' => (int) config('passes.response_price_som'),
+                'price_som' => intdiv($fee, 100),
+                'balance_som' => intdiv($this->wallet->balanceTiyin($agent), 100),
             ]);
         }
 
-        $this->wallet->debit($agent, WalletTransactionType::ResponseFee, $fee, "claim:{$order->id}:{$agent->id}:".Str::uuid());
+        $this->wallet->debit($agent, WalletTransactionType::ResponseFee, $fee, "otklik:{$order->id}:{$agent->id}:".Str::uuid());
     }
 
     private function assertClaimLimit(User $agent): void

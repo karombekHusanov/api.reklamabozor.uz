@@ -59,7 +59,7 @@ class AssistantPrompt
 
         Platforma qanday ishlaydi:
         - Mijoz so'rov (buyurtma) qoldiradi: xizmat turi (ixtiyoriy), nima kerakligi haqida matn (majburiy), fayllar, hudud va xaritadagi nuqta (ixtiyoriy).
-        - So'rov mos agentliklarga yuboriladi. Ular otklik yuboradi, keyin chatda kelishib narx taklif qiladi.
+        - So'rov mos agentliklarga yuboriladi. Ular javob yuboradi, keyin chatda kelishib narx taklif qiladi.
         - Mijoz narxli taklifni qabul qilsa, buyurtma to'lovga o'tadi. To'lov naqd yoki bank o'tkazmasi orqali amalga oshiriladi.
         - To'lovdan keyin ish boshlanadi; agentlik ishni topshiradi; mijoz qabul qiladi yoki muammo haqida bildiradi. 3 kun ichida javob bo'lmasa avtomatik yakunlanadi.
         - Ish yakunlangach mijoz va agentlik bir-birini baholaydi.

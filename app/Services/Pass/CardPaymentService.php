@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Propusk bought from the in-app card form: start (card + expiry → the
- * provider texts an SMS code) then confirm (code → money taken → pass).
+ * In-app card form: start (card + expiry → the provider texts an SMS code)
+ * then confirm (code → money taken). Buys a Propusk (daily_pass mode) or tops
+ * up the wallet the per-otklik fee is taken from (per_response mode).
  *
  * The card number and expiry are handed to the provider and dropped — only a
  * masked number is kept in `meta` for display. Activation goes through
@@ -31,18 +32,37 @@ class CardPaymentService
     /** @param  string  $expiryYymm  Year + month, e.g. "2801" = 2028-01. */
     public function startPass(User $agent, string $cardNumber, string $expiryYymm): GatewayPayment
     {
+        return $this->start(
+            $agent, GatewayPaymentPurpose::Pass, $this->settings->priceTiyin(),
+            ['hours' => $this->settings->hours()], $cardNumber, $expiryYymm,
+        );
+    }
+
+    /** Wallet top-up; confirmed payments are credited by {@see GatewayPaymentService::handleEvent()}. */
+    public function startTopup(User $agent, int $amountTiyin, string $cardNumber, string $expiryYymm): GatewayPayment
+    {
+        return $this->start($agent, GatewayPaymentPurpose::Topup, $amountTiyin, [], $cardNumber, $expiryYymm);
+    }
+
+    /** @param  array<string, mixed>  $meta */
+    private function start(
+        User $agent,
+        GatewayPaymentPurpose $purpose,
+        int $amount,
+        array $meta,
+        string $cardNumber,
+        string $expiryYymm,
+    ): GatewayPayment {
         $gateway = $this->gateway();
-        $amount = $this->settings->priceTiyin();
 
         $payment = GatewayPayment::query()->create([
             'reference' => (string) Str::uuid(),
             'user_id' => $agent->id,
-            'purpose' => GatewayPaymentPurpose::Pass,
+            'purpose' => $purpose,
             'amount_tiyin' => $amount,
             'status' => GatewayPaymentStatus::Pending,
             'gateway' => $gateway->name(),
-            'meta' => [
-                'hours' => $this->settings->hours(),
+            'meta' => $meta + [
                 'flow' => 'card',
                 'card_mask' => self::mask($cardNumber),
             ],

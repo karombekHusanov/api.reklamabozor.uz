@@ -299,6 +299,20 @@ class OrderShowcaseTest extends TestCase
         $this->assertNull($response->json('data.my_offer'));
     }
 
+    /** A category-less (broadcast) request is open to every approved provider — same as submit. */
+    public function test_detail_can_offer_true_for_category_less_order(): void
+    {
+        [$agent, $token] = $this->approvedProvider(Category::factory()->create());
+        $order = Order::factory()->status(OrderStatus::New)->create(['category_id' => null]);
+
+        $response = $this->getJson(
+            "/api/v1/orders/showcase/{$order->id}",
+            ['Authorization' => "Bearer $token"],
+        )->assertOk();
+
+        $this->assertTrue($response->json('data.can_offer'));
+    }
+
     public function test_detail_can_offer_false_for_plain_client(): void
     {
         $client = User::factory()->create();

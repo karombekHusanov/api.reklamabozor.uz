@@ -129,6 +129,38 @@ class CardPaymentTest extends TestCase
         $this->start(User::factory()->create())->assertForbidden();
     }
 
+    public function test_wallet_top_up_by_card_credits_the_balance(): void
+    {
+        config(['passes.wallet_enabled' => true, 'passes.response_price_som' => 1000]);
+        $agent = $this->agent();
+
+        $ref = $this->as($agent)->postJson('/api/v1/agent/wallet/card', [
+            'amount_som' => 10000, 'card_number' => self::CARD, 'expiry' => '01/28',
+        ])->assertCreated()->assertJsonPath('data.amount_som', 10000)->json('data.payment_ref');
+
+        $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '111111'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'success')
+            ->assertJsonPath('data.summary.balance_som', 10000);
+
+        // No pass is bought by a top-up.
+        $this->assertSame(0, AgentPass::query()->where('user_id', $agent->id)->count());
+    }
+
+    public function test_wallet_top_up_needs_the_wallet_and_a_minimum(): void
+    {
+        $agent = $this->agent();
+        $body = ['amount_som' => 10000, 'card_number' => self::CARD, 'expiry' => '01/28'];
+
+        config(['passes.wallet_enabled' => false]);
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', $body)->assertStatus(422);
+
+        config(['passes.wallet_enabled' => true, 'passes.response_price_som' => 1000]);
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 500] + $body)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('amount_som');
+    }
+
     public function test_atmos_merchant_flow(): void
     {
         config([

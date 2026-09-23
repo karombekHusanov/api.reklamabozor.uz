@@ -437,7 +437,7 @@ class OrderNotifier
 
         $body = $order->target_agent_id !== null
             ? "Siz tanlagan agentlik hali javob bermadi. Kuting, chatda so'rang, yoki qo'llab-quvvatlashga murojaat qiling."
-            : "Hali birorta agentlik/dizayner otklik bildirmadi. TZ'ni aniqlashtirib ko'ring yoki qo'llab-quvvatlashga murojaat qiling.";
+            : "Hali birorta agentlik/dizayner javob bermadi. TZ'ni aniqlashtirib ko'ring yoki qo'llab-quvvatlashga murojaat qiling.";
 
         $this->sendToUser($order->client, implode("\n", [
             "\u{1F634} <b>Buyurtma #{$order->id}</b> (".e((string) $order->title).') hali javob olmadi.',
@@ -803,7 +803,7 @@ class OrderNotifier
 
         if (! $offer->hasPrice()) {
             return implode("\n", [
-                '🙋 <b>Yangi otklik!</b>',
+                '🙋 <b>Yangi javob!</b>',
                 '',
                 "🔖 Buyurtma: <b>#{$order->id}</b> — ".e($order->title),
                 "🏢 Agentlik: <b>{$company}</b>",

@@ -99,16 +99,9 @@ class PublicOrderDetailResource extends JsonResource
             return false;
         }
 
-        $profile = $user->providerProfileForCategory($order->category_id);
-        if ($profile !== null) {
-            return true;
-        }
-
-        $order->loadMissing('category');
-        if ($order->category?->shouldBroadcastToAllProviders()) {
-            return $user->approvedProfile() !== null;
-        }
-
-        return false;
+        // Same resolvers as OfferService::submitOffer — a category the profile
+        // serves, or a broadcast order ("Other" or no category at all).
+        return ($user->providerProfileForCategory($order->category_id)
+            ?? $user->providerProfileForBroadcastOrder($order)) !== null;
     }
 }
