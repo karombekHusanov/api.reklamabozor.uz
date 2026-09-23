@@ -29,7 +29,7 @@ class RemindStaleOrdersTest extends TestCase
         $this->artisan('orders:remind-stale')->assertSuccessful();
 
         $this->assertNotNull($order->fresh()->stale_reminder_sent_at);
-        Http::assertSent(fn ($request) => str_contains($request['text'] ?? '', 'javob'));
+        Http::assertSent(fn ($request) => str_contains($request['text'] ?? '', 'otklik'));
     }
 
     public function test_does_not_remind_before_the_grace_period(): void

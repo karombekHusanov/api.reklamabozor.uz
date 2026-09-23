@@ -40,7 +40,7 @@ class AdminNotifier
 
         if (! $offer->hasPrice()) {
             $this->send('offer_submitted', implode("\n", [
-                "🙋 Javob — buyurtma <b>#{$offer->order_id}</b>",
+                "🙋 Otklik — buyurtma <b>#{$offer->order_id}</b>",
                 '🏢 '.$this->agencyLabel($offer),
             ]));
 
@@ -277,8 +277,8 @@ class AdminNotifier
             "\u{1F634} <b>Javobsiz buyurtma — #{$order->id}</b>",
             '👤 Klient: '.$this->userLabel($order->client),
             $order->target_agent_id !== null
-                ? 'Yo\'naltirilgan agentlik hali javob bermadi.'
-                : 'Hali birorta javob kelmadi.',
+                ? 'Yo\'naltirilgan agentlik hali otklik bermadi.'
+                : 'Hali birorta otklik kelmadi.',
             'Kerak bo\'lsa qo\'lda yordam bering.',
         ]));
     }
