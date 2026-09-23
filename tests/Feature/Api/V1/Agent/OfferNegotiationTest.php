@@ -229,6 +229,54 @@ class OfferNegotiationTest extends TestCase
         ]);
     }
 
+    /** After an otklik the agent sees the client's phone in the order thread — only while it is live. */
+    public function test_agent_sees_client_phone_in_order_thread_while_otklik_is_live(): void
+    {
+        [$agent, $agentToken, $profile, $category] = $this->approvedAgent();
+        $client = User::factory()->create(['phone' => '+998901112233']);
+        $clientToken = $client->createToken('test')->plainTextToken;
+        $order = Order::factory()->for($category)->for($client, 'client')->create();
+        $offer = Offer::factory()->interest()->for($order)->for($agent, 'agent')->create([
+            'agent_profile_id' => $profile->id,
+            'status' => OfferStatus::Pending,
+        ]);
+        $chat = DirectChat::factory()->between($client, $agent)->create([
+            'agent_profile_id' => $profile->id,
+            'order_id' => $order->id,
+        ]);
+
+        $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$agentToken])
+            ->assertOk()
+            ->assertJsonPath('data.chat.other_participant.phone', '+998901112233');
+
+        // The client never gets the agent's number through this field.
+        app('auth')->forgetGuards();
+        $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$clientToken])
+            ->assertOk()
+            ->assertJsonPath('data.chat.other_participant.phone', null);
+
+        // Withdrawn / released otklik hides it again.
+        $offer->update(['status' => OfferStatus::Withdrawn]);
+        app('auth')->forgetGuards();
+        $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$agentToken])
+            ->assertOk()
+            ->assertJsonPath('data.chat.other_participant.phone', null);
+    }
+
+    public function test_marketplace_dm_never_exposes_the_client_phone(): void
+    {
+        [$agent, $agentToken, $profile] = $this->approvedAgent();
+        $client = User::factory()->create(['phone' => '+998901112244']);
+        $chat = DirectChat::factory()->between($client, $agent)->create([
+            'agent_profile_id' => $profile->id,
+            'order_id' => null,
+        ]);
+
+        $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$agentToken])
+            ->assertOk()
+            ->assertJsonPath('data.chat.other_participant.phone', null);
+    }
+
     public function test_agent_can_submit_interest_with_empty_body(): void
     {
         Http::fake();

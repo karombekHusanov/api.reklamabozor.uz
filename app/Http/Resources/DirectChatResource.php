@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\OfferStatus;
 use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\User;
@@ -76,6 +77,9 @@ class DirectChatResource extends JsonResource
         ];
 
         if ($this->includeActiveOffer) {
+            // Thread detail only (lists skip the extra query).
+            $data['other_participant']['phone'] = $this->clientPhoneFor($user, $other);
+
             $offer = $this->activeOffer;
             $data['active_offer'] = $offer ? [
                 'id' => $offer->id,
@@ -91,5 +95,26 @@ class DirectChatResource extends JsonResource
         }
 
         return $data;
+    }
+
+    /**
+     * The client's phone, for the agent only, and only in an order thread
+     * where the agent's otklik/offer is still live (pending or accepted) — a
+     * withdrawn, released or rejected response hides it again. Never exposed
+     * in a plain marketplace DM or to the client.
+     */
+    private function clientPhoneFor(User $viewer, User $other): ?string
+    {
+        if ($this->order_id === null || $viewer->id !== $this->agent_id || $other->id !== $this->client_id) {
+            return null;
+        }
+
+        $live = Offer::query()
+            ->where('order_id', $this->order_id)
+            ->where('agent_id', $viewer->id)
+            ->whereIn('status', [OfferStatus::Pending, OfferStatus::Accepted])
+            ->exists();
+
+        return $live ? $other->phone : null;
     }
 }
