@@ -17,7 +17,7 @@ class AcceptTermsTest extends TestCase
         $this->actingAs($user)->getJson('/api/v1/auth/me')
             ->assertOk()
             ->assertJsonPath('data.needs_terms', true)
-            ->assertJsonPath('data.terms_version', 'v1')
+            ->assertJsonPath('data.terms_version', 'v2')
             ->assertJsonPath('data.accepted_terms_version', null);
     }
 
@@ -28,10 +28,10 @@ class AcceptTermsTest extends TestCase
         $this->actingAs($user)->postJson('/api/v1/me/accept-terms')
             ->assertOk()
             ->assertJsonPath('data.needs_terms', false)
-            ->assertJsonPath('data.accepted_terms_version', 'v1');
+            ->assertJsonPath('data.accepted_terms_version', 'v2');
 
         $user->refresh();
-        $this->assertSame('v1', $user->accepted_terms_version);
+        $this->assertSame('v2', $user->accepted_terms_version);
         $this->assertNotNull($user->accepted_terms_at);
     }
 

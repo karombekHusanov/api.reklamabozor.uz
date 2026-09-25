@@ -12,7 +12,7 @@ return [
     | app (see User::hasAcceptedCurrentTerms()).
     |
     */
-    'terms_version' => env('LEGAL_TERMS_VERSION', 'v1'),
+    'terms_version' => env('LEGAL_TERMS_VERSION', 'v2'),
 
     /*
     |--------------------------------------------------------------------------
@@ -24,23 +24,24 @@ return [
     | provider of the advertising service itself. These requisites are printed
     | in the contract PDF and shown in the in-app accept drawer.
     |
-    | DRAFT values — replace with the real company requisites before launch.
+    | Operator: «Imprint Business» MChJ — requisites as in the approved client
+    | public offer (resources/legal/public_offer_client.php, §12).
     |
     */
     'platform' => [
         'name' => env('LEGAL_PLATFORM_NAME', '«Reklama Bozor» platformasi'),
-        'legal_name' => env('LEGAL_PLATFORM_LEGAL_NAME'),
-        'inn' => env('LEGAL_PLATFORM_INN'),
-        'address' => env('LEGAL_PLATFORM_ADDRESS'),
+        'legal_name' => env('LEGAL_PLATFORM_LEGAL_NAME', '«Imprint Business» MChJ'),
+        'inn' => env('LEGAL_PLATFORM_INN', '311937654'),
+        'address' => env('LEGAL_PLATFORM_ADDRESS', 'Toshkent shahri, Mirobod tumani, Afrosiyob MFY, Taras Shevchenko ko‘chasi, 22/1-uy, 3-xonadon'),
         'phone' => env('LEGAL_PLATFORM_PHONE'),
         'work_hours' => env('LEGAL_PLATFORM_WORK_HOURS', '09:00–18:00'),
         'email' => env('LEGAL_PLATFORM_EMAIL', 'support@reklamabozor.uz'),
         'website' => env('LEGAL_PLATFORM_WEBSITE', 'reklamabozor.uz'),
         // Bank requisites printed on the invoice (hisob-faktura) a client pays
         // by transfer, and on the cash payment slip.
-        'bank_name' => env('LEGAL_PLATFORM_BANK_NAME'),
-        'bank_account' => env('LEGAL_PLATFORM_BANK_ACCOUNT'),
-        'mfo' => env('LEGAL_PLATFORM_MFO'),
+        'bank_name' => env('LEGAL_PLATFORM_BANK_NAME', '«Kapitalbank» ATB'),
+        'bank_account' => env('LEGAL_PLATFORM_BANK_ACCOUNT', '20208000707204832001'),
+        'mfo' => env('LEGAL_PLATFORM_MFO', '01158'),
         'oked' => env('LEGAL_PLATFORM_OKED'),
         // Where a cash payment is accepted (office address / cash desk hours).
         'cash_desk' => env('LEGAL_PLATFORM_CASH_DESK'),

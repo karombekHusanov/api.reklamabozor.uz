@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Legal\PublicOfferController;
 use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
 use App\Http\Controllers\Api\V1\Order\OrderAmendmentController;
@@ -62,6 +63,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
 Route::get('/platform-contact', PlatformContactController::class);
+Route::get('/legal/public-offer', [PublicOfferController::class, 'show']);
+Route::get('/legal/public-offer.pdf', [PublicOfferController::class, 'pdf']);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);
