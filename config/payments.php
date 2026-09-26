@@ -26,7 +26,8 @@ return [
     // Platform commission on order payments, percent (deducted from payouts).
     'commission_percent' => (float) env('COMMISSION_PERCENT', 7),
 
-    // Default advance slice of an agent payout, percent (final = remainder).
+    // Default agent advance, percent of the gross order value (contract §4.2);
+    // the final tranche is the remainder minus the commission (§4.7).
     // A manager can override the amount per payout at release time.
     'advance_percent' => (float) env('PAYOUT_ADVANCE_PERCENT', 40),
 

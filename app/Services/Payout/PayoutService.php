@@ -16,10 +16,12 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Splits an order's escrow into agent payouts. The client pays 100% up front;
- * we owe the agent the deal price minus the platform commission, released as
- * an advance (deal start) + final (completion). Percentages are configurable
- * (defaults, not hardcoded) and a manager can override any amount at release.
+ * Splits an order's escrow into agent payouts. We owe the agent the deal
+ * price minus the platform commission, released as an advance (deal start) +
+ * final (completion). Per the three-party contract (§4.2, §4.7) the advance is
+ * a share of the gross order value and the commission comes entirely out of
+ * the final tranche. Percentages are configurable (defaults, not hardcoded)
+ * and a manager can override any amount at release.
  *
  * Money leaves the platform as a bank transfer to the agent's KYC account
  * (`payouts.channel`): the gateway has no account-payout API, so a manager
@@ -43,13 +45,14 @@ class PayoutService
     }
 
     /**
-     * Default advance slice of the net, in tiyin (percentage is configurable).
+     * Default advance, in tiyin: a share of the gross order value (contract
+     * §4.2), capped at the net so the commission can always be withheld.
      */
-    public function advanceAmount(int $net): int
+    public function advanceAmount(int $totalTiyin): int
     {
         $percent = min(100.0, max(0.0, (float) config('payments.advance_percent', 40)));
 
-        return (int) floor($net * $percent / 100);
+        return min($this->agentNet($totalTiyin), (int) floor($totalTiyin * $percent / 100));
     }
 
     /**
@@ -74,14 +77,13 @@ class PayoutService
             return null;
         }
 
-        $net = $this->agentNet($this->dealAmount($offer));
-
-        return $this->createPayout($order, $offer, PayoutTranche::Advance, $this->advanceAmount($net));
+        return $this->createPayout($order, $offer, PayoutTranche::Advance, $this->advanceAmount($this->dealAmount($offer)));
     }
 
     /**
      * Create the final payout when the order completes: the remaining net after
-     * whatever was already planned (so a manager-overridden advance is honoured).
+     * whatever was already planned (so a manager-overridden advance is honoured)
+     * — by default 60% of the order value minus the commission (contract §4.7).
      * No-op when the gateway is off or a final payout already exists.
      */
     public function planFinal(Order $order): ?Payout

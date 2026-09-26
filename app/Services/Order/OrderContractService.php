@@ -27,7 +27,7 @@ use Illuminate\Http\Request;
 class OrderContractService
 {
     /** Bump when the contract template/terms change. */
-    public const VERSION = 'v1';
+    public const VERSION = 'v2';
 
     public function __construct(private readonly FileService $files) {}
 
@@ -91,7 +91,7 @@ class OrderContractService
      */
     public function document(Offer $offer, ?array $draftItems = null, ?int $deadlineDays = null): array
     {
-        $offer->loadMissing(['agentProfile', 'agent', 'order.client.legalEntityVerification', 'order.category']);
+        $offer->loadMissing(['agentProfile', 'agent', 'order.client.legalEntityVerification', 'order.category', 'order.region']);
         $order = $offer->order;
 
         $items = $draftItems !== null
@@ -102,12 +102,16 @@ class OrderContractService
         $days = $deadlineDays ?? ($offer->deadline_days !== null ? (int) $offer->deadline_days : null);
         $deadlineLabel = $this->deadlineLabel($order, $days);
 
+        $template = $this->template();
+
         $document = [
             'version' => self::VERSION,
             'terms_version' => (string) config('legal.terms_version'),
             'number' => $this->number($order),
-            'title' => "Xizmat ko'rsatish shartnomasi (uch tomonlama)",
-            'subtitle' => 'Buyurtmachi ↔ Ijrochi ↔ Operator («Reklama Bozor»)',
+            'title' => $template['title'],
+            'subtitle' => $template['subtitle'],
+            'city' => $template['city'],
+            'draft_note' => $template['draft_note'],
             'order_id' => $order?->id,
             'offer_id' => $offer->id,
             'agent' => $this->agentSnapshot($offer),
@@ -120,8 +124,8 @@ class OrderContractService
             'generated_at' => now()->toIso8601String(),
         ];
 
-        $document['intro'] = $this->intro($document);
-        $document['sections'] = $this->sections($document, $order);
+        $document['intro'] = $this->intro($document, $template);
+        $document['sections'] = $this->sections($document, $order, $template);
         $document['hash'] = $this->hash($document);
 
         return $document;
@@ -181,8 +185,8 @@ class OrderContractService
     private function acceptanceLog(Offer $offer): array
     {
         $labels = [
-            ContractAcceptance::PARTY_AGENT => 'Ijrochi',
-            ContractAcceptance::PARTY_CLIENT => 'Buyurtmachi',
+            ContractAcceptance::PARTY_AGENT => 'Ижрочи',
+            ContractAcceptance::PARTY_CLIENT => 'Мижоз',
         ];
 
         $log = [];
@@ -202,109 +206,165 @@ class OrderContractService
     }
 
     /**
-     * @param  array<string, mixed>  $document
+     * The approved contract text (resources/legal/order_contract.php).
+     *
+     * @return array<string, mixed>
      */
-    private function intro(array $document): string
+    private function template(): array
     {
-        $agent = $document['agent']['company_name'] ?: '—';
-        $client = $document['client']['is_legal_entity'] && $document['client']['company_name']
-            ? $document['client']['company_name']
-            : ($document['client']['name'] ?: '—');
-        $platform = $document['platform']['legal_name'] ?: $document['platform']['name'];
+        return require resource_path('legal/order_contract.php');
+    }
 
-        return "Bir tomondan Ijrochi — {$agent}, ikkinchi tomondan Buyurtmachi — {$client}, "
-            ."uchinchi tomondan Operator — {$platform}, birgalikda Tomonlar deb atalib, ushbu "
-            .'shartnomani tuzdilar. Shartnoma Tomonlar tomonidan «Reklama Bozor» ilovasida '
-            .'elektron shaklda (aksept tugmasi orqali) tasdiqlanadi va imzolangan hisoblanadi.';
+    /**
+     * Preamble naming the three parties, filled from their snapshots.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, mixed>  $template
+     */
+    private function intro(array $document, array $template): string
+    {
+        $client = $document['client'];
+        $clientIsCompany = $client['is_legal_entity'] && $client['company_name'];
+
+        $values = [
+            '{operator_name}' => $template['operator']['name'],
+            '{operator_director}' => $template['operator']['director'],
+            '{client_name}' => ($clientIsCompany ? $client['company_name'] : $client['name']) ?: '—',
+            '{client_id_label}' => $client['inn'] ? 'СТИР' : 'тел.',
+            '{client_id}' => ($client['inn'] ?: $client['phone']) ?: '—',
+            '{agent_name}' => $document['agent']['company_name'] ?: '—',
+            '{agent_inn}' => $document['agent']['inn'] ?: '—',
+        ];
+
+        return implode("\n", array_map(
+            fn (string $line): string => strtr($line, $values),
+            $template['preamble'],
+        ));
     }
 
     /**
      * Clause text. Single source for both the in-app drawer and the PDF.
      *
      * @param  array<string, mixed>  $document
-     * @return list<array{key: string, heading: string, type: string, paragraphs: list<string>}>
+     * @param  array<string, mixed>  $template
+     * @return list<array<string, mixed>>
      */
-    private function sections(array $document, ?Order $order): array
+    private function sections(array $document, ?Order $order, array $template): array
     {
-        $money = fn ($v) => number_format((float) $v, 0, '.', ' ')." so'm";
-        $commission = (float) config('payments.commission_percent', 7);
+        return array_map(function (array $section) use ($document, $order, $template): array {
+            $built = [
+                'key' => $section['key'],
+                'heading' => $section['title'],
+                'type' => $section['type'],
+                'paragraphs' => array_map(
+                    fn (array $clause): string => trim($clause['label'].' '.$clause['text']),
+                    $section['clauses'],
+                ),
+            ];
 
-        $subject = ['1.1. Ijrochi Buyurtmachiga quyida ko\'rsatilgan reklama/poligrafiya xizmatlarini '
-            ."ko'rsatadi, Buyurtmachi esa ularni qabul qilib, kelishilgan narxni to'laydi."];
+            if ($section['type'] === 'items') {
+                $built['rows'] = $this->detailRows($document, $order);
+            }
 
-        if ($order?->description) {
-            $subject[] = '1.2. Buyurtma tavsifi: '.$order->description;
-        }
+            if ($section['type'] === 'parties') {
+                $built['parties'] = $this->partyBlocks($document, $template);
+            }
 
-        $payment = [
-            "3.1. Xizmatlar umumiy qiymati: {$money($document['total'])}.",
-            "3.2. To'lov Operator (platforma) orqali amalga oshiriladi. Operator to'lovni qabul "
-                .'qiladi, komissiyani ushlab qoladi va qolgan summani Ijrochiga o\'tkazadi.',
+            return $built;
+        }, $template['sections']);
+    }
+
+    /**
+     * §2 "Буюртма тафсилотлари" — the order card the parties sign under. The
+     * advance/final split follows §4.2 and §4.7: the advance is a share of the
+     * order value, the final part is the rest minus the operator commission.
+     *
+     * @param  array<string, mixed>  $document
+     * @return list<array{label: string, value: string}>
+     */
+    private function detailRows(array $document, ?Order $order): array
+    {
+        $money = fn (string $v): string => number_format((float) $v, 0, '.', ' ').' сўм';
+        $advancePercent = (float) config('payments.advance_percent', 40);
+        $commissionPercent = (float) config('payments.commission_percent', 7);
+        $percent = fn (float $v): string => rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.');
+
+        $total = (string) $document['total'];
+        $advance = bcdiv(bcmul($total, (string) $advancePercent, 4), '100', 2);
+        $commission = bcdiv(bcmul($total, (string) $commissionPercent, 4), '100', 2);
+        $final = bcsub(bcsub($total, $advance, 2), $commission, 2);
+
+        $days = $document['deadline_days'];
+        $term = $days !== null && $days > 0
+            ? 'бошланиш: '.now()->format('d.m.Y').'  —  якунланиш: '.now()->addDays($days)->format('d.m.Y')
+            : ($document['deadline_label'] ?: '—');
+
+        $place = $order?->location_label ?: $order?->region?->name_uz;
+
+        return [
+            ['label' => 'Буюртма рақами', 'value' => '№ '.($order?->id ?? '—').'  /  сана: '.($order?->created_at?->format('d.m.Y') ?? now()->format('d.m.Y'))],
+            ['label' => 'Хизмат тури', 'value' => ($order?->category?->name_uz ?: $order?->title) ?: '—'],
+            ['label' => 'Тавсиф / кўлам', 'value' => $order?->description ?: '—'],
+            ['label' => 'Жой (манзил)', 'value' => $place ?: '—'],
+            ['label' => 'Бажарилиш муддати', 'value' => $term],
+            ['label' => 'Буюртма қиймати', 'value' => $money($total)],
+            ['label' => 'Аванс тўлови ('.$percent($advancePercent).'%)', 'value' => $money($advance)],
+            ['label' => 'Якуний тўлов ('.$percent(100 - $advancePercent).'%)', 'value' => $money($final).' (Оператор комиссияси — '.$percent($commissionPercent).'% айирилган ҳолда)'],
         ];
+    }
 
-        if ($document['deadline_label']) {
-            $payment[] = "3.3. Bajarilish muddati: {$document['deadline_label']}.";
-        }
+    /**
+     * §11 requisites columns: Operator (fixed, from the approved text), Client,
+     * Executor (from their snapshots). Empty rows are dropped.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, mixed>  $template
+     * @return list<array{key: string, label: string, name: string, rows: list<array{label: string, value: string}>}>
+     */
+    private function partyBlocks(array $document, array $template): array
+    {
+        $rows = fn (array $pairs): array => array_values(array_map(
+            fn (string $label, $value): array => ['label' => $label, 'value' => (string) $value],
+            array_keys(array_filter($pairs, fn ($v) => $v !== null && $v !== '')),
+            array_filter($pairs, fn ($v) => $v !== null && $v !== ''),
+        ));
+
+        $client = $document['client'];
+        $clientIsCompany = $client['is_legal_entity'] && $client['company_name'];
+        $agent = $document['agent'];
 
         return [
             [
-                'key' => 'subject',
-                'heading' => '1. Shartnoma predmeti',
-                'type' => 'text',
-                'paragraphs' => $subject,
-            ],
-            [
-                'key' => 'services',
-                'heading' => '2. Xizmatlar va narxi',
-                'type' => 'items',
-                'paragraphs' => [],
-            ],
-            [
-                'key' => 'payment',
-                'heading' => "3. To'lov va muddat",
-                'type' => 'text',
-                'paragraphs' => $payment,
-            ],
-            [
                 'key' => 'operator',
-                'heading' => '4. Operatorning roli',
-                'type' => 'text',
-                'paragraphs' => [
-                    '4.1. Operator — marketplace va to\'lov operatori. Reklama xizmatini Operator '
-                        .'ko\'rsatmaydi; xizmat sifati va muddati uchun javobgarlik Ijrochi zimmasida.',
-                    "4.2. Operator xizmat qiymatidan {$commission}% miqdorida komissiya ushlab qoladi.",
-                    '4.3. Operator Tomonlar o\'rtasidagi nizoda hakamlik qiladi va shartnoma '
-                        .'shartlariga muvofiq to\'lovni chiqarish yoki qaytarish to\'g\'risida qaror qabul qiladi.',
-                ],
+                'label' => 'ОПЕРАТОР',
+                'name' => $template['operator']['name'],
+                'rows' => $template['operator']['requisites'],
             ],
             [
-                'key' => 'liability',
-                'heading' => '5. Tomonlarning javobgarligi',
-                'type' => 'text',
-                'paragraphs' => [
-                    "5.1. Ijrochi xizmatlarni sifatli va o'z vaqtida bajarish uchun javobgardir.",
-                    "5.2. Buyurtmachi qabul qilingan xizmatlar uchun to'lovni o'z vaqtida amalga oshiradi.",
-                    '5.3. Reklama mazmuni (matn, tasvir) qonunchilikka muvofiqligi uchun javobgarlik '
-                        .'Buyurtmachi zimmasida.',
-                ],
+                'key' => 'client',
+                'label' => 'МИЖОЗ',
+                'name' => ($clientIsCompany ? $client['company_name'] : $client['name']) ?: '—',
+                'rows' => $rows([
+                    'Вакил' => $clientIsCompany ? ($client['name'] ?: null) : null,
+                    'Шахс' => $client['is_legal_entity'] ? 'юридик шахс' : 'жисмоний шахс',
+                    'СТИР' => $client['inn'],
+                    'Тел' => $client['phone'],
+                ]),
             ],
             [
-                'key' => 'disputes',
-                'heading' => '6. Nizolarni hal qilish va amal qilish muddati',
-                'type' => 'text',
-                'paragraphs' => [
-                    '6.1. Nizolar avval muzokara yo\'li bilan, Operator ishtirokida hal qilinadi.',
-                    '6.2. Shartnoma Tomonlar aksepti (ilovadagi tasdiqlash) daqiqasidan kuchga kiradi '
-                        .'va majburiyatlar to\'liq bajarilgunga qadar amal qiladi.',
-                    '6.3. Elektron aksept va ilovada saqlanadigan tasdiqlash yozuvi Tomonlar uchun '
-                        .'yozma shaklga tenglashtiriladi.',
-                ],
-            ],
-            [
-                'key' => 'requisites',
-                'heading' => '7. Tomonlarning rekvizitlari',
-                'type' => 'parties',
-                'paragraphs' => [],
+                'key' => 'agent',
+                'label' => 'ИЖРОЧИ',
+                'name' => $agent['company_name'] ?: '—',
+                'rows' => $rows([
+                    'Шакл' => $agent['legal_form'],
+                    'Манзил' => $agent['address'],
+                    'СТИР' => $agent['inn'],
+                    'Ҳ/р' => $agent['bank_account'],
+                    'Банк' => $agent['bank_name'],
+                    'МФО' => $agent['mfo'],
+                    'Раҳбар' => $agent['director_name'],
+                    'Тел' => $agent['phone'],
+                ]),
             ],
         ];
     }

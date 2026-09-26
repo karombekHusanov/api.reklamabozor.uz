@@ -66,25 +66,26 @@ class AgentPayoutTest extends TestCase
         return $order->fresh();
     }
 
-    public function test_advance_and_final_split_the_net_after_commission(): void
+    public function test_advance_is_a_share_of_gross_and_final_carries_the_commission(): void
     {
         $this->configureSplit();
         $payouts = app(PayoutService::class);
 
         // 10 mln som = 1,000,000,000 tiyin. Commission 7% = 70,000,000.
-        // Net = 930,000,000. Advance 40% = 372,000,000. Final = 558,000,000.
+        // Contract §4.2/§4.7: advance = 40% of gross = 400,000,000;
+        // final = 60% of gross - 7% commission = 530,000,000.
         $order = $this->orderWithAcceptedOffer(10_000_000);
 
         $advance = $payouts->planAdvance($order);
         $this->assertNotNull($advance);
         $this->assertSame(PayoutTranche::Advance, $advance->tranche);
-        $this->assertSame(372_000_000, $advance->amount);
+        $this->assertSame(400_000_000, $advance->amount);
         $this->assertSame(PayoutStatus::Pending, $advance->status);
 
         $final = $payouts->planFinal($order);
         $this->assertNotNull($final);
         $this->assertSame(PayoutTranche::Final, $final->tranche);
-        $this->assertSame(558_000_000, $final->amount);
+        $this->assertSame(530_000_000, $final->amount);
 
         // Advance + final = the full net owed to the agent.
         $this->assertSame(930_000_000, (int) $order->payouts()->sum('amount'));
