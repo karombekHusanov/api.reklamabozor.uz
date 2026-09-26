@@ -49,19 +49,18 @@ class AgentContractTest extends TestCase
         ];
     }
 
-    public function test_kyc_submission_generates_a_contract_awaiting_signature(): void
+    public function test_kyc_submission_does_not_generate_a_contract_to_sign(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)->postJson('/api/v1/agent/profile', $this->kycPayload($user))
-            ->assertCreated()
-            ->assertJsonPath('data.contract.status', 'awaiting_signature')
-            ->assertJsonPath('data.contract.approved', false);
+            ->assertCreated();
 
+        // Accepting the agency offer at submission is the agreement itself.
         $profile = $user->profile()->first();
-        $this->assertNotNull($profile->contract_file_id);
-        $this->assertNotNull($profile->contract_hash);
-        $this->assertSame(AgentContractStatus::AwaitingSignature, $profile->contract_status);
+        $this->assertNull($profile->contract_file_id);
+        $this->assertNull($profile->contract_status);
+        $this->assertNotNull($profile->offer_accepted_at);
     }
 
     public function test_agent_uploads_signed_contract_moves_to_under_review(): void
@@ -92,18 +91,18 @@ class AgentContractTest extends TestCase
             ->assertUnprocessable();
     }
 
-    public function test_approval_blocked_until_signed_contract_uploaded(): void
+    public function test_approval_does_not_require_a_signed_contract(): void
     {
         $admin = User::factory()->admin()->create();
         $profile = AgentProfile::factory()->create([
-            'contract_status' => AgentContractStatus::AwaitingSignature,
+            'contract_status' => null,
         ]);
 
         $this->actingAs($admin)->patchJson("/api/v1/admin/agents/{$profile->id}/status", [
             'status' => 'approved',
-        ])->assertUnprocessable();
+        ])->assertOk();
 
-        $this->assertSame(AgentProfileStatus::Pending, $profile->fresh()->status);
+        $this->assertSame(AgentProfileStatus::Approved, $profile->fresh()->status);
     }
 
     public function test_approval_succeeds_with_signed_contract_and_approves_it(): void

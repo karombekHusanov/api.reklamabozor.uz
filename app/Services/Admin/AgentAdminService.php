@@ -70,20 +70,9 @@ class AgentAdminService
             ]);
         }
 
-        // An agent cannot be activated until they have uploaded a signed
-        // agreement for the manager to review (designers are exempt).
-        if (
-            $status === AgentProfileStatus::Approved
-            && $profile->requiresContract()
-            && $profile->contract_status !== AgentContractStatus::UnderReview
-            && $profile->contract_status !== AgentContractStatus::Approved
-        ) {
-            throw ValidationException::withMessages([
-                'contract' => ['The agent has not uploaded a signed agreement yet.'],
-            ]);
-        }
-
-        // …nor before they accepted the current agency partnership offer.
+        // An agent cannot be activated before they accepted the current agency
+        // partnership offer (click-wrap at KYC) — that acceptance is their
+        // agreement with the platform; no signed scan is required.
         if (
             $status === AgentProfileStatus::Approved
             && ! $profile->hasAcceptedCurrentOffer()

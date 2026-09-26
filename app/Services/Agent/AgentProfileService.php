@@ -15,7 +15,6 @@ use Illuminate\Validation\ValidationException;
 class AgentProfileService
 {
     public function __construct(
-        private readonly AgentContractService $contracts,
         private readonly PublicOfferService $offers,
     ) {}
 
@@ -58,11 +57,9 @@ class AgentProfileService
 
         // Submitting the application is the click-wrap acceptance of the
         // agency partnership offer (the request requires `accept_offer`).
+        // That acceptance is the agent's agreement with the platform — no
+        // separate contract to sign and re-upload.
         $this->acceptOffer($profile, $ip);
-
-        // Generate the platform agreement from the KYC data — the agent must
-        // sign + re-upload it before they can be activated.
-        $this->contracts->generateFor($profile);
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }
@@ -90,10 +87,6 @@ class AgentProfileService
         $profile->save();
 
         $this->acceptOffer($profile, $ip);
-
-        // KYC data changed — regenerate the agreement and require a fresh
-        // signature (any previously signed scan is invalidated).
-        $this->contracts->generateFor($profile);
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }
