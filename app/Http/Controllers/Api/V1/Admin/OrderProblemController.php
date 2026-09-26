@@ -105,11 +105,11 @@ class OrderProblemController extends ApiController
 
     private function resource(Order $order): AdminOrderProblemResource
     {
-        return new AdminOrderProblemResource(
+        return (new AdminOrderProblemResource(
             $order->load([
                 'client', 'acceptedOffer.agentProfile', 'acceptedOffer.agent',
                 'problemEvents.actor', 'problemResolutions.resolvedBy',
             ]),
-        )->withEvents();
+        ))->withEvents();
     }
 }
