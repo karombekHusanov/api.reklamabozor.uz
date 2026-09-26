@@ -49,7 +49,7 @@ class AuthTest extends TestCase
         ]);
     }
 
-    public function test_returning_telegram_user_is_updated_without_resetting_role(): void
+    public function test_returning_telegram_user_keeps_their_name_without_resetting_role(): void
     {
         $user = User::factory()->admin()->create([
             'telegram_id' => 111222333,
@@ -68,11 +68,34 @@ class AuthTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('data.user.id', $user->id)
-            ->assertJsonPath('data.user.first_name', 'Updated')
+            ->assertJsonPath('data.user.first_name', 'Old')
             ->assertJsonPath('data.user.username', 'new_username')
             ->assertJsonPath('data.user.role', 'admin');
 
         $this->assertDatabaseCount('users', 1);
+    }
+
+    public function test_name_edited_in_the_app_survives_the_next_telegram_login(): void
+    {
+        $user = User::factory()->create([
+            'telegram_id' => 555666777,
+            'first_name' => 'tg_name',
+            'last_name' => null,
+        ]);
+
+        $this->actingAs($user)->patchJson('/api/v1/me', [
+            'first_name' => 'Karombek',
+            'last_name' => 'Husanov',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/auth/telegram', [
+            'telegram_id' => 555666777,
+            'first_name' => 'tg_name',
+            'last_name' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.user.first_name', 'Karombek')
+            ->assertJsonPath('data.user.last_name', 'Husanov');
     }
 
     public function test_telegram_login_requires_an_identity(): void

@@ -52,8 +52,14 @@ class AuthService
         $user = User::firstOrNew(['telegram_id' => $telegramId]);
         $isNew = ! $user->exists;
 
-        $user->first_name = $firstName;
-        $user->last_name = $lastName;
+        // The name is editable in the mini app (PATCH /me), so Telegram only
+        // seeds it — re-syncing on every launch would overwrite the user's edit.
+        // The @username handle is not editable here, so it keeps following Telegram.
+        if ($isNew || blank($user->first_name)) {
+            $user->first_name = $firstName;
+            $user->last_name = $lastName;
+        }
+
         $user->username = $username;
 
         if ($isNew) {
