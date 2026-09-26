@@ -14,19 +14,41 @@ class PublicOfferController extends ApiController
     /** Public: the client offer text for the in-app reader. */
     public function show(): JsonResponse
     {
-        return $this->success([
-            ...$this->offers->document(),
-            'version' => $this->offers->version(),
-            'pdf_url' => url('/api/v1/legal/public-offer.pdf'),
-        ]);
+        return $this->documentResponse(PublicOfferService::CLIENT, '/api/v1/legal/public-offer.pdf');
     }
 
     /** Public: the same offer as a downloadable PDF. */
     public function pdf(): Response
     {
-        return response($this->offers->pdf(), 200, [
+        return $this->pdfResponse(PublicOfferService::CLIENT);
+    }
+
+    /** Public: the agency partnership offer an agent accepts when applying. */
+    public function agentShow(): JsonResponse
+    {
+        return $this->documentResponse(PublicOfferService::AGENT, '/api/v1/legal/agent-offer.pdf');
+    }
+
+    /** Public: the agency partnership offer as a downloadable PDF. */
+    public function agentPdf(): Response
+    {
+        return $this->pdfResponse(PublicOfferService::AGENT);
+    }
+
+    private function documentResponse(string $kind, string $pdfPath): JsonResponse
+    {
+        return $this->success([
+            ...$this->offers->document($kind),
+            'version' => $this->offers->version($kind),
+            'pdf_url' => url($pdfPath),
+        ]);
+    }
+
+    private function pdfResponse(string $kind): Response
+    {
+        return response($this->offers->pdf($kind), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="PRB_ommaviy_oferta.pdf"',
+            'Content-Disposition' => 'attachment; filename="'.$this->offers->pdfName($kind).'"',
             'Cache-Control' => 'public, max-age=3600',
         ]);
     }

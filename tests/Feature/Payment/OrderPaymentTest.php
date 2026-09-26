@@ -9,6 +9,7 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
 use App\Models\AgentProfile;
+use App\Models\Contract;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Payment;
@@ -399,6 +400,33 @@ class OrderPaymentTest extends TestCase
 
         $this->assertSame(1, $order->fresh()->payouts()->count());
         $this->assertSame('R1', $payment->fresh()->reference);
+    }
+
+    public function test_admin_finds_a_payment_by_contract_number_or_order_id(): void
+    {
+        [, , $order] = $this->activeUnpaidOrder(300_000);
+        Contract::create([
+            'order_id' => $order->id,
+            'number' => 'RB-'.$order->id.'-2026',
+            'client_snapshot' => [],
+            'agent_snapshot' => [],
+            'items_snapshot' => [],
+        ]);
+        $payment = Payment::factory()->create([
+            'payable_type' => Order::class,
+            'payable_id' => $order->id,
+            'purpose' => PaymentPurpose::Order,
+        ]);
+        Payment::factory()->create();
+
+        $admin = User::factory()->admin()->create();
+
+        foreach (['rb-'.$order->id.'-2026', '#'.$order->id] as $search) {
+            $this->actingAs($admin)->getJson('/api/v1/admin/payments?search='.urlencode($search))
+                ->assertOk()
+                ->assertJsonCount(1, 'data.items')
+                ->assertJsonPath('data.items.0.id', $payment->id);
+        }
     }
 
     /**

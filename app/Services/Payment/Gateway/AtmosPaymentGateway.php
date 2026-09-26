@@ -3,6 +3,7 @@
 namespace App\Services\Payment\Gateway;
 
 use App\Contracts\CardPaymentGateway;
+use App\Contracts\CardTokenGateway;
 use App\Contracts\PaymentGateway;
 use App\Enums\GatewayPaymentStatus;
 use App\Models\GatewayPayment;
@@ -18,13 +19,16 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *    pre-apply (card + expiry, ATMOS texts an SMS code) → apply (code). The
  *    card data only passes through to ATMOS; it is never stored or logged.
  *    Card transactions carry a `card:` gateway_ref prefix so status checks
- *    hit the merchant endpoint instead of the invoice one.
+ *    hit the merchant endpoint instead of the invoice one;
+ *  - saved card ({@see CardTokenGateway}) — bind-card init/confirm once (SMS),
+ *    then merchant create → pre-apply by `card_token` → apply with the fixed
+ *    token OTP; no card number, no SMS.
  *
  * ATMOS's "callback" is a pre-debit billing check, NOT a paid notification:
  * {@see verifyCallback()} only authenticates it. Money is confirmed solely by
  * {@see getStatus()} (invoice/get: success + final).
  */
-class AtmosPaymentGateway implements CardPaymentGateway, PaymentGateway
+class AtmosPaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway
 {
     private const CARD_PREFIX = 'card:';
 
@@ -112,6 +116,43 @@ class AtmosPaymentGateway implements CardPaymentGateway, PaymentGateway
         $tx = $this->client->merchantApply($this->cardTransaction($gatewayRef), $otp);
 
         return $this->cardEvent($gatewayRef, $tx);
+    }
+
+    public function startCardBinding(string $cardNumber, string $expiryYymm): string
+    {
+        return $this->client->bindCardInit($cardNumber, $expiryYymm);
+    }
+
+    public function confirmCardBinding(string $bindingRef, string $otp): BoundCard
+    {
+        $card = $this->client->bindCardConfirm($bindingRef, $otp);
+
+        if (empty($card['card_id']) || empty($card['card_token'])) {
+            throw new \RuntimeException('ATMOS bind-card/confirm response is missing card_id/card_token.');
+        }
+
+        $pan = (string) ($card['pan'] ?? '');
+
+        return new BoundCard(
+            (string) $card['card_id'],
+            (string) $card['card_token'],
+            substr($pan, 0, 4).' •••• '.substr($pan, -4),
+        );
+    }
+
+    public function chargeCardToken(string $gatewayRef, string $cardToken): GatewayEvent
+    {
+        $transaction = $this->cardTransaction($gatewayRef);
+
+        $this->client->merchantPreApplyToken($transaction, $cardToken);
+        $tx = $this->client->merchantApply($transaction, (string) config('atmos.token_otp'));
+
+        return $this->cardEvent($gatewayRef, $tx);
+    }
+
+    public function removeCard(string $cardId, string $cardToken): void
+    {
+        $this->client->removeCard($cardId, $cardToken);
     }
 
     public function getStatus(string $gatewayRef): GatewayEvent

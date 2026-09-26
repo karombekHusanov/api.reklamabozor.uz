@@ -44,6 +44,7 @@ class AgentContractTest extends TestCase
             'bank_account' => '20208000900123456789',
             'mfo' => '00440',
             'phone' => '+998901234567',
+            'accept_offer' => true,
             ...$overrides,
         ];
     }

@@ -229,8 +229,8 @@ class OfferNegotiationTest extends TestCase
         ]);
     }
 
-    /** After an otklik the agent sees the client's phone in the order thread — only while it is live. */
-    public function test_agent_sees_client_phone_in_order_thread_while_otklik_is_live(): void
+    /** After an otklik both sides see each other's phone in the order thread — only while it is live. */
+    public function test_both_sides_see_phones_in_order_thread_while_otklik_is_live(): void
     {
         [$agent, $agentToken, $profile, $category] = $this->approvedAgent();
         $client = User::factory()->create(['phone' => '+998901112233']);
@@ -249,18 +249,21 @@ class OfferNegotiationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.chat.other_participant.phone', '+998901112233');
 
-        // The client never gets the agent's number through this field.
+        // The client sees the agency's business number (profile), not the personal one.
+        $profile->update(['phone' => '+998712000000']);
         app('auth')->forgetGuards();
         $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$clientToken])
             ->assertOk()
-            ->assertJsonPath('data.chat.other_participant.phone', null);
+            ->assertJsonPath('data.chat.other_participant.phone', '+998712000000');
 
-        // Withdrawn / released otklik hides it again.
+        // Withdrawn / released otklik hides both again.
         $offer->update(['status' => OfferStatus::Withdrawn]);
-        app('auth')->forgetGuards();
-        $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$agentToken])
-            ->assertOk()
-            ->assertJsonPath('data.chat.other_participant.phone', null);
+        foreach ([$agentToken, $clientToken] as $token) {
+            app('auth')->forgetGuards();
+            $this->getJson("/api/v1/direct-chats/{$chat->id}", ['Authorization' => 'Bearer '.$token])
+                ->assertOk()
+                ->assertJsonPath('data.chat.other_participant.phone', null);
+        }
     }
 
     public function test_marketplace_dm_never_exposes_the_client_phone(): void

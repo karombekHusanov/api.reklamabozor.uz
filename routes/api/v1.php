@@ -65,6 +65,8 @@ Route::get('/health', HealthController::class);
 Route::get('/platform-contact', PlatformContactController::class);
 Route::get('/legal/public-offer', [PublicOfferController::class, 'show']);
 Route::get('/legal/public-offer.pdf', [PublicOfferController::class, 'pdf']);
+Route::get('/legal/agent-offer', [PublicOfferController::class, 'agentShow']);
+Route::get('/legal/agent-offer.pdf', [PublicOfferController::class, 'agentPdf']);
 
 // Telegram bot webhook — called by Telegram servers, guarded by the secret-token header.
 Route::post('/telegram/webhook', WebhookController::class);
@@ -234,6 +236,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::patch('/profile', [AgentProfileController::class, 'updateDetails']);
         // Upload the signed (wet-signature + stamp) platform agreement scan.
         Route::post('/profile/contract', [AgentProfileController::class, 'uploadSignedContract']);
+        // (Re-)accept the current agency partnership offer.
+        Route::post('/profile/accept-offer', [AgentProfileController::class, 'acceptOffer']);
 
         // Order opportunities + the agent's offers.
         Route::get('/orders', [AgentOrderController::class, 'index']);
@@ -273,6 +277,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/wallet/topup', [AgentPassController::class, 'topup'])->middleware('throttle:10,1');
         // In-app card form top-up (confirm via /pass/card/{reference}/confirm).
         Route::post('/wallet/card', [AgentPassController::class, 'walletCardStart'])->middleware('throttle:6,1');
+        // Cards bound at the provider (token) — pay with `card_id`, no card/SMS.
+        Route::get('/cards', [AgentPassController::class, 'cards']);
+        Route::delete('/cards/{card}', [AgentPassController::class, 'deleteCard'])->whereNumber('card');
     });
 });
 
@@ -296,6 +303,7 @@ Route::prefix('admin')
         Route::post('/users/{user}/wallet/adjust', [AdminPassController::class, 'adjustWallet']);
         Route::get('/passes', [AdminPassController::class, 'index']);
         Route::get('/passes/summary', [AdminPassController::class, 'summary']);
+        Route::get('/passes/transactions', [AdminPassController::class, 'transactions']);
         Route::get('/passes/settings', [AdminPassController::class, 'settings']);
         Route::put('/passes/settings', [AdminPassController::class, 'updateSettings']);
 
@@ -359,6 +367,7 @@ Route::prefix('admin')
         Route::get('/finance/summary', [AdminFinanceController::class, 'summary']);
         Route::get('/finance/payments.csv', [AdminFinanceController::class, 'paymentsRegister']);
         Route::get('/finance/payouts.csv', [AdminFinanceController::class, 'payoutsRegister']);
+        Route::get('/finance/gateway-payments.csv', [AdminFinanceController::class, 'gatewayPaymentsRegister']);
 
         // Per-account Tender vs Tezkor order counts (commission-leakage view).
         Route::get('/reports/orders-by-route', AdminOrdersByRouteReportController::class);

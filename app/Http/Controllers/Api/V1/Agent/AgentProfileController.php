@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Agent;
 
 use App\Enums\AgentProfileStatus;
 use App\Http\Controllers\ApiController;
+use App\Http\Requests\Api\V1\Agent\AcceptAgentOfferRequest;
 use App\Http\Requests\Api\V1\Agent\StoreAgentProfileRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileDetailsRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileRequest;
@@ -34,7 +35,7 @@ class AgentProfileController extends ApiController
      */
     public function store(StoreAgentProfileRequest $request): JsonResponse
     {
-        $profile = $this->agentProfiles->apply($request->user(), $request->validated());
+        $profile = $this->agentProfiles->apply($request->user(), $request->validated(), $request->ip());
 
         return $this->success(new AgentProfileResource($profile), 'Application submitted', 201);
     }
@@ -50,7 +51,7 @@ class AgentProfileController extends ApiController
             return $this->error('You have no agent application to update.', 404);
         }
 
-        $updated = $this->agentProfiles->resubmit($profile, $request->validated());
+        $updated = $this->agentProfiles->resubmit($profile, $request->validated(), $request->ip());
 
         return $this->success(new AgentProfileResource($updated), 'Application updated');
     }
@@ -73,6 +74,23 @@ class AgentProfileController extends ApiController
         $updated = $this->agentProfiles->updateDetails($profile, $request->validated());
 
         return $this->success(new AgentProfileResource($updated), 'Profile updated');
+    }
+
+    /**
+     * Accept the current agency partnership offer — for profiles that applied
+     * before the offer existed, or after its version was bumped.
+     */
+    public function acceptOffer(AcceptAgentOfferRequest $request): JsonResponse
+    {
+        $profile = $this->agentProfiles->findForUser($request->user());
+
+        if ($profile === null || ! $profile->requiresContract()) {
+            return $this->error('You have no agent profile yet.', 404);
+        }
+
+        $updated = $this->agentProfiles->acceptOffer($profile, $request->ip());
+
+        return $this->success(new AgentProfileResource($updated), 'Offer accepted');
     }
 
     /**

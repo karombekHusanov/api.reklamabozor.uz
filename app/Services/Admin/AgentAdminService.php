@@ -83,6 +83,16 @@ class AgentAdminService
             ]);
         }
 
+        // …nor before they accepted the current agency partnership offer.
+        if (
+            $status === AgentProfileStatus::Approved
+            && ! $profile->hasAcceptedCurrentOffer()
+        ) {
+            throw ValidationException::withMessages([
+                'offer' => ['The agent has not accepted the current agency offer yet.'],
+            ]);
+        }
+
         $profile->status = $status;
 
         if ($status === AgentProfileStatus::Approved) {

@@ -3,6 +3,7 @@
 namespace App\Services\Payment\Gateway;
 
 use App\Contracts\CardPaymentGateway;
+use App\Contracts\CardTokenGateway;
 use App\Contracts\PaymentGateway;
 use App\Enums\GatewayPaymentStatus;
 use App\Models\GatewayPayment;
@@ -14,9 +15,11 @@ use InvalidArgumentException;
  * Dev/testing driver. "Checkout" is a local endpoint that completes the
  * payment when opened; callbacks are unsigned. The in-app card form accepts
  * any well-formed card and the SMS code {@see FAKE_OTP}; a card ending in
- * 0000 is declined. Never resolved in production.
+ * 0000 is declined. Binding works the same way (code {@see FAKE_OTP}); a
+ * token starting with "fake_declined" is declined when charged. Never
+ * resolved in production.
  */
-class FakePaymentGateway implements CardPaymentGateway, PaymentGateway
+class FakePaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway
 {
     public const FAKE_OTP = '111111';
 
@@ -68,6 +71,44 @@ class FakePaymentGateway implements CardPaymentGateway, PaymentGateway
 
         return new GatewayEvent($gatewayRef, GatewayPaymentStatus::Success, (int) $payment->amount_tiyin);
     }
+
+    public function startCardBinding(string $cardNumber, string $expiryYymm): string
+    {
+        if (str_ends_with($cardNumber, '0000')) {
+            throw new CardPaymentException('Karta rad etildi (test).');
+        }
+
+        // The binding ref carries the masked PAN so confirm can return it.
+        return 'fake_bind_'.substr($cardNumber, 0, 4).substr($cardNumber, -4).'_'.Str::lower(Str::random(12));
+    }
+
+    public function confirmCardBinding(string $bindingRef, string $otp): BoundCard
+    {
+        if ($otp !== self::FAKE_OTP) {
+            throw new CardPaymentException('SMS kod noto‘g‘ri (test).');
+        }
+
+        $digits = substr($bindingRef, strlen('fake_bind_'), 8);
+
+        return new BoundCard(
+            'fake_'.Str::lower(Str::random(10)),
+            'fake_token_'.Str::random(24),
+            substr($digits, 0, 4).' •••• '.substr($digits, 4, 4),
+        );
+    }
+
+    public function chargeCardToken(string $gatewayRef, string $cardToken): GatewayEvent
+    {
+        if (str_starts_with($cardToken, 'fake_declined')) {
+            throw new CardPaymentException('Kartada mablag‘ yetarli emas (test).');
+        }
+
+        $payment = GatewayPayment::query()->where('gateway_ref', $gatewayRef)->firstOrFail();
+
+        return new GatewayEvent($gatewayRef, GatewayPaymentStatus::Success, (int) $payment->amount_tiyin);
+    }
+
+    public function removeCard(string $cardId, string $cardToken): void {}
 
     public function getStatus(string $gatewayRef): GatewayEvent
     {

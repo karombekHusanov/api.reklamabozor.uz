@@ -10,8 +10,9 @@ use RuntimeException;
 
 /**
  * Thin wrapper over the ATMOS API gateway: client-credentials token (cached,
- * refreshed on 401), the hosted-checkout invoice endpoints and the merchant
- * card endpoints (create → pre-apply → apply) used by the in-app card form.
+ * refreshed on 401), the hosted-checkout invoice endpoints, the merchant
+ * card endpoints (create → pre-apply → apply) used by the in-app card form
+ * and the card binding endpoints (bind-card init → confirm, remove-card).
  */
 class AtmosClient
 {
@@ -83,6 +84,53 @@ class AtmosClient
             'transaction_id' => (int) $transactionId,
             'card_number' => $cardNumber,
             'expiry' => $expiryYymm,
+        ]);
+    }
+
+    /** Attach a bound card to the transaction by its token — no SMS is sent. */
+    public function merchantPreApplyToken(string $transactionId, string $cardToken): void
+    {
+        $this->merchantPost('/merchant/pay/pre-apply', [
+            'store_id' => (int) config('atmos.store_id'),
+            'transaction_id' => (int) $transactionId,
+            'card_token' => $cardToken,
+        ]);
+    }
+
+    /**
+     * Start binding a card; ATMOS texts an SMS code to the cardholder.
+     * Returns the binding transaction id.
+     */
+    public function bindCardInit(string $cardNumber, string $expiryYymm): string
+    {
+        $data = $this->merchantPost('/partner/bind-card/init', [
+            'card_number' => $cardNumber,
+            'expiry' => $expiryYymm,
+        ]);
+
+        if (empty($data['transaction_id'])) {
+            throw new RuntimeException('ATMOS bind-card/init response is missing transaction_id.');
+        }
+
+        return (string) $data['transaction_id'];
+    }
+
+    /** @return array<string, mixed> The `data` block (card_id, pan, card_token, …). */
+    public function bindCardConfirm(string $transactionId, string $otp): array
+    {
+        $data = $this->merchantPost('/partner/bind-card/confirm', [
+            'transaction_id' => (int) $transactionId,
+            'otp' => $otp,
+        ]);
+
+        return (array) ($data['data'] ?? []);
+    }
+
+    public function removeCard(string $cardId, string $cardToken): void
+    {
+        $this->merchantPost('/partner/remove-card', [
+            'id' => (int) $cardId,
+            'token' => $cardToken,
         ]);
     }
 

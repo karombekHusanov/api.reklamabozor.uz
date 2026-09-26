@@ -46,6 +46,8 @@ class StoreAgentProfileRequest extends FormRequest
             // Bank MFO code — 5 digits.
             'mfo' => ['required', 'string', 'regex:/^\d{5}$/'],
             'phone' => ['required', 'string', 'max:20'],
+            // Click-wrap: the agency partnership offer must be accepted.
+            'accept_offer' => ['required', 'accepted'],
         ];
     }
 

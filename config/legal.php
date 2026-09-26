@@ -16,6 +16,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Agency partnership offer version
+    |--------------------------------------------------------------------------
+    |
+    | Agents accept the agency offer (resources/legal/agent_offer.php) when
+    | they submit the KYC application; an admin cannot approve an agent whose
+    | accepted version differs from this one. Bump it whenever the agent offer
+    | text changes — agents are re-prompted in the mini app.
+    |
+    */
+    'agent_offer_version' => env('LEGAL_AGENT_OFFER_VERSION', 'v1'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Platform requisites (third party of the per-order service contract)
     |--------------------------------------------------------------------------
     |

@@ -30,5 +30,9 @@ return [
     'ofd_code' => env('ATMOS_OFD_CODE'),
     'package_code' => env('ATMOS_PACKAGE_CODE'),
 
+    // Fixed code ATMOS expects on merchant/pay/apply when paying by a bound
+    // card token (no SMS is sent for token payments).
+    'token_otp' => (string) env('ATMOS_TOKEN_OTP', '111111'),
+
     'timeout' => (int) env('ATMOS_TIMEOUT', 15),
 ];

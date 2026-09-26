@@ -243,6 +243,42 @@ class PassTest extends TestCase
         $this->claim($agent, $tender)->assertCreated();
     }
 
+    /** Per-otklik fees and top-ups appear in the admin summary and the balance ledger. */
+    public function test_admin_sees_otklik_fees_and_topups(): void
+    {
+        config(['passes.enforce' => true, 'passes.mode' => 'per_response', 'passes.wallet_enabled' => true]);
+        $agent = $this->agent();
+        app(WalletService::class)->credit($agent, WalletTransactionType::Topup, 500000, 'gp:admin-view');
+        $order = $this->tezkor();
+        $this->claim($agent, $order)->assertCreated();
+
+        $admin = $this->admin();
+
+        $this->getJson('/api/v1/admin/passes/summary', $this->auth($admin))
+            ->assertOk()
+            ->assertJsonPath('data.responses.count', 1)
+            ->assertJsonPath('data.responses.sum_som', 1000)
+            ->assertJsonPath('data.topups.count', 1)
+            ->assertJsonPath('data.topups.sum_som', 5000)
+            ->assertJsonPath('data.revenue_som', 1000)
+            ->assertJsonPath('data.per_day.0.responses_count', 1)
+            ->assertJsonPath('data.per_day.0.responses_sum_som', 1000);
+
+        $this->getJson('/api/v1/admin/passes/transactions?type=response_fee', $this->auth($admin))
+            ->assertOk()
+            ->assertJsonPath('data.meta.total', 1)
+            ->assertJsonPath('data.items.0.user_id', $agent->id)
+            ->assertJsonPath('data.items.0.amount_som', -1000)
+            ->assertJsonPath('data.items.0.order_id', $order->id);
+
+        $this->getJson('/api/v1/admin/passes/transactions', $this->auth($admin))
+            ->assertOk()
+            ->assertJsonPath('data.meta.total', 2);
+
+        // Agents cannot read the ledger.
+        $this->getJson('/api/v1/admin/passes/transactions', $this->auth($agent))->assertForbidden();
+    }
+
     public function test_per_response_without_wallet_is_payment_source_unavailable(): void
     {
         config(['passes.enforce' => true, 'passes.mode' => 'per_response', 'passes.wallet_enabled' => false]);

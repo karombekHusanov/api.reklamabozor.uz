@@ -46,9 +46,20 @@ class PaymentController extends ApiController
         }
 
         if ($search = trim((string) $request->query('search', ''))) {
-            $query->where(function ($q) use ($search): void {
+            // The contract number (RB-31-2026) is what a bank statement quotes;
+            // "#31" / "31" finds the order itself.
+            $orderId = ctype_digit(ltrim($search, '#')) ? (int) ltrim($search, '#') : null;
+
+            $query->where(function ($q) use ($search, $orderId): void {
                 $q->where('payment_uuid', 'like', "%{$search}%")
-                    ->orWhere('reference', 'like', "%{$search}%");
+                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhereHasMorph('payable', [Order::class], function ($order) use ($search, $orderId): void {
+                        $order->whereHas('contract', fn ($c) => $c->whereRaw('LOWER(number) LIKE ?', ['%'.mb_strtolower($search).'%']));
+
+                        if ($orderId !== null) {
+                            $order->orWhere('orders.id', $orderId);
+                        }
+                    });
             });
         }
 
@@ -126,7 +137,7 @@ class PaymentController extends ApiController
         }
 
         return $this->success(
-            new AdminPaymentResource($payment->load('payer')),
+            new AdminPaymentResource($payment->load(['payer', 'confirmedBy', 'invoiceFile'])),
             'Payment refunded',
         );
     }

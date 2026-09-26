@@ -9,13 +9,17 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\Role;
+use App\Models\AgentPass;
 use App\Models\AgentProfile;
+use App\Models\GatewayPayment;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Payout;
 use App\Models\User;
+use App\Models\WalletTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -121,6 +125,145 @@ class FinanceReportTest extends TestCase
         $this->assertEquals(500_000, $response->json('data.receivables.som'));
     }
 
+    public function test_a_refund_is_subtracted_once_from_the_net(): void
+    {
+        $this->settledDeal();
+
+        // 400k came in and was handed back later in the same period.
+        Payment::factory()->create([
+            'purpose' => PaymentPurpose::Order,
+            'status' => PaymentStatus::Revert,
+            'method' => PaymentMethod::Cash,
+            'amount' => 40_000_000,
+            'paid_at' => now()->subDay(),
+            'refunded_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        $this->assertEquals(1_400_000, $response->json('data.collected.som'));
+        $this->assertEquals(400_000, $response->json('data.refunded.som'));
+        $this->assertEquals(1_000_000, $response->json('data.net_collected.som'));
+        $this->assertSame(2, $response->json('data.counts.payments'));
+    }
+
+    public function test_the_period_is_a_tashkent_calendar_day(): void
+    {
+        // 02:00 on 5 Sep in Tashkent is still 4 Sep in UTC.
+        Payment::factory()->create([
+            'purpose' => PaymentPurpose::Order,
+            'status' => PaymentStatus::Success,
+            'method' => PaymentMethod::Cash,
+            'amount' => 10_000_000,
+            'paid_at' => '2026-09-04 21:00:00',
+        ]);
+
+        $sep5 = $this->getJson('/api/v1/admin/finance/summary?from=2026-09-05&to=2026-09-05', $this->adminHeaders());
+        $sep4 = $this->getJson('/api/v1/admin/finance/summary?from=2026-09-04&to=2026-09-04', $this->adminHeaders());
+
+        $this->assertEquals(100_000, $sep5->json('data.collected.som'));
+        $this->assertEquals(0, $sep4->json('data.collected.som'));
+    }
+
+    /**
+     * One agent in the period: buys a pass by card (10k), tops up 50k, then
+     * spends 10k of it on a pass and 3k on three responses; plus a free grant.
+     */
+    private function propuskActivity(): User
+    {
+        $agent = User::factory()->create(['first_name' => 'Aziz', 'last_name' => 'Agent', 'phone' => '+998901112233']);
+
+        $cardPass = GatewayPayment::create([
+            'reference' => (string) Str::uuid(), 'user_id' => $agent->id,
+            'purpose' => 'pass', 'amount_tiyin' => 1_000_000, 'status' => 'success',
+            'gateway' => 'atmos', 'gateway_ref' => 'card:777', 'paid_at' => now(),
+            'meta' => ['card_mask' => '8600 •••• 2365'],
+        ]);
+        GatewayPayment::create([
+            'reference' => (string) Str::uuid(), 'user_id' => $agent->id,
+            'purpose' => 'topup', 'amount_tiyin' => 5_000_000, 'status' => 'success',
+            'gateway' => 'atmos', 'paid_at' => now(),
+        ]);
+        // Never paid — carries no money.
+        GatewayPayment::create([
+            'reference' => (string) Str::uuid(), 'user_id' => $agent->id,
+            'purpose' => 'topup', 'amount_tiyin' => 9_000_000, 'status' => 'failed', 'gateway' => 'atmos',
+        ]);
+
+        $pass = fn (int $price, string $source, ?int $gatewayPaymentId = null) => AgentPass::create([
+            'user_id' => $agent->id, 'starts_at' => now(), 'expires_at' => now()->addDay(),
+            'price_tiyin' => $price, 'source' => $source, 'gateway_payment_id' => $gatewayPaymentId,
+        ]);
+        $pass(1_000_000, 'gateway', $cardPass->id);
+        $pass(1_000_000, 'wallet');
+        $pass(0, 'admin');
+
+        $wallet = fn (string $type, int $amount) => WalletTransaction::create([
+            'user_id' => $agent->id, 'type' => $type, 'amount_tiyin' => $amount,
+        ]);
+        $wallet('topup', 5_000_000);
+        $wallet('pass', -1_000_000);
+        foreach (range(1, 3) as $i) {
+            $wallet('response_fee', -100_000);
+        }
+
+        return $agent;
+    }
+
+    public function test_summary_reports_propusk_revenue_apart_from_orders(): void
+    {
+        $this->propuskActivity();
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        // Revenue: two sold passes + three responses; the free grant is not money.
+        $this->assertEquals(23_000, $response->json('data.passes.revenue.som'));
+        $this->assertEquals(20_000, $response->json('data.passes.pass_sales.som'));
+        $this->assertSame(2, $response->json('data.passes.pass_sales.count'));
+        $this->assertEquals(3_000, $response->json('data.passes.response_fees.som'));
+        $this->assertSame(3, $response->json('data.passes.response_fees.count'));
+        // Cash that came in by card; the failed top-up is not counted.
+        $this->assertEquals(60_000, $response->json('data.passes.card_collected.som'));
+        $this->assertEquals(10_000, $response->json('data.passes.card_collected_by_purpose.pass.som'));
+        $this->assertEquals(50_000, $response->json('data.passes.card_collected_by_purpose.topup.som'));
+        // Prepaid and not yet spent.
+        $this->assertEquals(37_000, $response->json('data.passes.wallet_balance.som'));
+        // Order money is untouched.
+        $this->assertEquals(0, $response->json('data.collected.som'));
+    }
+
+    public function test_propusk_revenue_respects_the_period(): void
+    {
+        $this->propuskActivity();
+
+        $response = $this->getJson(
+            '/api/v1/admin/finance/summary?from='.now()->addMonth()->toDateString()
+                .'&to='.now()->addMonths(2)->toDateString(),
+            $this->adminHeaders(),
+        )->assertOk();
+
+        $this->assertEquals(0, $response->json('data.passes.revenue.som'));
+        $this->assertEquals(0, $response->json('data.passes.card_collected.som'));
+        // A balance is a position as of now, not a period flow.
+        $this->assertEquals(37_000, $response->json('data.passes.wallet_balance.som'));
+    }
+
+    public function test_gateway_payments_register_lists_card_money(): void
+    {
+        $this->propuskActivity();
+
+        $csv = $this->get('/api/v1/admin/finance/gateway-payments.csv', $this->adminHeaders())
+            ->assertOk()
+            ->streamedContent();
+
+        $this->assertStringStartsWith("\xEF\xBB\xBF", $csv);
+        $this->assertStringContainsString('Aziz Agent', $csv);
+        $this->assertStringContainsString('10000.00', $csv);
+        $this->assertStringContainsString('50000.00', $csv);
+        $this->assertStringContainsString('8600 •••• 2365', $csv);
+        $this->assertStringNotContainsString('90000.00', $csv);
+    }
+
     public function test_payouts_register_carries_the_bank_requisites(): void
     {
         $this->settledDeal();
@@ -147,6 +290,25 @@ class FinanceReportTest extends TestCase
 
         $this->assertStringContainsString('1000000.00', $csv);
         $this->assertStringContainsString('bank_transfer', $csv);
+    }
+
+    public function test_registers_print_tashkent_time(): void
+    {
+        Payment::factory()->create([
+            'purpose' => PaymentPurpose::Order,
+            'status' => PaymentStatus::Success,
+            'method' => PaymentMethod::Cash,
+            'amount' => 10_000_000,
+            'created_at' => '2026-09-04 21:00:00',
+            'paid_at' => '2026-09-04 21:30:00',
+        ]);
+
+        $csv = $this->get('/api/v1/admin/finance/payments.csv?from=2026-09-05&to=2026-09-05', $this->adminHeaders())
+            ->assertOk()
+            ->streamedContent();
+
+        $this->assertStringContainsString('05.09.2026 02:00', $csv);
+        $this->assertStringContainsString('05.09.2026 02:30', $csv);
     }
 
     public function test_registers_are_admin_only(): void

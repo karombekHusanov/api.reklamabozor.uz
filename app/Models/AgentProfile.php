@@ -94,6 +94,10 @@ class AgentProfile extends Model
         'signed_contract_file_id',
         'contract_signed_at',
         'contract_rejection_reason',
+        'offer_version',
+        'offer_hash',
+        'offer_accepted_at',
+        'offer_accepted_ip',
     ];
 
     public function user(): BelongsTo
@@ -171,6 +175,16 @@ class AgentProfile extends Model
     }
 
     /** Whether the signed agreement is approved (or not required at all). */
+    /**
+     * Whether the agency partnership offer (current version) has been
+     * accepted. Only legal-entity (agent) profiles are bound by it.
+     */
+    public function hasAcceptedCurrentOffer(): bool
+    {
+        return ! $this->requiresContract()
+            || $this->offer_version === (string) config('legal.agent_offer_version');
+    }
+
     public function contractApproved(): bool
     {
         return ! $this->requiresContract()
@@ -335,6 +349,7 @@ class AgentProfile extends Model
             'contract_status' => AgentContractStatus::class,
             'contract_generated_at' => 'datetime',
             'contract_signed_at' => 'datetime',
+            'offer_accepted_at' => 'datetime',
         ];
     }
 }

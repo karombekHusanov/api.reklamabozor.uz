@@ -6,7 +6,6 @@ use App\Http\Controllers\ApiController;
 use App\Services\Admin\FinanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -22,7 +21,10 @@ class FinanceController extends ApiController
 
     public function summary(Request $request): JsonResponse
     {
-        [$from, $to] = $this->period($request);
+        [$from, $to] = $this->finance->period(
+            $request->query('from') ? (string) $request->query('from') : null,
+            $request->query('to') ? (string) $request->query('to') : null,
+        );
 
         return $this->success($this->finance->summary($from, $to));
     }
@@ -68,6 +70,23 @@ class FinanceController extends ApiController
         ], $rows);
     }
 
+    public function gatewayPaymentsRegister(Request $request): StreamedResponse
+    {
+        $rows = $this->finance->gatewayPaymentsRegister($request->query());
+
+        return $this->csv('propusk-tolovlari-reestri', [
+            'id' => 'ID',
+            'paid_at' => "To'langan",
+            'agent' => "To'lovchi",
+            'phone' => 'Telefon',
+            'purpose' => 'Maqsad',
+            'gateway' => 'Shlyuz',
+            'amount_som' => "Summa, so'm",
+            'card' => 'Karta',
+            'reference' => 'Tranzaksiya',
+        ], $rows);
+    }
+
     /**
      * Excel on a Uzbek locale opens semicolon-separated UTF-8 with a BOM
      * correctly; a comma-separated file lands in one column.
@@ -94,21 +113,5 @@ class FinanceController extends ApiController
 
             fclose($handle);
         }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
-    }
-
-    /**
-     * @return array{0: Carbon, 1: Carbon}
-     */
-    private function period(Request $request): array
-    {
-        $from = $request->query('from')
-            ? Carbon::parse((string) $request->query('from'))->startOfDay()
-            : now()->startOfMonth();
-
-        $to = $request->query('to')
-            ? Carbon::parse((string) $request->query('to'))->endOfDay()
-            : now()->endOfDay();
-
-        return [$from, $to];
     }
 }

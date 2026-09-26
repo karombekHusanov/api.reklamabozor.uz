@@ -11,10 +11,13 @@ use App\Http\Requests\Api\V1\Agent\StartWalletTopupRequest;
 use App\Http\Resources\AgentPassResource;
 use App\Models\AgentPass;
 use App\Models\GatewayPayment;
+use App\Models\SavedCard;
 use App\Models\WalletTransaction;
 use App\Services\Pass\CardPaymentService;
+use App\Services\Pass\CardSource;
 use App\Services\Pass\GatewayPaymentService;
 use App\Services\Pass\PassService;
+use App\Services\Pass\SavedCardService;
 use App\Services\Pass\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +31,7 @@ class PassController extends ApiController
         private readonly WalletService $wallet,
         private readonly GatewayPaymentService $gateway,
         private readonly CardPaymentService $cards,
+        private readonly SavedCardService $savedCards,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -70,8 +74,10 @@ class PassController extends ApiController
     }
 
     /**
-     * In-app card form, step 1: card + expiry. The provider texts an SMS code
-     * to the cardholder; the returned reference is confirmed in step 2.
+     * In-app card form, step 1. A typed card (card + expiry, optionally saved)
+     * gets an SMS code, confirmed in step 2 with the returned reference; a
+     * saved card (`card_id`) is charged at once — `requires_otp=false` and the
+     * result is in `status` / `summary`.
      */
     public function cardStart(StartCardPaymentRequest $request): JsonResponse
     {
@@ -81,17 +87,13 @@ class PassController extends ApiController
             return $this->error('Only approved providers can buy a Propusk.', 403);
         }
 
-        $payment = $this->cards->startPass(
-            $agent,
-            (string) $request->validated('card_number'),
-            $request->expiryYymm(),
-        );
+        $source = $this->cardSource($request);
 
-        return $this->success([
-            'payment_ref' => $payment->reference,
-            'amount_som' => intdiv($payment->amount_tiyin, 100),
-            'card_mask' => $payment->meta['card_mask'] ?? null,
-        ], 'SMS code sent', 201);
+        if ($source === null) {
+            return $this->error('Saved card not found.', 422);
+        }
+
+        return $this->cardStarted($this->cards->startPass($agent, $source), $source);
     }
 
     /**
@@ -110,18 +112,74 @@ class PassController extends ApiController
             return $this->error('Only approved providers can top up the balance.', 403);
         }
 
-        $payment = $this->cards->startTopup(
-            $agent,
-            (int) $request->validated('amount_som') * 100,
-            (string) $request->validated('card_number'),
-            $request->expiryYymm(),
-        );
+        $source = $this->cardSource($request);
 
+        if ($source === null) {
+            return $this->error('Saved card not found.', 422);
+        }
+
+        return $this->cardStarted(
+            $this->cards->startTopup($agent, (int) $request->validated('amount_som') * 100, $source),
+            $source,
+        );
+    }
+
+    /** Saved cards for the in-app form (masked PAN only — never the token). */
+    public function cards(Request $request): JsonResponse
+    {
         return $this->success([
+            'items' => $this->savedCards->list($request->user())->map(fn (SavedCard $c) => [
+                'id' => $c->id,
+                'card_mask' => $c->pan_mask,
+                'last_used_at' => $c->last_used_at?->toIso8601String(),
+                'created_at' => $c->created_at?->toIso8601String(),
+            ])->values(),
+        ]);
+    }
+
+    public function deleteCard(Request $request, int $card): JsonResponse
+    {
+        $saved = $this->savedCards->findForUser($request->user(), $card);
+
+        if ($saved === null) {
+            return $this->error('Saved card not found.', 404);
+        }
+
+        $this->savedCards->delete($saved);
+
+        return $this->success(null, 'Card removed');
+    }
+
+    private function cardSource(StartCardPaymentRequest $request): ?CardSource
+    {
+        $id = $request->savedCardId();
+
+        if ($id === null) {
+            return $request->typedCard();
+        }
+
+        $card = $this->savedCards->findForUser($request->user(), $id);
+
+        return $card !== null ? CardSource::saved($card) : null;
+    }
+
+    private function cardStarted(GatewayPayment $payment, CardSource $source): JsonResponse
+    {
+        $data = [
             'payment_ref' => $payment->reference,
             'amount_som' => intdiv($payment->amount_tiyin, 100),
             'card_mask' => $payment->meta['card_mask'] ?? null,
-        ], 'SMS code sent', 201);
+            'requires_otp' => $source->savedCard === null,
+        ];
+
+        if ($source->savedCard === null) {
+            return $this->success($data, 'SMS code sent', 201);
+        }
+
+        return $this->success($data + [
+            'status' => $payment->status->value,
+            'summary' => $this->passes->summary($payment->user),
+        ], $payment->status === GatewayPaymentStatus::Success ? 'Payment completed' : 'Payment pending', 201);
     }
 
     /** Step 2: the SMS code. On success the pass is active / the balance credited in the returned summary. */

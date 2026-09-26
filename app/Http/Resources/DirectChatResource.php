@@ -78,7 +78,7 @@ class DirectChatResource extends JsonResource
 
         if ($this->includeActiveOffer) {
             // Thread detail only (lists skip the extra query).
-            $data['other_participant']['phone'] = $this->clientPhoneFor($user, $other);
+            $data['other_participant']['phone'] = $this->counterpartPhoneFor($user, $other);
 
             $offer = $this->activeOffer;
             $data['active_offer'] = $offer ? [
@@ -98,23 +98,36 @@ class DirectChatResource extends JsonResource
     }
 
     /**
-     * The client's phone, for the agent only, and only in an order thread
-     * where the agent's otklik/offer is still live (pending or accepted) — a
-     * withdrawn, released or rejected response hides it again. Never exposed
-     * in a plain marketplace DM or to the client.
+     * Each side's phone for the other, only in an order thread and only while
+     * the agent's otklik/offer there is live (pending or accepted) — a
+     * withdrawn, released or rejected response hides both again. Never in a
+     * plain marketplace DM. The agent sees the client's number; the client
+     * sees the agency's business number (profile), else the agent's own.
      */
-    private function clientPhoneFor(User $viewer, User $other): ?string
+    private function counterpartPhoneFor(User $viewer, User $other): ?string
     {
-        if ($this->order_id === null || $viewer->id !== $this->agent_id || $other->id !== $this->client_id) {
+        if ($this->order_id === null) {
             return null;
         }
 
         $live = Offer::query()
             ->where('order_id', $this->order_id)
-            ->where('agent_id', $viewer->id)
+            ->where('agent_id', $this->agent_id)
             ->whereIn('status', [OfferStatus::Pending, OfferStatus::Accepted])
             ->exists();
 
-        return $live ? $other->phone : null;
+        if (! $live) {
+            return null;
+        }
+
+        if ($viewer->id === $this->agent_id && $other->id === $this->client_id) {
+            return $other->phone;
+        }
+
+        if ($viewer->id === $this->client_id && $other->id === $this->agent_id) {
+            return $this->agentProfile?->phone ?: $other->phone;
+        }
+
+        return null;
     }
 }

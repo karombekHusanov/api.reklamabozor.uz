@@ -57,6 +57,14 @@ class AgentProfileResource extends JsonResource
             'approved_at' => $this->approved_at,
 
             // Platform agreement (agent signs offline + re-uploads).
+            // Agency partnership offer (click-wrap at KYC submit).
+            'offer' => $this->requiresContract() ? [
+                'version' => (string) config('legal.agent_offer_version'),
+                'accepted_version' => $this->offer_version,
+                'accepted_at' => $this->offer_accepted_at,
+                'needs_acceptance' => ! $this->hasAcceptedCurrentOffer(),
+            ] : null,
+
             'contract' => $this->requiresContract() ? [
                 'status' => $this->contract_status?->value,
                 'version' => $this->contract_version,

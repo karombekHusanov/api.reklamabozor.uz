@@ -52,6 +52,16 @@ class AdminAgentProfileResource extends JsonResource
             'approved_at' => $this->approved_at,
 
             // Platform agreement — manager reviews the signed scan here.
+            // Agency partnership offer (click-wrap at KYC submit).
+            'offer' => $this->requiresContract() ? [
+                'version' => (string) config('legal.agent_offer_version'),
+                'accepted_version' => $this->offer_version,
+                'accepted_at' => $this->offer_accepted_at,
+                'accepted_ip' => $this->offer_accepted_ip,
+                'hash' => $this->offer_hash,
+                'needs_acceptance' => ! $this->hasAcceptedCurrentOffer(),
+            ] : null,
+
             'contract' => $this->requiresContract() ? [
                 'status' => $this->contract_status?->value,
                 'version' => $this->contract_version,

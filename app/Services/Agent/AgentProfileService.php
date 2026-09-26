@@ -9,11 +9,15 @@ use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\User;
+use App\Services\Legal\PublicOfferService;
 use Illuminate\Validation\ValidationException;
 
 class AgentProfileService
 {
-    public function __construct(private readonly AgentContractService $contracts) {}
+    public function __construct(
+        private readonly AgentContractService $contracts,
+        private readonly PublicOfferService $offers,
+    ) {}
 
     public function findForUser(User $user): ?AgentProfile
     {
@@ -26,8 +30,10 @@ class AgentProfileService
      *
      * @param  array<string, mixed>  $data
      */
-    public function apply(User $user, array $data): AgentProfile
+    public function apply(User $user, array $data, ?string $ip = null): AgentProfile
     {
+        unset($data['accept_offer']);
+
         if ($user->profile()->exists()) {
             throw ValidationException::withMessages([
                 'company_name' => ['You already have an agent profile.'],
@@ -50,6 +56,10 @@ class AgentProfileService
             'status' => AgentProfileStatus::Pending,
         ]);
 
+        // Submitting the application is the click-wrap acceptance of the
+        // agency partnership offer (the request requires `accept_offer`).
+        $this->acceptOffer($profile, $ip);
+
         // Generate the platform agreement from the KYC data — the agent must
         // sign + re-upload it before they can be activated.
         $this->contracts->generateFor($profile);
@@ -64,8 +74,10 @@ class AgentProfileService
      *
      * @param  array<string, mixed>  $data
      */
-    public function resubmit(AgentProfile $profile, array $data): AgentProfile
+    public function resubmit(AgentProfile $profile, array $data, ?string $ip = null): AgentProfile
     {
+        unset($data['accept_offer']);
+
         if ($profile->status === AgentProfileStatus::Approved) {
             throw ValidationException::withMessages([
                 'status' => ['Approved profiles cannot be edited from the application form.'],
@@ -77,9 +89,28 @@ class AgentProfileService
         $profile->rejection_reason = null;
         $profile->save();
 
+        $this->acceptOffer($profile, $ip);
+
         // KYC data changed — regenerate the agreement and require a fresh
         // signature (any previously signed scan is invalidated).
         $this->contracts->generateFor($profile);
+
+        return $profile->load(AgentProfile::PROFILE_RELATIONS);
+    }
+
+    /**
+     * Record the agent's acceptance of the current agency partnership offer:
+     * version + hash of the exact text shown + when/from where. Re-accepting
+     * (resubmit, or after a version bump) overwrites the previous record.
+     */
+    public function acceptOffer(AgentProfile $profile, ?string $ip = null): AgentProfile
+    {
+        $profile->forceFill([
+            'offer_version' => $this->offers->version(PublicOfferService::AGENT),
+            'offer_hash' => $this->offers->hash(PublicOfferService::AGENT),
+            'offer_accepted_at' => now(),
+            'offer_accepted_ip' => $ip,
+        ])->save();
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }

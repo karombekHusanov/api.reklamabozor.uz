@@ -46,6 +46,9 @@ class AgentProfileFactory extends Factory
             'status' => AgentProfileStatus::Pending,
             'rejection_reason' => null,
             'approved_at' => null,
+            // Applicants accept the agency offer when they submit KYC.
+            'offer_version' => config('legal.agent_offer_version'),
+            'offer_accepted_at' => now(),
         ];
     }
 
@@ -73,6 +76,15 @@ class AgentProfileFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'contract_status' => AgentContractStatus::UnderReview,
             'contract_signed_at' => now(),
+        ]);
+    }
+
+    /** Applied before the agency offer existed (or before a version bump). */
+    public function offerNotAccepted(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'offer_version' => null,
+            'offer_accepted_at' => null,
         ]);
     }
 

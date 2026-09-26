@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\PassMode;
+use App\Enums\WalletTransactionType;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Admin\AdjustWalletRequest;
 use App\Http\Requests\Api\V1\Admin\GrantPassRequest;
@@ -18,7 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/** Admin: Propusk list / revenue, manual grant, wallet adjust, settings. */
+/** Admin: Propusk list / revenue, balance ledger, manual grant, wallet adjust, settings. */
 class PassController extends ApiController
 {
     public function __construct(
@@ -74,7 +75,10 @@ class PassController extends ApiController
         ]);
     }
 
-    /** Revenue for a period: paid passes only (admin grants are free and excluded). */
+    /**
+     * Revenue for a period: paid passes (admin grants are free and excluded)
+     * plus per-otklik fees taken from agent balances; top-ups are cash in, shown apart.
+     */
     public function summary(Request $request): JsonResponse
     {
         $v = $request->validate([
@@ -103,6 +107,31 @@ class PassController extends ApiController
 
         $total = (int) (clone $base)->sum('price_tiyin');
 
+        $ledger = fn (WalletTransactionType $type) => WalletTransaction::query()
+            ->where('type', $type)
+            ->where('created_at', '>=', $from)
+            ->where('created_at', '<=', $to.' 23:59:59');
+
+        // Fees are stored as debits (negative) — revenue is their absolute sum.
+        $responseTiyin = -(int) $ledger(WalletTransactionType::ResponseFee)->sum('amount_tiyin');
+        $topupTiyin = (int) $ledger(WalletTransactionType::Topup)->sum('amount_tiyin');
+
+        $responsesPerDay = $ledger(WalletTransactionType::ResponseFee)
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as count, SUM(amount_tiyin) as sum_tiyin')
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->get()
+            ->keyBy(fn ($r) => (string) $r->day);
+
+        // One row per day with both revenue streams.
+        $days = $perDay->keyBy('date');
+        foreach ($responsesPerDay as $day => $r) {
+            $days[$day] ??= ['date' => $day, 'count' => 0, 'sum_som' => 0];
+        }
+        $perDay = $days->map(fn (array $d) => $d + [
+            'responses_count' => (int) ($responsesPerDay[$d['date']]->count ?? 0),
+            'responses_sum_som' => intdiv(-(int) ($responsesPerDay[$d['date']]->sum_tiyin ?? 0), 100),
+        ])->sortKeys()->values();
+
         return $this->success([
             'from' => $from,
             'to' => $to,
@@ -111,7 +140,75 @@ class PassController extends ApiController
             'sum_som' => intdiv($total, 100),
             'granted_count' => AgentPass::query()->where('source', 'admin')
                 ->where('created_at', '>=', $from)->where('created_at', '<=', $to.' 23:59:59')->count(),
+            'responses' => [
+                'count' => $ledger(WalletTransactionType::ResponseFee)->count(),
+                'sum_som' => intdiv($responseTiyin, 100),
+            ],
+            'topups' => [
+                'count' => $ledger(WalletTransactionType::Topup)->count(),
+                'sum_som' => intdiv($topupTiyin, 100),
+            ],
+            'revenue_som' => intdiv($total + $responseTiyin, 100),
             'per_day' => $perDay,
+        ]);
+    }
+
+    /**
+     * Balance ledger across agents: per-otklik fees, top-ups, passes paid from
+     * the balance and manual adjustments. Signed amounts (debits negative).
+     */
+    public function transactions(Request $request): JsonResponse
+    {
+        $v = $request->validate([
+            'user_id' => ['nullable', 'integer'],
+            'type' => ['nullable', Rule::enum(WalletTransactionType::class)],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $query = WalletTransaction::query()->with('user.profile')->latest('id');
+
+        if (isset($v['user_id'])) {
+            $query->where('user_id', $v['user_id']);
+        }
+        if (isset($v['type'])) {
+            $query->where('type', $v['type']);
+        }
+        if (isset($v['from'])) {
+            $query->where('created_at', '>=', $v['from']);
+        }
+        if (isset($v['to'])) {
+            $query->where('created_at', '<=', $v['to'].' 23:59:59');
+        }
+
+        $paginator = $query->paginate($v['per_page'] ?? 20);
+
+        return $this->success([
+            'items' => collect($paginator->items())->map(fn (WalletTransaction $t) => [
+                'id' => $t->id,
+                'user_id' => $t->user_id,
+                'user' => $t->user ? [
+                    'id' => $t->user->id,
+                    'first_name' => $t->user->first_name,
+                    'last_name' => $t->user->last_name,
+                    'username' => $t->user->username,
+                    'company_name' => $t->user->profile?->company_name,
+                ] : null,
+                'type' => $t->type->value,
+                'amount_som' => intdiv($t->amount_tiyin, 100),
+                // "otklik:{order}:{agent}:…" (older rows: "claim:…") — the order the fee was for.
+                'order_id' => preg_match('/^(?:otklik|claim):(\d+):/', (string) $t->reference, $m) ? (int) $m[1] : null,
+                'note' => $t->note,
+                'created_by' => $t->created_by,
+                'created_at' => $t->created_at?->toIso8601String(),
+            ]),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
         ]);
     }
 
