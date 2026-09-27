@@ -9,6 +9,7 @@ use App\Http\Controllers\ApiController;
 use App\Models\AgentProfile;
 use App\Models\Order;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -37,18 +38,28 @@ class StatsController extends ApiController
             // Capability, not KYC track: a provider is an "agency" / "designer"
             // by the category types it serves (1 user = 1 profile, capability
             // derived from categories) — a legal profile serving both counts in
-            // both. Providers with no categories yet count in neither.
-            $agentsOnline = $onlineUserIds->isEmpty() ? 0 : AgentProfile::query()
-                ->whereIn('user_id', $onlineUserIds->all())
-                ->where('status', AgentProfileStatus::Approved)
-                ->whereHas('categories', fn ($q) => $q->where('type', CategoryType::Agent->value))
-                ->distinct('user_id')
-                ->count('user_id');
+            // both. A provider with no categories yet falls back to its KYC
+            // track, so a freshly approved agency still counts (matches the
+            // Agencies page and the mini app's `isDesignerProvider`).
+            $serving = fn (Builder $q, CategoryType $type): Builder => $q->where(
+                fn (Builder $q) => $q
+                    ->whereHas('categories', fn ($c) => $c->where('type', $type->value))
+                    ->orWhere(fn (Builder $q) => $q
+                        ->whereDoesntHave('categories')
+                        ->where('provider_type', $type->value)),
+            );
 
-            $approvedServing = fn (CategoryType $type): int => AgentProfile::query()
-                ->where('status', AgentProfileStatus::Approved)
-                ->whereHas('categories', fn ($q) => $q->where('type', $type->value))
-                ->count();
+            $agentsOnline = $onlineUserIds->isEmpty() ? 0 : $serving(
+                AgentProfile::query()
+                    ->whereIn('user_id', $onlineUserIds->all())
+                    ->where('status', AgentProfileStatus::Approved),
+                CategoryType::Agent,
+            )->distinct('user_id')->count('user_id');
+
+            $approvedServing = fn (CategoryType $type): int => $serving(
+                AgentProfile::query()->where('status', AgentProfileStatus::Approved),
+                $type,
+            )->count();
 
             return [
                 'users_online' => $onlineUserIds->count(),

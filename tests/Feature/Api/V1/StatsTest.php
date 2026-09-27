@@ -73,4 +73,29 @@ class StatsTest extends TestCase
             ->assertJsonPath('data.orders_today', 2)
             ->assertJsonPath('data.active_orders', 1);
     }
+
+    public function test_approved_provider_without_categories_counts_by_its_kyc_track(): void
+    {
+        Cache::flush();
+
+        // Freshly approved agency that hasn't picked categories yet — it is
+        // listed on the Agencies page, so the home counter must include it.
+        AgentProfile::factory()->create([
+            'status' => AgentProfileStatus::Approved,
+            'provider_type' => 'agent',
+        ]);
+        AgentProfile::factory()->create([
+            'status' => AgentProfileStatus::Approved,
+            'provider_type' => 'designer',
+        ]);
+        AgentProfile::factory()->create([
+            'status' => AgentProfileStatus::Pending,
+            'provider_type' => 'agent',
+        ]);
+
+        $this->getJson('/api/v1/stats/live')
+            ->assertOk()
+            ->assertJsonPath('data.agencies_total', 1)
+            ->assertJsonPath('data.designers_total', 1);
+    }
 }
