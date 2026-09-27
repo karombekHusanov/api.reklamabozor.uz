@@ -334,6 +334,14 @@ class OfferService
             ]);
         }
 
+        // A Tezkor otklik is the claim itself — withdrawing it alone would leave
+        // the request held. The agent releases it instead (frees the request too).
+        if ($offer->order?->isTezkor()) {
+            throw ValidationException::withMessages([
+                'offer' => ['Release the Tezkor request instead of withdrawing the response.'],
+            ]);
+        }
+
         $offer->update(['status' => OfferStatus::Withdrawn]);
 
         return $offer;

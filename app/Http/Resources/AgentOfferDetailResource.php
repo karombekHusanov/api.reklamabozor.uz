@@ -40,7 +40,8 @@ class AgentOfferDetailResource extends JsonResource
             'status' => $this->status->value,
             'is_interest' => $this->isInterest(),
             'can_accept' => $this->canAccept(),
-            'can_withdraw' => $this->canWithdraw(),
+            // Tezkor claims are let go via release (it also frees the request).
+            'can_withdraw' => $this->canWithdraw() && ! $order?->isTezkor(),
             'items' => OfferItemResource::collection($this->whenLoaded('items')),
             'price_updated_at' => $this->price_updated_at,
             'price_edit_count' => (int) $this->price_edit_count,
@@ -64,6 +65,8 @@ class AgentOfferDetailResource extends JsonResource
                 'lng' => $order->lng,
                 'location_label' => $order->location_label,
                 'status' => $order->status->value,
+                // Tezkor has no pricelist/contract/payment — the UI switches on this.
+                'route' => $order->route->value,
                 'category' => $order->relationLoaded('category') && $order->category
                     ? new CategoryResource($order->category)
                     : null,

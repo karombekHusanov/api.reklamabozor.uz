@@ -316,6 +316,24 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->assertNull($order->fresh()->claimed_agent_id);
     }
 
+    public function test_tezkor_offer_detail_exposes_route_and_blocks_withdraw(): void
+    {
+        Http::fake();
+        $order = $this->tezkorOrder();
+        $agent = $this->agent();
+        $offerId = $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))
+            ->assertCreated()->json('data.id');
+
+        $this->getJson("/api/v1/agent/offers/{$offerId}", $this->auth($agent))
+            ->assertOk()
+            ->assertJsonPath('data.order.route', 'tezkor')
+            ->assertJsonPath('data.can_withdraw', false);
+
+        // Withdrawing would leave the request held — release is the only way out.
+        $this->postJson("/api/v1/agent/offers/{$offerId}/withdraw", [], $this->auth($agent))->assertStatus(422);
+        $this->assertSame($agent->id, $order->fresh()->claimed_agent_id);
+    }
+
     public function test_client_closes_a_claimed_request_without_payout_or_acts(): void
     {
         Http::fake();
