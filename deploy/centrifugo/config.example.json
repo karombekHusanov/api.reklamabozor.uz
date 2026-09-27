@@ -1,0 +1,23 @@
+{
+  "http_server": {
+    "address": "127.0.0.1",
+    "port": "8001"
+  },
+  "client": {
+    "token": {
+      "hmac_secret_key": "<CENTRIFUGO_HMAC_SECRET>"
+    },
+    "allowed_origins": ["https://app.reklamamarket.uz"]
+  },
+  "http_api": {
+    "key": "<CENTRIFUGO_API_KEY>"
+  },
+  "channel": {
+    "namespaces": [
+      {
+        "name": "live",
+        "presence": true
+      }
+    ]
+  }
+}

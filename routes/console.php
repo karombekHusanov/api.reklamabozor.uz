@@ -43,3 +43,7 @@ Schedule::command('orders:remind-stale')->dailyAt('10:30')->withoutOverlapping()
 // Online gateways without a paid-webhook (ATMOS): settle / expire pending
 // Propusk payments. Cheap no-op when nothing is pending.
 Schedule::command('gateway:reconcile-payments')->everyMinute()->withoutOverlapping();
+
+// Live stats (Centrifugo presence) → pushed to every connected mini app, so
+// clients never poll /stats/live. No-op until REALTIME_ENABLED=true.
+Schedule::command('stats:publish-live')->everyTenSeconds()->withoutOverlapping();

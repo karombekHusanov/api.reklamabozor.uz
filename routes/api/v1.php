@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\PublicClientController;
 use App\Http\Controllers\Api\V1\PublicOrderController;
 use App\Http\Controllers\Api\V1\Rating\RatingController;
+use App\Http\Controllers\Api\V1\Realtime\RealtimeController;
 use App\Http\Controllers\Api\V1\RegionController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\StatsController;
@@ -120,6 +121,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Showcase detail — full order view for authenticated users (providers see
     // can_offer + my_offer). Placed before /orders/{order} to avoid conflict.
     Route::get('/orders/showcase/{order}', [PublicOrderController::class, 'show']);
+
+    // Centrifugo connection token (presence + live stats over WebSocket).
+    Route::post('/realtime/token', [RealtimeController::class, 'token'])->middleware('throttle:30,1');
 
     Route::post('/file-upload', [FileUploadController::class, 'store']);
     Route::patch('/me', [ProfileController::class, 'update']);

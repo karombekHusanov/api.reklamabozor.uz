@@ -326,6 +326,23 @@ class AgentProfile extends Model
     }
 
     /**
+     * Profiles in a marketplace capability group: serving a category of that
+     * type, or — with no categories yet — falling back to the KYC track
+     * (mirrors the mini app's `isDesignerProvider`).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeServing(Builder $query, CategoryType $type): Builder
+    {
+        return $query->where(fn (Builder $q) => $q
+            ->whereHas('categories', fn ($c) => $c->where('type', $type->value))
+            ->orWhere(fn (Builder $q) => $q
+                ->whereDoesntHave('categories')
+                ->where('provider_type', $type->value)));
+    }
+
+    /**
      * @param  Builder<self>  $query
      * @return Builder<self>
      */

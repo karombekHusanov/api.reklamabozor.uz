@@ -22,13 +22,20 @@
         .muted { color: #888; }
         .how { margin-top: 12px; padding: 8px; background: #f0f9ff; border: 1px solid #bae6fd; font-size: 10px; }
         .draft { margin-top: 10px; padding: 6px 8px; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 9px; }
+        .logo { position: absolute; top: 0; left: 0; width: 62px; height: 22px; }
     </style>
 </head>
 @php
     $money = fn ($v) => number_format((float) $v, 0, '.', ' ').' so‘m';
     $val = fn ($v) => filled($v) ? $v : '—';
+    // Visual brand mark only — the legal name below stays «Reklama Bozor».
+    $logoPath = resource_path('brand/prb-logo.png');
+    $logoSrc = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 @endphp
 <body>
+    @if ($logoSrc)
+        <img src="{{ $logoSrc }}" class="logo" alt="PRB">
+    @endif
     <h1>To‘lov hisobi (hisob-faktura)</h1>
     <div class="sub">
         «Reklama Bozor» platformasi · buyurtma #{{ $order->id }}
@@ -116,7 +123,6 @@
             To‘lov maqsadi: «{{ $number }} — buyurtma #{{ $order->id }} uchun to‘lov{{ $contractNumber ? ', shartnoma № '.$contractNumber : '' }}».
             O‘tkazma kelib tushgach operator to‘lovni tizimda tasdiqlaydi.
         @endif
-        <div style="margin-top:4px">Karta yoki online to‘lov uchun ilovadagi «Online to‘lash» tugmasidan foydalaning.</div>
     </div>
 
     <div class="draft">
