@@ -70,17 +70,17 @@ class NewOrderNotificationTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage') && (int) $r['chat_id'] === (int) $agent->telegram_id);
     }
 
-    public function test_job_skips_closed_or_claimed_orders(): void
+    public function test_job_skips_closed_orders(): void
     {
         Http::fake();
         $agent = $this->agent();
         $cancelled = $this->order();
         $cancelled->update(['status' => OrderStatus::Cancelled]);
-        $claimed = $this->order();
-        $claimed->update(['claimed_agent_id' => $this->agent()->id, 'claimed_at' => now()]);
+        $completed = $this->order();
+        $completed->update(['status' => OrderStatus::Completed]);
 
         SendNewOrderNotification::dispatchSync($cancelled->id, $agent->id);
-        SendNewOrderNotification::dispatchSync($claimed->id, $agent->id);
+        SendNewOrderNotification::dispatchSync($completed->id, $agent->id);
 
         Http::assertNothingSent();
     }

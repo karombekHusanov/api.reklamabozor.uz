@@ -165,8 +165,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
     // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
-    // Tezkor: client reopens the request (drops the claim) or closes it as agreed.
-    Route::post('/orders/{order}/release', [OrderController::class, 'release']);
+    // Tezkor: client picks one of the responding agencies and closes as agreed.
     Route::post('/orders/{order}/close', [OrderController::class, 'close']);
     // Client reports an agent who took the advance but never started —
     // flags the order into the admin problem-orders queue.
@@ -248,9 +247,6 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/orders/{order}', [AgentOrderController::class, 'showOrder']);
         Route::post('/orders/{order}/offers', [AgentOrderController::class, 'storeOffer']);
         Route::post('/orders/{order}/submit-work', [AgentOrderController::class, 'submitWork']);
-        // Tezkor: agent lets go of their claim, or closes it as agreed.
-        Route::post('/orders/{order}/release', [AgentOrderController::class, 'release']);
-        Route::post('/orders/{order}/close', [AgentOrderController::class, 'close']);
         Route::post('/orders/{order}/review', [AgentOrderController::class, 'storeReview']);
         Route::get('/offers', [AgentOrderController::class, 'myOffers']);
         Route::get('/offers/{offer}', [AgentOrderController::class, 'showOffer']);

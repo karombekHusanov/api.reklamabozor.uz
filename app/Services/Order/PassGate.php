@@ -2,8 +2,6 @@
 
 namespace App\Services\Order;
 
-use App\Enums\OrderRoute;
-use App\Enums\OrderStatus;
 use App\Enums\PassMode;
 use App\Enums\WalletTransactionType;
 use App\Models\Order;
@@ -14,13 +12,13 @@ use App\Services\Pass\WalletService;
 use Illuminate\Support\Str;
 
 /**
- * Propusk check when an agent responds (otklik) — Tezkor claim and Tender
- * interest alike, never at view time. Called inside the offer transaction, so
- * a response fee charged here rolls back together with a failed otklik.
- * Applies to directed requests too. The open-claims cap is Tezkor-only.
+ * Propusk check when an agent responds (otklik) — Tezkor and Tender alike,
+ * never at view time. Called inside the offer transaction, so a response fee
+ * charged here rolls back together with a failed otklik. Applies to directed
+ * requests too. There is no cap on how many requests an agent answers — any
+ * agent who pays may respond and the client picks.
  *
  * Failures are HTTP 402 with a stable `code`:
- *  - claim_limit_reached  the agent holds the admin-set max of open claims
  *  - pass_required        daily_pass mode, no active Propusk
  *  - insufficient_balance per_response mode, wallet too low
  *  - payment_source_unavailable  per_response mode but the wallet is off
@@ -35,11 +33,6 @@ class PassGate
 
     public function assertCanRespond(User $agent, Order $order): void
     {
-        // Independent of `enforce`: an admin-set number is always honoured.
-        if ($order->isTezkor()) {
-            $this->assertClaimLimit($agent);
-        }
-
         if (! config('passes.enforce')) {
             return;
         }
@@ -70,26 +63,5 @@ class PassGate
         }
 
         $this->wallet->debit($agent, WalletTransactionType::ResponseFee, $fee, "otklik:{$order->id}:{$agent->id}:".Str::uuid());
-    }
-
-    private function assertClaimLimit(User $agent): void
-    {
-        $max = $this->settings->maxActiveClaims();
-
-        if ($max === null) {
-            return;
-        }
-
-        $open = Order::query()
-            ->where('route', OrderRoute::Tezkor)
-            ->where('claimed_agent_id', $agent->id)
-            ->whereIn('status', OrderStatus::openForOffers())
-            ->count();
-
-        if ($open >= $max) {
-            throw PassService::paymentRequired('claim_limit_reached', 'You have reached the maximum number of open claims.', [
-                'max_active_claims' => $max,
-            ]);
-        }
     }
 }

@@ -48,6 +48,8 @@ class PublicAgentResource extends JsonResource
             'linkedin_url' => $this->linkedin_url,
             'results_text' => $this->results_text,
             'completion_percent' => $this->completionPercent(),
+            // "On the platform since" — when the provider profile was created.
+            'member_since' => $this->created_at,
             'completed_orders_count' => (int) ($this->completed_orders_count ?? 0),
             // Stars/Grade from the user_ratings cache (falls back to legacy aggregates).
             'stars' => $this->cachedRating?->stars !== null

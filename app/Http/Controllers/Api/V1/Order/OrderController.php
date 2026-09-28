@@ -73,21 +73,16 @@ class OrderController extends ApiController
     }
 
     /**
-     * Tezkor: client rejects the claiming agent — the request reopens for all.
-     */
-    public function release(Request $request, Order $order): JsonResponse
-    {
-        $order = $this->orders->releaseClaim($request->user(), $order);
-
-        return $this->success(new OrderResource($order), 'Request reopened.');
-    }
-
-    /**
-     * Tezkor: client marks the request as agreed — it is closed as completed.
+     * Tezkor: client picks one of the agencies that responded and marks the
+     * request as agreed — it is closed as completed.
      */
     public function close(Request $request, Order $order): JsonResponse
     {
-        $order = $this->orders->closeAgreed($request->user(), $order);
+        $data = $request->validate([
+            'offer_id' => ['required', 'integer'],
+        ]);
+
+        $order = $this->orders->closeAgreed($request->user(), $order, (int) $data['offer_id']);
 
         return $this->success(new OrderResource($order), 'Request closed.');
     }

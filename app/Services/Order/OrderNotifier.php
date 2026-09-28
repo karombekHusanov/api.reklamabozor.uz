@@ -448,62 +448,38 @@ class OrderNotifier
     }
 
     /**
-     * A claimed Tezkor request sat with the agent for too long — one nudge to
-     * the client to close it as agreed or reopen it.
+     * The client picked an agency on a Tezkor request ("Kelishildi"): tell
+     * the picked agent, and close the loop with everyone else who responded.
      */
-    public function notifyClaimStale(Order $order): void
+    public function notifyTezkorAgreed(Order $order): void
     {
-        $order->loadMissing('client');
+        $title = e((string) $order->title);
 
-        $this->sendToUser($order->client, implode("\n", [
-            "\u{23F3} <b>So'rov #{$order->id}</b> (".e((string) $order->title).') hali band.',
-            "Kelishgan bo'lsangiz — so'rovni yoping, kelisha olmagan bo'lsangiz — uni qayta oching.",
-        ]), "📂 So'rovni ko'rish", "/orders/{$order->id}");
+        $this->sendToUser(
+            $order->claimed_agent_id !== null ? User::find($order->claimed_agent_id) : null,
+            implode("\n", [
+                "\u{1F389} <b>Mijoz sizni tanladi!</b>",
+                "So'rov <b>#{$order->id}</b> ({$title}) bo'yicha mijoz siz bilan kelishganini belgiladi.",
+            ]),
+            "📂 So'rovni ko'rish",
+            $this->agentOrderPath($order),
+        );
 
-        $this->admin->orderStale($order);
-    }
+        $losers = $order->offers()
+            ->where('status', OfferStatus::Rejected)
+            ->with('agent')
+            ->get();
 
-    /**
-     * A Tezkor claim was let go. The other side hears about it: the agent when
-     * the client released, the client when the agent did.
-     */
-    public function notifyClaimReleased(Order $order, bool $byClient, ?int $agentId): void
-    {
-        $order->loadMissing('client');
-
-        if ($byClient) {
-            $this->sendToUser($agentId !== null ? User::find($agentId) : null, implode("\n", [
-                "🔓 So'rov <b>#{$order->id}</b> (".e((string) $order->title).') mijoz tomonidan bo\'shatildi.',
-                'So\'rov yana hamma uchun ochiq.',
-            ]));
-
-            return;
+        foreach ($losers as $lost) {
+            try {
+                $this->sendToUser($lost->agent, implode("\n", [
+                    "So'rov <b>#{$order->id}</b> ({$title}) bo'yicha mijoz boshqa agentlikni tanladi.",
+                    'Qatnashganingiz uchun rahmat — keyingi so\'rovlarda omad! 🍀',
+                ]));
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
-
-        $this->sendToUser($order->client, implode("\n", [
-            "🔓 So'rov <b>#{$order->id}</b> (".e((string) $order->title).") bo'yicha agent ishtirokdan voz kechdi.",
-            "So'rovingiz yana hamma agentlar uchun ochiq.",
-        ]), "📂 So'rovni ko'rish", "/orders/{$order->id}");
-    }
-
-    /** Either side closed the claimed Tezkor request as agreed — tell the other one. */
-    public function notifyClaimClosed(Order $order, bool $byAgent = false): void
-    {
-        if ($byAgent) {
-            $order->loadMissing('client');
-
-            $this->sendToUser($order->client, implode("\n", [
-                "✅ So'rov <b>#{$order->id}</b> (".e((string) $order->title).') ijrochi tomonidan kelishilgan deb yopildi.',
-            ]));
-
-            return;
-        }
-
-        $agent = $order->claimed_agent_id !== null ? User::find($order->claimed_agent_id) : null;
-
-        $this->sendToUser($agent, implode("\n", [
-            "✅ So'rov <b>#{$order->id}</b> (".e((string) $order->title).') mijoz tomonidan kelishilgan deb yopildi.',
-        ]));
     }
 
     /** A Propusk became active (paid via the gateway/wallet or granted by a manager). */

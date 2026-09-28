@@ -41,8 +41,6 @@ class PublicOrderDetailResource extends JsonResource
             'attachment_files' => FileResource::collection($attachmentFiles),
             'status' => $this->status->value,
             'route' => $this->route->value,
-            'claimed' => $this->hasActiveClaim(),
-            'claimed_by_me' => $this->isTezkor() && $user !== null && $this->claimed_agent_id === $user->id,
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
             'client' => $this->whenLoaded('client', fn () => [
@@ -86,11 +84,6 @@ class PublicOrderDetailResource extends JsonResource
 
         // ...and directed orders, which only the addressed agency may answer.
         if ($order->target_agent_id !== null && $order->target_agent_id !== $user->id) {
-            return false;
-        }
-
-        // Tezkor: an exclusive claim already exists — "Band" for everyone else.
-        if ($order->isTezkor() && $order->isClaimed()) {
             return false;
         }
 

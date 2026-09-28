@@ -8,12 +8,12 @@ use App\Models\PlatformSetting;
 /**
  * Admin-overridable Propusk knobs. A row in `platform_settings` wins over the
  * `config/passes.php` default. Values are wrapped as {"v": ...} so an explicit
- * null (e.g. "unlimited claims") is distinguishable from "not overridden".
+ * null is distinguishable from "not overridden".
  */
 class PassSettings
 {
     /** @var list<string> */
-    public const KEYS = ['mode', 'price_som', 'hours', 'response_price_som', 'max_active_claims'];
+    public const KEYS = ['mode', 'price_som', 'hours', 'response_price_som'];
 
     public function get(string $key): mixed
     {
@@ -51,13 +51,6 @@ class PassSettings
         return max(1, (int) $this->get('hours'));
     }
 
-    public function maxActiveClaims(): ?int
-    {
-        $v = $this->get('max_active_claims');
-
-        return $v === null || $v === '' ? null : (int) $v;
-    }
-
     /**
      * @param  array<string, mixed>  $values  only keys present are written
      */
@@ -81,7 +74,6 @@ class PassSettings
             'price_som' => $this->priceSom(),
             'hours' => $this->hours(),
             'response_price_som' => (int) $this->get('response_price_som'),
-            'max_active_claims' => $this->maxActiveClaims(),
             'enforce' => (bool) config('passes.enforce'),
             'wallet_enabled' => (bool) config('passes.wallet_enabled'),
         ];

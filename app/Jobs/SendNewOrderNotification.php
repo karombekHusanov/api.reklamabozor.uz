@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Enums\OrderRoute;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Order\OrderNotifier;
@@ -60,10 +59,6 @@ class SendNewOrderNotification implements ShouldBeUnique, ShouldQueue
 
         // The order may have moved on while this job waited its turn.
         if ($order === null || $recipient === null || ! $order->status->isOpenForOffers()) {
-            return;
-        }
-
-        if ($order->route === OrderRoute::Tezkor && $order->isClaimed()) {
             return;
         }
 

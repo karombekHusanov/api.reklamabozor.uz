@@ -29,7 +29,7 @@ class DirectChatService
         $chats = DirectChat::query()
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
             ->when($agentProfileId !== null, fn ($q) => $q->where('agent_profile_id', $agentProfileId))
-            ->with(['client', 'agent', 'agentProfile', 'order.category', 'lastMessage.attachments'])
+            ->with(['client.avatarFile', 'agent.avatarFile', 'agentProfile.companyLogoFile', 'agentProfile.cachedRating', 'order.category', 'lastMessage.attachments'])
             ->latest('updated_at')
             ->get();
 
@@ -131,7 +131,7 @@ class DirectChatService
     {
         abort_if(! $chat->isParticipant($user), 404);
 
-        return $chat->load(['client', 'agent', 'agentProfile', 'order.category']);
+        return $chat->load(['client.avatarFile', 'agent.avatarFile', 'agentProfile.companyLogoFile', 'agentProfile.cachedRating', 'order.category']);
     }
 
     /**
@@ -152,7 +152,7 @@ class DirectChatService
             'blocked_by' => $user->id,
         ]);
 
-        return $chat->fresh(['client', 'agent', 'agentProfile', 'order.category']);
+        return $chat->fresh(['client.avatarFile', 'agent.avatarFile', 'agentProfile.companyLogoFile', 'agentProfile.cachedRating', 'order.category']);
     }
 
     /**
@@ -179,7 +179,7 @@ class DirectChatService
             'blocked_by' => null,
         ]);
 
-        return $chat->fresh(['client', 'agent', 'agentProfile', 'order.category']);
+        return $chat->fresh(['client.avatarFile', 'agent.avatarFile', 'agentProfile.companyLogoFile', 'agentProfile.cachedRating', 'order.category']);
     }
 
     /**
@@ -345,11 +345,13 @@ class DirectChatService
      */
     public function activeOfferForPair(DirectChat $chat): ?Offer
     {
+        // Order thread: one offer per (order, agent) — keep showing it once the
+        // client chose it, so the thread can say "you chose this provider".
         if ($chat->order_id !== null) {
             return Offer::query()
                 ->where('agent_id', $chat->agent_id)
                 ->where('order_id', $chat->order_id)
-                ->where('status', OfferStatus::Pending)
+                ->whereIn('status', [OfferStatus::Pending, OfferStatus::Accepted])
                 ->with('order')
                 ->latest('id')
                 ->first();

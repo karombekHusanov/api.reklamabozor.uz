@@ -92,6 +92,8 @@ class Order extends Model
         'claimedAgent.profile.companyLogoFile',
         'claimedAgent.profile.cachedRating',
         'offers.agentProfile.companyLogoFile',
+        'offers.agentProfile.cachedRating',
+        'offers.agent.avatarFile',
         'offers.items',
         'offers.contractAcceptances',
         'acceptedOffer.agentProfile',
@@ -122,7 +124,11 @@ class Order extends Model
         return $this->belongsTo(User::class, 'target_agent_id');
     }
 
-    /** The agent who currently holds a Tezkor claim on this order. */
+    /**
+     * Tezkor: the agency the client picked among the otkliks ("Kelishildi").
+     * Set only when the request is closed — until then any paying agent may
+     * respond. (Column name kept from the retired exclusive-claim model.)
+     */
     public function claimedAgent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'claimed_agent_id');
@@ -138,6 +144,7 @@ class Order extends Model
         return ! $this->isTezkor();
     }
 
+    /** Tezkor: the client has picked an agency (the request is closed). */
     public function isClaimed(): bool
     {
         return $this->claimed_agent_id !== null;
@@ -154,12 +161,6 @@ class Order extends Model
                 'order' => ['This action is not available for Tezkor requests.'],
             ]);
         }
-    }
-
-    /** A claimed Tezkor request that is still open (not closed/cancelled). */
-    public function hasActiveClaim(): bool
-    {
-        return $this->isTezkor() && $this->isClaimed() && $this->status->isOpenForOffers();
     }
 
     public function category(): BelongsTo

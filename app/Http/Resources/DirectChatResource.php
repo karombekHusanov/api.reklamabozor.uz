@@ -55,6 +55,7 @@ class DirectChatResource extends JsonResource
                 'id' => $order?->id ?? $this->order_id,
                 'title' => $order?->title,
                 'status' => $order?->status?->value,
+                'route' => $order?->route?->value,
                 'category' => $order?->relationLoaded('category') && $order->category
                     ? new CategoryResource($order->category)
                     : null,
@@ -64,6 +65,9 @@ class DirectChatResource extends JsonResource
                 'name' => trim($other->first_name.' '.($other->last_name ?? '')),
                 'company_name' => $agentProfile?->company_name,
                 'agent_profile_id' => $agentProfile?->id,
+                'avatar' => $agentProfile?->companyLogoFile?->url() ?? $other->avatarFile?->url(),
+                'stars' => $agentProfile?->cachedRating?->stars !== null ? (float) $agentProfile->cachedRating->stars : null,
+                'stars_count' => (int) ($agentProfile?->cachedRating?->stars_count ?? 0),
             ],
             'last_message' => $this->whenLoaded('lastMessage', fn () => $this->lastMessage
                 ? new DirectChatMessageResource($this->lastMessage)
@@ -88,6 +92,8 @@ class DirectChatResource extends JsonResource
                 'price' => $offer->price,
                 'status' => $offer->status->value,
                 'is_interest' => $offer->isInterest(),
+                // Tender: a priced pending offer the client may accept (contract first).
+                'can_accept' => $offer->canAccept(),
                 'can_edit_price' => $offer->canEditPrice(),
                 'price_edits_remaining' => $offer->priceEditsRemaining(),
                 'max_price_edits' => Offer::MAX_PRICE_EDITS,

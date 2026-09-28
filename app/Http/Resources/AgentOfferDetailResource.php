@@ -40,8 +40,7 @@ class AgentOfferDetailResource extends JsonResource
             'status' => $this->status->value,
             'is_interest' => $this->isInterest(),
             'can_accept' => $this->canAccept(),
-            // Tezkor claims are let go via release (it also frees the request).
-            'can_withdraw' => $this->canWithdraw() && ! $order?->isTezkor(),
+            'can_withdraw' => $this->canWithdraw(),
             'items' => OfferItemResource::collection($this->whenLoaded('items')),
             'price_updated_at' => $this->price_updated_at,
             'price_edit_count' => (int) $this->price_edit_count,

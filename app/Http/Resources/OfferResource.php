@@ -18,6 +18,9 @@ class OfferResource extends JsonResource
     {
         // The specific profile that placed the offer (not just the user's).
         $profile = $this->agentProfile;
+        $rating = $profile?->cachedRating;
+        $chat = app(DirectChatService::class)->findForOffer($this->resource);
+        $viewer = $request->user();
 
         return [
             'id' => $this->id,
@@ -36,7 +39,11 @@ class OfferResource extends JsonResource
                 'provider_type' => $profile?->provider_type?->value,
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
+                // Individuals (designers) often have no logo — the Telegram avatar stands in.
+                'avatar' => $this->agent?->avatarFile?->url(),
                 'location_label' => $profile?->location_label,
+                'stars' => $rating?->stars !== null ? (float) $rating->stars : null,
+                'stars_count' => (int) ($rating?->stars_count ?? 0),
                 'person_type' => $this->agent?->effectivePersonType()?->value,
                 'person_type_verified' => (bool) $this->agent?->isVerifiedLegalEntity(),
             ],
@@ -46,7 +53,17 @@ class OfferResource extends JsonResource
                 'agent_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_AGENT),
                 'client_accepted_at' => $this->contractAcceptedAt(ContractAcceptance::PARTY_CLIENT),
             ],
-            'chat_id' => app(DirectChatService::class)->findForOffer($this->resource)?->id,
+            'chat_id' => $chat?->id,
+            // Order thread preview for the offers list — only for its participants.
+            'chat' => $chat !== null && $viewer !== null && $chat->isParticipant($viewer) ? [
+                'last_message' => $chat->lastMessage ? [
+                    'body' => $chat->lastMessage->body,
+                    'type' => $chat->lastMessage->type,
+                    'mine' => $chat->lastMessage->sender_id === $viewer->id,
+                    'created_at' => $chat->lastMessage->created_at,
+                ] : null,
+                'unread_count' => $chat->unreadCountFor($viewer),
+            ] : null,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -31,7 +31,7 @@ class AdminOrderResource extends JsonResource
             'location_label' => $this->location_label,
             'status' => $this->status->value,
             'route' => $this->route->value,
-            // Tezkor: the agent currently holding the claim (null = open).
+            // Tezkor: the agency the client picked (null = not closed yet).
             'claimed_at' => $this->claimed_at,
             'claimed_agent' => $this->whenLoaded('claimedAgent', fn () => $this->claimedAgent ? [
                 'id' => $this->claimedAgent->id,

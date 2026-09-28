@@ -148,12 +148,12 @@ class PassTest extends TestCase
         $order = $this->tezkor();
 
         $this->claim($agent, $order)->assertStatus(402)->assertJsonPath('code', 'pass_required');
-        $this->assertNull($order->fresh()->claimed_agent_id);
+        $this->assertSame(0, $order->offers()->count());
 
         $this->buyPass($agent);
 
         $this->claim($agent, $order)->assertCreated();
-        $this->assertSame($agent->id, $order->fresh()->claimed_agent_id);
+        $this->assertSame(1, $order->offers()->where('agent_id', $agent->id)->count());
     }
 
     public function test_directed_order_also_requires_pass(): void
@@ -177,7 +177,7 @@ class PassTest extends TestCase
         $this->claim($agent, $this->tezkor())->assertStatus(402);
     }
 
-    public function test_per_response_charges_once_per_claim(): void
+    public function test_per_response_charges_every_responding_agent(): void
     {
         config(['passes.enforce' => true, 'passes.mode' => 'per_response', 'passes.wallet_enabled' => true]);
         $agent = $this->agent();
@@ -190,11 +190,12 @@ class PassTest extends TestCase
         $this->claim($agent, $order)->assertCreated();
         $this->assertSame(150000, $wallet->balanceTiyin($agent));
 
-        // A second agent losing the race is not charged.
+        // No exclusive slot: a second paying agent responds to the same request.
         $other = $this->agent();
         $wallet->credit($other, WalletTransactionType::Topup, 100000, 'gp:test2');
-        $this->claim($other, $order)->assertStatus(409);
-        $this->assertSame(100000, $wallet->balanceTiyin($other));
+        $this->claim($other, $order)->assertCreated();
+        $this->assertSame(0, $wallet->balanceTiyin($other));
+        $this->assertSame(2, $order->offers()->count());
     }
 
     public function test_per_response_charges_tender_otklik_the_same(): void
@@ -227,20 +228,6 @@ class PassTest extends TestCase
             ->assertJsonPath('code', 'insufficient_balance')
             ->assertJsonPath('data.price_som', 1000)
             ->assertJsonPath('data.balance_som', 500);
-    }
-
-    public function test_tender_otkliks_do_not_count_toward_the_claim_limit(): void
-    {
-        config(['passes.max_active_claims' => 1]);
-        $agent = $this->agent();
-        $this->claim($agent, $this->tezkor())->assertCreated();
-
-        $tender = Order::factory()->status(OrderStatus::New)->create([
-            'category_id' => null,
-            'route' => OrderRoute::Tender,
-            'payment_state' => OrderPaymentState::NotRequired,
-        ]);
-        $this->claim($agent, $tender)->assertCreated();
     }
 
     /** Per-otklik fees and top-ups appear in the admin summary and the balance ledger. */
@@ -286,31 +273,14 @@ class PassTest extends TestCase
         $this->claim($this->agent(), $this->tezkor())->assertStatus(402)->assertJsonPath('code', 'payment_source_unavailable');
     }
 
-    public function test_claim_limit(): void
+    /** No cap on how many requests one agent answers. */
+    public function test_agent_can_respond_to_any_number_of_tezkor_requests(): void
     {
-        config(['passes.max_active_claims' => 1]);
         $agent = $this->agent();
 
-        $this->claim($agent, $this->tezkor())->assertCreated();
-        $this->claim($agent, $this->tezkor())->assertStatus(402)->assertJsonPath('code', 'claim_limit_reached');
-
-        config(['passes.max_active_claims' => null]);
-        $this->claim($agent, $this->tezkor())->assertCreated();
-    }
-
-    /** Ops default: nobody can hoard every fresh request without an admin override. */
-    public function test_default_claim_limit_is_three_and_admin_configurable(): void
-    {
-        // Each test method boots a fresh app, so this is config/passes.php's
-        // real default — nothing here overrode it yet.
-        $this->assertSame(3, config('passes.max_active_claims'));
-
-        $agent = $this->agent();
-
-        $this->claim($agent, $this->tezkor())->assertCreated();
-        $this->claim($agent, $this->tezkor())->assertCreated();
-        $this->claim($agent, $this->tezkor())->assertCreated();
-        $this->claim($agent, $this->tezkor())->assertStatus(402)->assertJsonPath('code', 'claim_limit_reached');
+        foreach (range(1, 5) as $_) {
+            $this->claim($agent, $this->tezkor())->assertCreated();
+        }
     }
 
     public function test_wallet_never_negative_and_ledger_is_sum(): void
@@ -381,11 +351,9 @@ class PassTest extends TestCase
         $s->assertJsonPath('data.count', 1)->assertJsonPath('data.sum_som', 1000)->assertJsonPath('data.granted_count', 1);
         $this->assertCount(1, $s->json('data.per_day'));
 
-        $this->putJson('/api/v1/admin/passes/settings', ['price_som' => 2500, 'max_active_claims' => 3], $this->auth($admin))
-            ->assertOk()->assertJsonPath('data.price_som', 2500)->assertJsonPath('data.max_active_claims', 3);
+        $this->putJson('/api/v1/admin/passes/settings', ['price_som' => 2500], $this->auth($admin))
+            ->assertOk()->assertJsonPath('data.price_som', 2500);
         $this->getJson('/api/v1/agent/pass', $this->auth($agent))->assertJsonPath('data.price_som', 2500);
-        $this->putJson('/api/v1/admin/passes/settings', ['max_active_claims' => null], $this->auth($admin))
-            ->assertJsonPath('data.max_active_claims', null);
     }
 
     public function test_non_admin_is_forbidden(): void

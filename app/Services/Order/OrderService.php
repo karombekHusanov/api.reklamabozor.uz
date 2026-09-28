@@ -12,6 +12,7 @@ use App\Enums\OrderStatus;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
+use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderProblemEvent;
 use App\Models\Region;
@@ -448,78 +449,46 @@ class OrderService
     }
 
     /**
-     * Client (or agent) lets go of a Tezkor claim: the claiming agent's
-     * interest is withdrawn and the request reopens for everyone. There is no
-     * automatic release — only these two explicit actions.
+     * Tezkor: the client picks one agency among the otkliks and closes the
+     * request as agreed ("Kelishildi"). The picked otklik is accepted, every
+     * other pending one is rejected. No payout, acts or contract — price and
+     * payment are agreed off-platform.
      */
-    public function releaseClaim(User $actor, Order $order, bool $asAgent = false): Order
+    public function closeAgreed(User $client, Order $order, int $offerId): Order
     {
-        $agentId = null;
+        abort_unless($order->client_id === $client->id, 404);
 
-        DB::transaction(function () use ($actor, $order, $asAgent, &$agentId): void {
+        DB::transaction(function () use ($order, $offerId): void {
             /** @var Order $locked */
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
-            abort_unless(
-                $asAgent ? $locked->claimed_agent_id === $actor->id : $locked->client_id === $actor->id,
-                404,
-            );
-
-            if (! $locked->hasActiveClaim()) {
+            if (! $locked->isTezkor() || ! $locked->status->isOpenForOffers()) {
                 throw ValidationException::withMessages([
-                    'order' => ['This request has no active claim to release.'],
+                    'order' => ['Only an open Tezkor request can be closed as agreed.'],
                 ]);
             }
 
-            $agentId = $locked->claimed_agent_id;
-
-            $locked->offers()
-                ->where('agent_id', $agentId)
+            /** @var Offer|null $offer */
+            $offer = $locked->offers()
+                ->whereKey($offerId)
                 ->where('status', OfferStatus::Pending)
-                ->update(['status' => OfferStatus::Withdrawn]);
+                ->first();
+
+            if ($offer === null) {
+                throw ValidationException::withMessages([
+                    'offer_id' => ['Pick one of the agencies that responded to this request.'],
+                ]);
+            }
 
             $locked->update([
-                'claimed_agent_id' => null,
-                'claimed_at' => null,
-                'status' => OrderStatus::New,
-                'stale_reminder_sent_at' => null,
+                'claimed_agent_id' => $offer->agent_id,
+                'claimed_at' => now(),
             ]);
-        });
 
-        $order->refresh();
-
-        try {
-            $this->notifier->notifyClaimReleased($order, ! $asAgent, $agentId);
-        } catch (\Throwable $e) {
-            report($e);
-        }
-
-        return $this->withClientRelations($order);
-    }
-
-    /**
-     * Either side of a claimed Tezkor request marks it as agreed
-     * ("kelishildi") — the request is closed as completed. No payout, acts or
-     * contract. Symmetric with {@see releaseClaim()}: the client no longer
-     * has to be the one to act if the agent is confident it's done — either
-     * side closing it unblocks the slot the same way.
-     */
-    public function closeAgreed(User $actor, Order $order, bool $asAgent = false): Order
-    {
-        abort_unless(
-            $asAgent ? $order->claimed_agent_id === $actor->id : $order->client_id === $actor->id,
-            404,
-        );
-
-        DB::transaction(function () use ($order): void {
-            /** @var Order $locked */
-            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
-
-            if (! $locked->hasActiveClaim()) {
-                throw ValidationException::withMessages([
-                    'order' => ['Only a claimed Tezkor request can be closed as agreed.'],
-                ]);
-            }
+            $locked->offers()
+                ->whereKeyNot($offer->id)
+                ->where('status', OfferStatus::Pending)
+                ->update(['status' => OfferStatus::Rejected]);
 
             $this->complete($locked, auto: false);
         });
@@ -527,7 +496,7 @@ class OrderService
         $order->refresh();
 
         try {
-            $this->notifier->notifyClaimClosed($order, $asAgent);
+            $this->notifier->notifyTezkorAgreed($order);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -548,10 +517,9 @@ class OrderService
         ]);
 
         // Tezkor: no payout, acts or contract — the platform only connected
-        // the two sides. The claim's offer never goes through accept() (that
-        // path is Tender-only), so it would otherwise sit at "pending"
-        // forever — mark it accepted so the agent's offer list reflects the
-        // order's real (completed) outcome instead of looking unresolved.
+        // the two sides. The picked otklik never goes through accept() (that
+        // path is Tender-only), so mark it accepted here so the agent's offer
+        // list reflects the order's real (completed) outcome.
         if ($order->isTezkor()) {
             $order->offers()
                 ->where('agent_id', $order->claimed_agent_id)

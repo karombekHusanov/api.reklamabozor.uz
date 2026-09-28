@@ -18,9 +18,7 @@ use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Fiscal\FiscalService;
 use App\Services\Payout\PayoutService;
-use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -190,29 +188,9 @@ class OfferService
             ]);
         }
 
-        // Tezkor: the claim is the exclusive slot. Lock the order row so two
-        // agents tapping at once cannot both win (the loser gets 409).
+        // Any paying agent may respond — Tezkor and Tender alike. There is no
+        // exclusive slot: the client reads the otkliks and picks the agency.
         $offer = DB::transaction(function () use ($agent, $order, $profile, $data): Offer {
-            $locked = $order;
-
-            if ($order->isTezkor()) {
-                /** @var Order $locked */
-                $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
-
-                if (! $locked->status->isOpenForOffers()) {
-                    throw ValidationException::withMessages([
-                        'order' => ['This order is no longer accepting offers.'],
-                    ]);
-                }
-
-                if ($locked->isClaimed()) {
-                    throw new HttpResponseException(
-                        ApiResponse::error('This request is already taken by another agent.', 409),
-                    );
-                }
-
-            }
-
             if ($order->offers()->where('agent_id', $agent->id)->exists()) {
                 throw ValidationException::withMessages([
                     'order' => ['You have already sent an offer for this order.'],
@@ -220,7 +198,7 @@ class OfferService
             }
 
             // Propusk / per-otklik fee — same rule for Tezkor and Tender.
-            $this->passes->assertCanRespond($agent, $locked);
+            $this->passes->assertCanRespond($agent, $order);
 
             /** @var Offer $offer */
             $offer = $order->offers()->create([
@@ -231,15 +209,7 @@ class OfferService
                 'status' => OfferStatus::Pending,
             ]);
 
-            if ($order->isTezkor()) {
-                $order->update([
-                    'claimed_agent_id' => $agent->id,
-                    'claimed_at' => now(),
-                    'status' => OrderStatus::OffersSent,
-                    // A fresh claim gets its own "still waiting?" nudge.
-                    'stale_reminder_sent_at' => null,
-                ]);
-            } elseif ($order->status === OrderStatus::New) {
+            if ($order->status === OrderStatus::New) {
                 $order->update(['status' => OrderStatus::OffersSent]);
             }
 
@@ -331,14 +301,6 @@ class OfferService
         if (! $offer->canWithdraw()) {
             throw ValidationException::withMessages([
                 'offer' => ['This offer can no longer be withdrawn.'],
-            ]);
-        }
-
-        // A Tezkor otklik is the claim itself — withdrawing it alone would leave
-        // the request held. The agent releases it instead (frees the request too).
-        if ($offer->order?->isTezkor()) {
-            throw ValidationException::withMessages([
-                'offer' => ['Release the Tezkor request instead of withdrawing the response.'],
             ]);
         }
 

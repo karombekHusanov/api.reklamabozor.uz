@@ -162,7 +162,6 @@ class PassService
             'enforce' => (bool) config('passes.enforce'),
             'wallet_enabled' => $walletOn,
             'response_price_som' => (int) $this->settings->get('response_price_som'),
-            'max_active_claims' => $this->settings->maxActiveClaims(),
             'balance_som' => $walletOn ? intdiv($this->wallet->balanceTiyin($agent), 100) : null,
         ];
     }

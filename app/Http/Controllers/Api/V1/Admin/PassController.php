@@ -243,8 +243,6 @@ class PassController extends ApiController
             'price_som' => ['sometimes', 'integer', 'min:0', 'max:100000000'],
             'hours' => ['sometimes', 'integer', 'min:1', 'max:8760'],
             'response_price_som' => ['sometimes', 'integer', 'min:0', 'max:100000000'],
-            // null = unlimited.
-            'max_active_claims' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:1000'],
         ]);
 
         $this->settings->update($v);

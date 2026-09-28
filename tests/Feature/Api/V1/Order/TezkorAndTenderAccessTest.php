@@ -18,7 +18,8 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * Faza 1: Tender access (manager-granted) + the Tezkor exclusive-claim route.
+ * Faza 1: Tender access (manager-granted) + the Tezkor route (open otkliks,
+ * the client picks the agency).
  */
 class TezkorAndTenderAccessTest extends TestCase
 {
@@ -91,7 +92,7 @@ class TezkorAndTenderAccessTest extends TestCase
             ->assertJsonPath('data.route', 'tezkor')
             ->assertJsonPath('data.payment_state', 'not_required')
             ->assertJsonPath('data.claim', null)
-            ->assertJsonPath('data.can_release', false);
+            ->assertJsonPath('data.can_close', true);
     }
 
     public function test_permitted_account_creates_both_routes_and_defaults_to_tender(): void
@@ -199,29 +200,32 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->assertSame([$granted->id], collect($response->json('data.items'))->pluck('id')->all());
     }
 
-    // --- Tezkor claim --------------------------------------------------------
+    // --- Tezkor: open otkliks, client picks ---------------------------------
 
-    public function test_first_agent_claims_and_second_gets_409(): void
+    public function test_any_number_of_agents_can_respond_to_a_tezkor_request(): void
     {
         Http::fake();
         $order = $this->tezkorOrder();
         $first = $this->agent();
         $second = $this->agent();
+        $third = $this->agent();
 
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($first))
-            ->assertCreated()->assertJsonPath('data.is_interest', true);
-
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($second))
-            ->assertStatus(409);
+        foreach ([$first, $second, $third] as $agent) {
+            $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))
+                ->assertCreated()->assertJsonPath('data.is_interest', true);
+        }
 
         $fresh = $order->fresh();
-        $this->assertSame($first->id, $fresh->claimed_agent_id);
-        $this->assertNotNull($fresh->claimed_at);
+        $this->assertNull($fresh->claimed_agent_id);
         $this->assertSame(OrderStatus::OffersSent, $fresh->status);
-        $this->assertSame(1, $order->offers()->count());
+        $this->assertSame(3, $order->offers()->where('status', OfferStatus::Pending)->count());
+
+        // Still one otklik per agent.
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($first))
+            ->assertUnprocessable();
     }
 
-    public function test_tezkor_claim_rejects_a_price(): void
+    public function test_tezkor_otklik_rejects_a_price(): void
     {
         Http::fake();
         $order = $this->tezkorOrder();
@@ -229,97 +233,97 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->postJson("/api/v1/agent/orders/{$order->id}/offers", ['price' => 500000], $this->auth($this->agent()))
             ->assertUnprocessable();
 
-        $this->assertNull($order->fresh()->claimed_agent_id);
+        $this->assertSame(0, $order->offers()->count());
     }
 
-    public function test_feed_flags_claimed_orders_and_filters_by_route(): void
+    public function test_feed_stays_open_after_an_otklik_and_filters_by_route(): void
     {
         Http::fake();
-        $claimed = $this->tezkorOrder();
+        $tezkor = $this->tezkorOrder();
         $tender = Order::factory()->status(OrderStatus::New)->create(['category_id' => null]);
         $first = $this->agent();
         $second = $this->agent();
-        $this->postJson("/api/v1/agent/orders/{$claimed->id}/offers", [], $this->auth($first))->assertCreated();
+        $this->postJson("/api/v1/agent/orders/{$tezkor->id}/offers", [], $this->auth($first))->assertCreated();
 
         $rows = collect($this->getJson('/api/v1/agent/orders?route=tezkor', $this->auth($second))
             ->assertOk()->json('data'));
-        $this->assertSame([$claimed->id], $rows->pluck('id')->all());
-        $this->assertTrue($rows[0]['claimed']);
-        $this->assertFalse($rows[0]['claimed_by_me']);
-        $this->assertFalse($rows[0]['can_offer']);
-
-        $mine = collect($this->getJson('/api/v1/agent/orders?route=tezkor', $this->auth($first))->json('data'));
-        $this->assertTrue($mine[0]['claimed_by_me']);
+        $this->assertSame([$tezkor->id], $rows->pluck('id')->all());
+        $this->assertTrue($rows[0]['can_offer']);
+        $this->assertArrayNotHasKey('claimed', $rows[0]);
 
         $tenders = collect($this->getJson('/api/v1/agent/orders?route=tender', $this->auth($second))->json('data'));
         $this->assertSame([$tender->id], $tenders->pluck('id')->all());
 
-        $this->getJson("/api/v1/orders/showcase/{$claimed->id}", $this->auth($second))
-            ->assertJsonPath('data.can_offer', false)
-            ->assertJsonPath('data.claimed', true);
+        $this->getJson("/api/v1/orders/showcase/{$tezkor->id}", $this->auth($second))
+            ->assertJsonPath('data.can_offer', true);
     }
 
-    public function test_client_sees_the_claiming_agent_with_phone(): void
+    public function test_client_sees_all_otkliks_and_can_pick(): void
     {
         Http::fake();
         $client = User::factory()->create();
         $order = $this->tezkorOrder($client);
-        $agent = $this->agent();
-        $agent->forceFill(['phone' => '+998901234567'])->save();
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
+        $first = $this->agent();
+        $second = $this->agent();
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($first))->assertCreated();
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($second))->assertCreated();
 
         $this->getJson("/api/v1/orders/{$order->id}", $this->auth($client))
             ->assertOk()
-            ->assertJsonPath('data.claim.agent_id', $agent->id)
-            ->assertJsonPath('data.claim.agent.phone', '+998901234567')
-            ->assertJsonPath('data.can_release', true)
+            ->assertJsonPath('data.claim', null)
             ->assertJsonPath('data.can_close', true)
+            ->assertJsonCount(2, 'data.offers')
             ->assertJsonPath('data.offers.0.can_accept', false);
     }
 
-    public function test_client_release_reopens_the_request(): void
+    public function test_client_picks_an_agency_and_the_rest_are_rejected(): void
     {
         Http::fake();
         $client = User::factory()->create();
         $order = $this->tezkorOrder($client);
-        $agent = $this->agent();
+        $picked = $this->agent();
+        $picked->forceFill(['phone' => '+998901234567'])->save();
         $other = $this->agent();
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
 
-        $this->postJson("/api/v1/orders/{$order->id}/release", [], $this->auth($client))
+        // Nothing to pick before anyone responds.
+        $this->postJson("/api/v1/orders/{$order->id}/close", ['offer_id' => 999], $this->auth($client))
+            ->assertUnprocessable();
+
+        $pickedOfferId = $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($picked))
+            ->assertCreated()->json('data.id');
+        $otherOfferId = $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($other))
+            ->assertCreated()->json('data.id');
+
+        // offer_id is required, and only the owner may close.
+        $this->postJson("/api/v1/orders/{$order->id}/close", [], $this->auth($client))->assertUnprocessable();
+        $this->postJson("/api/v1/orders/{$order->id}/close", ['offer_id' => $pickedOfferId], $this->auth($other))
+            ->assertNotFound();
+
+        $this->postJson("/api/v1/orders/{$order->id}/close", ['offer_id' => $pickedOfferId], $this->auth($client))
             ->assertOk()
-            ->assertJsonPath('data.status', 'new')
-            ->assertJsonPath('data.claim', null);
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.can_close', false)
+            ->assertJsonPath('data.claim.agent_id', $picked->id)
+            ->assertJsonPath('data.claim.agent.phone', '+998901234567');
 
-        $this->assertNull($order->fresh()->claimed_agent_id);
-        $this->assertSame(OfferStatus::Withdrawn, $order->offers()->first()->status);
+        $fresh = $order->fresh();
+        $this->assertSame($picked->id, $fresh->claimed_agent_id);
+        $this->assertSame(OfferStatus::Accepted, Offer::find($pickedOfferId)->status);
+        $this->assertSame(OfferStatus::Rejected, Offer::find($otherOfferId)->status);
+        $this->assertSame(0, $fresh->payouts()->count());
+        $this->assertSame(0, $fresh->documents()->count());
+        $this->assertNull($fresh->contract()->first());
 
-        // Open for everyone again.
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($other))->assertCreated();
-        $this->assertSame($other->id, $order->fresh()->claimed_agent_id);
+        // Already closed.
+        $this->postJson("/api/v1/orders/{$order->id}/close", ['offer_id' => $otherOfferId], $this->auth($client))
+            ->assertUnprocessable();
     }
 
-    public function test_agent_release_reopens_the_request(): void
+    public function test_client_cannot_pick_a_withdrawn_otklik(): void
     {
         Http::fake();
-        $order = $this->tezkorOrder();
-        $agent = $this->agent();
-        $outsider = $this->agent();
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
-
-        $this->postJson("/api/v1/agent/orders/{$order->id}/release", [], $this->auth($outsider))->assertNotFound();
-
-        $this->postJson("/api/v1/agent/orders/{$order->id}/release", [], $this->auth($agent))
-            ->assertOk()->assertJsonPath('data.claimed', false);
-
-        $this->assertSame(OrderStatus::New, $order->fresh()->status);
-        $this->assertNull($order->fresh()->claimed_agent_id);
-    }
-
-    public function test_tezkor_offer_detail_exposes_route_and_blocks_withdraw(): void
-    {
-        Http::fake();
-        $order = $this->tezkorOrder();
+        $client = User::factory()->create();
+        $order = $this->tezkorOrder($client);
         $agent = $this->agent();
         $offerId = $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))
             ->assertCreated()->json('data.id');
@@ -327,61 +331,24 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->getJson("/api/v1/agent/offers/{$offerId}", $this->auth($agent))
             ->assertOk()
             ->assertJsonPath('data.order.route', 'tezkor')
-            ->assertJsonPath('data.can_withdraw', false);
+            ->assertJsonPath('data.can_withdraw', true);
 
-        // Withdrawing would leave the request held — release is the only way out.
-        $this->postJson("/api/v1/agent/offers/{$offerId}/withdraw", [], $this->auth($agent))->assertStatus(422);
-        $this->assertSame($agent->id, $order->fresh()->claimed_agent_id);
+        $this->postJson("/api/v1/agent/offers/{$offerId}/withdraw", [], $this->auth($agent))->assertOk();
+
+        $this->postJson("/api/v1/orders/{$order->id}/close", ['offer_id' => $offerId], $this->auth($client))
+            ->assertUnprocessable();
     }
 
-    public function test_client_closes_a_claimed_request_without_payout_or_acts(): void
+    public function test_agent_release_and_close_routes_are_gone(): void
     {
         Http::fake();
-        $client = User::factory()->create();
-        $order = $this->tezkorOrder($client);
+        $order = $this->tezkorOrder();
         $agent = $this->agent();
-
-        // Nothing to close before someone claims.
-        $this->postJson("/api/v1/orders/{$order->id}/close", [], $this->auth($client))->assertUnprocessable();
-
         $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
 
-        $this->postJson("/api/v1/orders/{$order->id}/close", [], $this->auth($client))
-            ->assertOk()->assertJsonPath('data.status', 'completed');
-
-        $this->assertSame(0, $order->payouts()->count());
-        $this->assertSame(0, $order->documents()->count());
-        $this->assertNull($order->contract()->first());
-        // Never goes through accept() (Tender-only) — completion is what
-        // resolves it, so the agent's offer list stops showing it as pending.
-        $this->assertSame(OfferStatus::Accepted, $order->offers()->first()->status);
-    }
-
-    /** The agent holding the claim can close it as agreed too — the client doesn't have to act. */
-    public function test_claiming_agent_can_also_close_the_request_as_agreed(): void
-    {
-        Http::fake();
-        $client = User::factory()->create();
-        $order = $this->tezkorOrder($client);
-        $agent = $this->agent();
-        $stranger = $this->agent();
-
-        // Nobody without the claim may close it — not even another agent.
-        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($stranger))->assertNotFound();
-
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
-
-        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($agent))
-            ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.claimed', false);
-
-        $fresh = $order->fresh();
-        $this->assertSame(OrderStatus::Completed, $fresh->status);
-        $this->assertSame(0, $fresh->payouts()->count());
-        $this->assertFalse($fresh->hasActiveClaim());
-        $this->assertSame(OfferStatus::Accepted, $fresh->offers()->first()->status);
-
-        // Already closed — nothing left to close.
-        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($agent))->assertUnprocessable();
+        $this->postJson("/api/v1/agent/orders/{$order->id}/release", [], $this->auth($agent))->assertNotFound();
+        $this->postJson("/api/v1/agent/orders/{$order->id}/close", [], $this->auth($agent))->assertNotFound();
+        $this->postJson("/api/v1/orders/{$order->id}/release", [], $this->auth($order->client))->assertNotFound();
     }
 
     public function test_tezkor_accept_pay_pricelist_and_amendment_paths_are_422(): void
@@ -408,23 +375,5 @@ class TezkorAndTenderAccessTest extends TestCase
 
         $this->assertSame(OrderStatus::OffersSent, $order->fresh()->status);
         $this->assertSame(OfferStatus::Pending, $offer->fresh()->status);
-    }
-
-    public function test_stale_claim_reminder_reaches_the_client_once(): void
-    {
-        config(['orders.stale_order_reminder_days' => 3]);
-        Http::fake();
-        $client = User::factory()->create(['telegram_id' => 777000222]);
-        $order = $this->tezkorOrder($client);
-        $agent = $this->agent();
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], $this->auth($agent))->assertCreated();
-        $order->forceFill(['claimed_at' => now()->subDays(4)])->save();
-
-        $this->artisan('orders:remind-stale')->assertSuccessful();
-        $this->assertNotNull($order->fresh()->stale_reminder_sent_at);
-        Http::assertSent(fn ($request) => ($request['chat_id'] ?? null) === 777000222
-            && str_contains($request['text'] ?? '', 'band'));
-
-        $this->artisan('orders:remind-stale')->assertSuccessful();
     }
 }

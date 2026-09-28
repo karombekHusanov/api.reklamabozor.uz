@@ -36,11 +36,10 @@ class OrderResource extends JsonResource
             'status' => $this->status->value,
             // tender | tezkor — fixed at creation.
             'route' => $this->route->value,
-            // Tezkor: the agent holding the claim (phone only once claimed).
+            // Tezkor: the agency the client picked (null until "Kelishildi").
             'claim' => $this->when($this->isTezkor(), fn () => $this->claimPayload()),
-            // Tezkor claim actions for the client.
-            'can_release' => $this->hasActiveClaim(),
-            'can_close' => $this->hasActiveClaim(),
+            // Tezkor: the client may pick one of the pending otkliks.
+            'can_close' => $this->isTezkor() && $this->status->isOpenForOffers(),
             // Money runs on its own track: the deal is active from the moment
             // the contract is accepted, the payment may still be outstanding.
             'payment_state' => $this->payment_state?->value,
