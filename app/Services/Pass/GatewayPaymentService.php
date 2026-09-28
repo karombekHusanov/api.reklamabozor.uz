@@ -12,6 +12,7 @@ use App\Models\GatewayPayment;
 use App\Models\User;
 use App\Services\Payment\Gateway\CardPaymentException;
 use App\Services\Payment\Gateway\GatewayEvent;
+use App\Services\Telegram\PaymentFeedNotifier;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +29,7 @@ class GatewayPaymentService
     public function __construct(
         private readonly PassSettings $settings,
         private readonly WalletService $wallet,
+        private readonly PaymentFeedNotifier $feed,
     ) {}
 
     /**
@@ -94,6 +96,7 @@ class GatewayPaymentService
             }
 
             $payment->update(['status' => GatewayPaymentStatus::Success, 'paid_at' => now()]);
+            $this->feed->gatewayPaid($payment);
 
             $user = $payment->user;
 
@@ -182,6 +185,7 @@ class GatewayPaymentService
             ]);
 
             Log::info('gateway.payment.refunded', ['payment' => $payment->id, 'by' => $admin->id]);
+            $this->feed->gatewayRefunded($payment);
 
             return $payment;
         });

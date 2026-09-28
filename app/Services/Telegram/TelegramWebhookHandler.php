@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Enums\Role;
 use App\Models\User;
 use App\Services\Agent\AgentAccountLinker;
+use Illuminate\Support\Facades\Log;
 
 class TelegramWebhookHandler
 {
@@ -22,6 +23,8 @@ class TelegramWebhookHandler
      */
     public function handle(array $update): void
     {
+        $this->logGroupMembership($update);
+
         $message = $update['message'] ?? null;
 
         if (! is_array($message)) {
@@ -38,6 +41,35 @@ class TelegramWebhookHandler
 
         if (is_string($text) && str_starts_with($text, '/start')) {
             $this->handleStart($message);
+        }
+    }
+
+    /**
+     * The bot being added to / removed from a group, or a group upgrading to a
+     * supergroup (new id), is logged with the chat id — that's how ops finds the
+     * id for TELEGRAM_ADMIN_CHAT_ID / TELEGRAM_PAYMENTS_CHAT_ID.
+     *
+     * @param  array<string, mixed>  $update
+     */
+    private function logGroupMembership(array $update): void
+    {
+        $member = $update['my_chat_member'] ?? null;
+        if (is_array($member) && in_array($member['chat']['type'] ?? null, ['group', 'supergroup'], true)) {
+            Log::info('telegram.bot_group_membership', [
+                'chat_id' => $member['chat']['id'] ?? null,
+                'title' => $member['chat']['title'] ?? null,
+                'status' => $member['new_chat_member']['status'] ?? null,
+                'by' => $member['from']['id'] ?? null,
+            ]);
+        }
+
+        $migrateTo = $update['message']['migrate_to_chat_id'] ?? null;
+        if ($migrateTo !== null) {
+            Log::info('telegram.group_migrated', [
+                'from_chat_id' => $update['message']['chat']['id'] ?? null,
+                'to_chat_id' => $migrateTo,
+                'title' => $update['message']['chat']['title'] ?? null,
+            ]);
         }
     }
 

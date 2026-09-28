@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\Order\OfferService;
 use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
+use App\Services\Telegram\PaymentFeedNotifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,6 +28,7 @@ class PaymentService
         private readonly OfferService $offers,
         private readonly PayoutService $payouts,
         private readonly AdminNotifier $notifier,
+        private readonly PaymentFeedNotifier $feed,
     ) {}
 
     /**
@@ -157,6 +159,7 @@ class PaymentService
             ]);
 
             $this->onOrderPaid($locked->fresh());
+            $this->feed->orderPaid($locked->fresh());
 
             return $locked->refresh();
         });
@@ -204,6 +207,7 @@ class PaymentService
             ]);
 
             $this->onOrderPaid($locked->fresh());
+            $this->feed->orderPaid($locked->fresh());
 
             return $locked->refresh();
         });
@@ -334,6 +338,7 @@ class PaymentService
         ]);
 
         $this->onOrderRefunded($payment->fresh(), cancelOrder: true);
+        $this->feed->orderRefunded($payment->fresh());
 
         return $payment->refresh();
     }
@@ -376,6 +381,7 @@ class PaymentService
         ]);
 
         $this->onOrderRefunded($payment->fresh(), cancelOrder: true);
+        $this->feed->orderRefunded($payment->fresh());
 
         try {
             $this->notifier->manualRefundRequired($payment->fresh());

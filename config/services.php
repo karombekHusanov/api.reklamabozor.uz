@@ -46,6 +46,8 @@ return [
         'mini_app_url' => env('TELEGRAM_MINI_APP_URL'),
         // Private ops group where the bot reports marketplace events. Empty = disabled.
         'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
+        // Separate group that gets every payment / refund (PaymentFeedNotifier). Empty = off.
+        'payments_chat_id' => env('TELEGRAM_PAYMENTS_CHAT_ID'),
         // New-order broadcast pace: messages released per second (Telegram allows ~30/s).
         'broadcast_per_second' => (int) env('TELEGRAM_BROADCAST_PER_SECOND', 20),
         // Comma-separated event keys to report ("*" = all):
