@@ -64,7 +64,7 @@ return [
         'enabled' => env('ASSISTANT_ENABLED', false),
         'base_url' => env('ASSISTANT_BASE_URL', 'https://openrouter.ai/api/v1'),
         'api_key' => env('ASSISTANT_API_KEY'),
-        'model' => env('ASSISTANT_MODEL', 'minimax/minimax-m3:free'),
+        'model' => env('ASSISTANT_MODEL', 'google/gemini-3.5-flash-lite'),
         // Chat needs to feel instant — a slow provider is a broken feature.
         'timeout' => (int) env('ASSISTANT_TIMEOUT', 20),
         // Order-category auto-detection runs synchronously inside POST /orders,

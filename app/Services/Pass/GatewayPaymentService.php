@@ -3,17 +3,20 @@
 namespace App\Services\Pass;
 
 use App\Contracts\PaymentGateway;
+use App\Contracts\RefundableGateway;
 use App\Enums\GatewayPaymentPurpose;
 use App\Enums\GatewayPaymentStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\AgentPass;
 use App\Models\GatewayPayment;
 use App\Models\User;
+use App\Services\Payment\Gateway\CardPaymentException;
 use App\Services\Payment\Gateway\GatewayEvent;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Creates gateway payments and applies their (idempotent) results. All state
@@ -132,6 +135,56 @@ class GatewayPaymentService
         }
 
         return $this->handleEvent($event) ?? $payment;
+    }
+
+    /**
+     * Admin full refund of a successful card payment: take back what it bought
+     * (wallet credit / the pass it activated), then reverse the debit at the
+     * provider — all in one transaction, so a refused reversal changes nothing.
+     * A top-up the agent has already spent cannot be refunded (422).
+     */
+    public function refund(GatewayPayment $payment, User $admin, string $reason): GatewayPayment
+    {
+        return DB::transaction(function () use ($payment, $admin, $reason): GatewayPayment {
+            /** @var GatewayPayment $payment */
+            $payment = GatewayPayment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($payment->status !== GatewayPaymentStatus::Success) {
+                throw ValidationException::withMessages(['payment' => ['Only a successful payment can be refunded.']]);
+            }
+
+            $gateway = $this->gateway();
+            if (! $gateway instanceof RefundableGateway || $gateway->name() !== $payment->gateway || $payment->gateway_ref === null) {
+                throw ValidationException::withMessages(['payment' => ['This payment cannot be refunded through the gateway.']]);
+            }
+
+            if ($payment->purpose === GatewayPaymentPurpose::Pass) {
+                AgentPass::query()
+                    ->where('gateway_payment_id', $payment->id)
+                    ->update(['status' => 'refunded', 'note' => $reason]);
+            } else {
+                $this->wallet->debit(
+                    $payment->user, WalletTransactionType::Refund, $payment->amount_tiyin, 'gp-refund:'.$payment->id, $reason, $admin,
+                );
+            }
+
+            try {
+                $gateway->reverseCardPayment($payment->gateway_ref, $reason);
+            } catch (CardPaymentException $e) {
+                throw ValidationException::withMessages(['payment' => [$e->getMessage()]]);
+            }
+
+            $payment->update([
+                'status' => GatewayPaymentStatus::Refunded,
+                'meta' => array_merge($payment->meta ?? [], [
+                    'refund' => ['at' => now()->toIso8601String(), 'by' => $admin->id, 'reason' => $reason],
+                ]),
+            ]);
+
+            Log::info('gateway.payment.refunded', ['payment' => $payment->id, 'by' => $admin->id]);
+
+            return $payment;
+        });
     }
 
     /** Give up on a payment whose provider invoice can no longer be paid. */

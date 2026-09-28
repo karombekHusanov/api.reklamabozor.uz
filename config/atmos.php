@@ -35,4 +35,9 @@ return [
     'token_otp' => (string) env('ATMOS_TOKEN_OTP', '111111'),
 
     'timeout' => (int) env('ATMOS_TIMEOUT', 15),
+
+    // Local development only: ATMOS doesn't answer every network, so route the
+    // API through the server, e.g. `ssh -N -D 1080 reklamamarket-deploy` +
+    // ATMOS_HTTP_PROXY=socks5h://127.0.0.1:1080. Leave empty in production.
+    'proxy' => env('ATMOS_HTTP_PROXY'),
 ];

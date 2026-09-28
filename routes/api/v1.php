@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\V1\Admin\ChatController as AdminChatController;
 use App\Http\Controllers\Api\V1\Admin\FinanceController as AdminFinanceController;
+use App\Http\Controllers\Api\V1\Admin\GatewayPaymentController as AdminGatewayPaymentController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagController;
 use App\Http\Controllers\Api\V1\Admin\LegalEntityController as AdminLegalEntityController;
@@ -315,6 +316,10 @@ Route::prefix('admin')
         Route::get('/passes', [AdminPassController::class, 'index']);
         Route::get('/passes/summary', [AdminPassController::class, 'summary']);
         Route::get('/passes/transactions', [AdminPassController::class, 'transactions']);
+        // Online card payments (Propusk / wallet top-up): list + full refund via the gateway.
+        Route::get('/gateway-payments', [AdminGatewayPaymentController::class, 'index']);
+        Route::post('/gateway-payments/{gatewayPayment}/refund', [AdminGatewayPaymentController::class, 'refund'])
+            ->middleware('throttle:10,1');
         Route::get('/passes/settings', [AdminPassController::class, 'settings']);
         Route::put('/passes/settings', [AdminPassController::class, 'updateSettings']);
 

@@ -12,7 +12,8 @@ use RuntimeException;
  * Thin wrapper over the ATMOS API gateway: client-credentials token (cached,
  * refreshed on 401), the hosted-checkout invoice endpoints, the merchant
  * card endpoints (create → pre-apply → apply) used by the in-app card form
- * and the card binding endpoints (bind-card init → confirm, remove-card).
+ * the card binding endpoints (bind-card init → confirm, remove-card) and the
+ * full reversal of a completed payment (merchant/pay/reverse).
  */
 class AtmosClient
 {
@@ -146,6 +147,18 @@ class AtmosClient
         return (array) ($data['store_transaction'] ?? []);
     }
 
+    /**
+     * Reverse a completed payment; ATMOS returns the money to the card.
+     * `$successTransId` is `success_trans_id` from apply/get, not the draft id.
+     */
+    public function merchantReverse(string $successTransId, string $reason): void
+    {
+        $this->merchantPost('/merchant/pay/reverse', [
+            'transaction_id' => (int) $successTransId,
+            'reason' => mb_substr($reason, 0, 250),
+        ]);
+    }
+
     /** @return array<string, mixed> The `store_transaction` block. */
     public function merchantGet(string $transactionId): array
     {
@@ -225,20 +238,34 @@ class AtmosClient
 
     private function http(): PendingRequest
     {
-        return Http::baseUrl((string) config('atmos.base_url'))
+        return $this->base()
             ->withToken($this->accessToken())
             ->acceptJson()
-            ->asJson()
-            ->timeout((int) config('atmos.timeout'));
+            ->asJson();
+    }
+
+    /**
+     * ATMOS only answers some networks (a dev laptop abroad times out), so an
+     * optional proxy — e.g. `socks5h://127.0.0.1:1080` over `ssh -D` to the
+     * server — lets local development reach the DEV store. Empty in prod.
+     */
+    private function base(): PendingRequest
+    {
+        $request = Http::baseUrl((string) config('atmos.base_url'))->timeout((int) config('atmos.timeout'));
+
+        if ($proxy = config('atmos.proxy')) {
+            $request = $request->withOptions(['proxy' => (string) $proxy]);
+        }
+
+        return $request;
     }
 
     private function accessToken(): string
     {
         return Cache::remember(self::TOKEN_CACHE_KEY, now()->addMinutes(50), function (): string {
-            $response = Http::baseUrl((string) config('atmos.base_url'))
+            $response = $this->base()
                 ->withBasicAuth((string) config('atmos.consumer_key'), (string) config('atmos.consumer_secret'))
                 ->asForm()
-                ->timeout((int) config('atmos.timeout'))
                 ->post('/token', ['grant_type' => 'client_credentials']);
 
             $token = $response->json('access_token');

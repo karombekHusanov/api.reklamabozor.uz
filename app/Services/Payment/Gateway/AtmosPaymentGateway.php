@@ -5,6 +5,7 @@ namespace App\Services\Payment\Gateway;
 use App\Contracts\CardPaymentGateway;
 use App\Contracts\CardTokenGateway;
 use App\Contracts\PaymentGateway;
+use App\Contracts\RefundableGateway;
 use App\Enums\GatewayPaymentStatus;
 use App\Models\GatewayPayment;
 use App\Services\Payment\Atmos\AtmosClient;
@@ -28,7 +29,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * {@see verifyCallback()} only authenticates it. Money is confirmed solely by
  * {@see getStatus()} (invoice/get: success + final).
  */
-class AtmosPaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway
+class AtmosPaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway, RefundableGateway
 {
     private const CARD_PREFIX = 'card:';
 
@@ -155,6 +156,28 @@ class AtmosPaymentGateway implements CardPaymentGateway, CardTokenGateway, Payme
         $this->client->removeCard($cardId, $cardToken);
     }
 
+    /**
+     * Only in-app card payments can be reversed through the API; the reversal
+     * needs the permanent `success_trans_id`, read back from ATMOS.
+     */
+    public function reverseCardPayment(string $gatewayRef, string $reason): void
+    {
+        if (! str_starts_with($gatewayRef, self::CARD_PREFIX)) {
+            throw new CardPaymentException('Only card payments can be reversed through ATMOS.');
+        }
+
+        $tx = $this->client->merchantGet($this->cardTransaction($gatewayRef));
+
+        if (empty($tx['success_trans_id'])) {
+            throw new CardPaymentException('ATMOS has no completed debit for this payment.');
+        }
+        if ($this->isReversed($tx)) {
+            return;
+        }
+
+        $this->client->merchantReverse((string) $tx['success_trans_id'], $reason);
+    }
+
     public function getStatus(string $gatewayRef): GatewayEvent
     {
         if (str_starts_with($gatewayRef, self::CARD_PREFIX)) {
@@ -191,11 +214,25 @@ class AtmosPaymentGateway implements CardPaymentGateway, CardTokenGateway, Payme
     {
         $paid = ! empty($tx['success_trans_id']) || ($tx['confirmed'] ?? false) === true;
 
-        return new GatewayEvent(
-            $gatewayRef,
-            $paid ? GatewayPaymentStatus::Success : GatewayPaymentStatus::Pending,
-            isset($tx['amount']) ? (int) $tx['amount'] : null,
-        );
+        // A reversed debit keeps its success id and `confirmed` — never credit it.
+        $status = match (true) {
+            $paid && $this->isReversed($tx) => GatewayPaymentStatus::Failed,
+            $paid => GatewayPaymentStatus::Success,
+            default => GatewayPaymentStatus::Pending,
+        };
+
+        return new GatewayEvent($gatewayRef, $status, isset($tx['amount']) ? (int) $tx['amount'] : null);
+    }
+
+    /**
+     * ATMOS marks a reversed transaction with `status_code` "-20" (seen on the
+     * DEV store: 0 → -20 after merchant/pay/reverse).
+     *
+     * @param  array<string, mixed>  $tx
+     */
+    private function isReversed(array $tx): bool
+    {
+        return (string) ($tx['status_code'] ?? '') === '-20';
     }
 
     private function cardTransaction(string $gatewayRef): string

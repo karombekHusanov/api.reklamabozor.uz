@@ -5,6 +5,7 @@ namespace App\Services\Payment\Gateway;
 use App\Contracts\CardPaymentGateway;
 use App\Contracts\CardTokenGateway;
 use App\Contracts\PaymentGateway;
+use App\Contracts\RefundableGateway;
 use App\Enums\GatewayPaymentStatus;
 use App\Models\GatewayPayment;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ use InvalidArgumentException;
  * token starting with "fake_declined" is declined when charged. Never
  * resolved in production.
  */
-class FakePaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway
+class FakePaymentGateway implements CardPaymentGateway, CardTokenGateway, PaymentGateway, RefundableGateway
 {
     public const FAKE_OTP = '111111';
 
@@ -109,6 +110,14 @@ class FakePaymentGateway implements CardPaymentGateway, CardTokenGateway, Paymen
     }
 
     public function removeCard(string $cardId, string $cardToken): void {}
+
+    /** Card payments reverse fine; a ref containing "no_reverse" is refused (tests). */
+    public function reverseCardPayment(string $gatewayRef, string $reason): void
+    {
+        if (str_contains($gatewayRef, 'no_reverse')) {
+            throw new CardPaymentException('Qaytarish rad etildi (test).');
+        }
+    }
 
     public function getStatus(string $gatewayRef): GatewayEvent
     {
