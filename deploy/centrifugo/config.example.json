@@ -17,7 +17,24 @@
       {
         "name": "live",
         "presence": true
+      },
+      {
+        "name": "user"
       }
     ]
+  },
+  "rpc": {
+    "proxy": {
+      "endpoint": "https://api.reklamamarket.uz/api/v1/centrifugo/rpc",
+      "timeout": "5s",
+      "http": {
+        "static_headers": {
+          "X-Centrifugo-Proxy-Secret": "<CENTRIFUGO_PROXY_SECRET>"
+        }
+      }
+    },
+    "without_namespace": {
+      "proxy_enabled": true
+    }
   }
 }

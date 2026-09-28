@@ -1,4 +1,4 @@
-# Centrifugo — realtime presence
+# Centrifugo — realtime presence + client ↔ agent chat
 
 Mini app keeps one WebSocket; connected = online. Presence lives in
 Centrifugo memory (no DB writes, no heartbeat requests); `stats:publish-live`
@@ -50,6 +50,7 @@ Centrifugo memory (no DB writes, no heartbeat requests); `stats:publish-live`
    CENTRIFUGO_API_URL=http://127.0.0.1:8001/api
    CENTRIFUGO_API_KEY=...
    CENTRIFUGO_HMAC_SECRET=...
+   CENTRIFUGO_PROXY_SECRET=...   # = rpc.proxy.http.static_headers in config.json
    ```
    then `config:cache` + reload php-fpm + restart worker (GOTCHA #1).
 
@@ -58,3 +59,23 @@ counts to the Sanctum `last_used_at` heuristic.
 
 Scale notes: ~10–30 KB RAM per connection (10k ≈ 300 MB); nginx
 `worker_connections` ≥ 2× expected sockets.
+
+## Chat over the socket (2026-09-28)
+
+Client ↔ agent chats (direct/negotiation + deal) no longer poll:
+
+- **Receive:** each connection token also carries `user:{id}` (namespace
+  `user`, no client-side subscribe — nobody can join another user's channel).
+  `ChatBroadcaster` pushes `chat.message` / `chat.read` to both participants
+  via the server `broadcast` API.
+- **Send / mark read:** mini app calls `centrifuge.rpc('chat.send' | 'chat.read', …)`;
+  Centrifugo forwards it (RPC proxy) to `POST /api/v1/centrifugo/rpc` with the
+  user id from the token and the static `X-Centrifugo-Proxy-Secret` header.
+  Same services as the HTTP routes (validation, agent image ban, Telegram ping).
+- **Upgrade existing prod config:** add the `user` namespace and the `rpc`
+  block from `config.example.json`, fill the proxy secret (`openssl rand -hex 32`,
+  same value in backend `.env`), `systemctl restart centrifugo`, then backend
+  config:cache + fpm/worker reload. Verify keys against your version with
+  `centrifugo defaultconfig -c /tmp/d.json` if the binary is upgraded.
+- The HTTP endpoints stay as fallback (realtime off / socket down); the thread
+  reloads from HTTP on reconnect, so a missed push is never lost.

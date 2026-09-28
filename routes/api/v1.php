@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Admin\AmendmentController as AdminAmendmentContr
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\V1\Admin\ChatController as AdminChatController;
 use App\Http\Controllers\Api\V1\Admin\FinanceController as AdminFinanceController;
 use App\Http\Controllers\Api\V1\Admin\GlobalChatController as AdminGlobalChatController;
 use App\Http\Controllers\Api\V1\Admin\HashtagController as AdminHashtagController;
@@ -55,11 +56,14 @@ use App\Http\Controllers\Api\V1\PublicBannerController;
 use App\Http\Controllers\Api\V1\PublicClientController;
 use App\Http\Controllers\Api\V1\PublicOrderController;
 use App\Http\Controllers\Api\V1\Rating\RatingController;
+use App\Http\Controllers\Api\V1\Realtime\CentrifugoProxyController;
 use App\Http\Controllers\Api\V1\Realtime\RealtimeController;
 use App\Http\Controllers\Api\V1\RegionController;
 use App\Http\Controllers\Api\V1\Review\ReviewController;
 use App\Http\Controllers\Api\V1\StatsController;
 use App\Http\Controllers\Api\V1\Telegram\WebhookController;
+use App\Http\Middleware\EnsureCentrifugoProxy;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -115,6 +119,13 @@ Route::prefix('auth')->group(function (): void {
         Route::get('/me', [AuthController::class, 'me']);
     });
 });
+
+// Centrifugo RPC proxy (chat over WebSocket). Server-to-server: guarded by a
+// shared secret header, and the per-IP API throttle is off — every call comes
+// from Centrifugo's single IP; the controller rate-limits per user instead.
+Route::post('/centrifugo/rpc', [CentrifugoProxyController::class, 'rpc'])
+    ->middleware(EnsureCentrifugoProxy::class)
+    ->withoutMiddleware(ThrottleRequests::class.':api');
 
 // Authenticated mini app surface (any logged-in user).
 Route::middleware('auth:sanctum')->group(function (): void {
@@ -347,6 +358,12 @@ Route::prefix('admin')
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
         Route::get('/orders/{order}/chat', [AdminOrderController::class, 'chat']);
+
+        // Client ↔ agent chat history (negotiation threads + deal chats), read-only.
+        Route::get('/chats', [AdminChatController::class, 'index']);
+        Route::get('/chats/{type}/{id}', [AdminChatController::class, 'show'])
+            ->whereIn('type', ['direct', 'order'])
+            ->whereNumber('id');
 
         // Problem orders: an unresolved quality dispute past its correction
         // window, or an agent who never started a paid deal — a manager

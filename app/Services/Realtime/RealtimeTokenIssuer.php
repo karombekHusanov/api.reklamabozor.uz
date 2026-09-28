@@ -10,7 +10,8 @@ use Illuminate\Support\Carbon;
 /**
  * Issues Centrifugo connection JWTs (HS256). Channels are server-side
  * subscriptions (`channels` claim): the client can't pick or forge them, so
- * only approved agencies land in the agents presence channel.
+ * only approved agencies land in the agents presence channel and each user
+ * only in their own `user:{id}` chat channel.
  */
 class RealtimeTokenIssuer
 {
@@ -19,7 +20,10 @@ class RealtimeTokenIssuer
     {
         $expiresAt = now()->addMinutes((int) config('realtime.token_ttl_minutes'));
 
-        $channels = [config('realtime.channels.pulse')];
+        $channels = [
+            config('realtime.channels.pulse'),
+            config('realtime.channels.user_prefix').$user->id,
+        ];
         $isAgency = AgentProfile::query()
             ->approved()
             ->serving(CategoryType::Agent)

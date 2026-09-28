@@ -12,6 +12,7 @@ use App\Models\DirectChatMessage;
 use App\Models\Offer;
 use App\Models\User;
 use App\Services\Order\OrderNotifier;
+use App\Services\Realtime\ChatBroadcaster;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -19,6 +20,7 @@ class DirectChatService
 {
     public function __construct(
         private readonly OrderNotifier $notifier,
+        private readonly ChatBroadcaster $broadcaster,
     ) {}
 
     /**
@@ -255,6 +257,7 @@ class DirectChatService
         ]);
 
         $chat->touch();
+        $this->broadcaster->directMessage($chat, $message);
 
         return $message;
     }
@@ -272,12 +275,25 @@ class DirectChatService
             ->orderBy('id')
             ->get();
 
-        $chat->messages()
+        $this->markRead($user, $chat);
+
+        return $messages;
+    }
+
+    /** Mark everything sent to $user as read and tell the other side. */
+    public function markRead(User $user, DirectChat $chat): void
+    {
+        abort_if(! $chat->isParticipant($user), 404);
+
+        $updated = $chat->messages()
             ->where('sender_id', '!=', $user->id)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
 
-        return $messages;
+        if ($updated > 0) {
+            $other = $user->id === $chat->client_id ? $chat->agent_id : $chat->client_id;
+            $this->broadcaster->read('direct', $chat->id, $user->id, (int) $other);
+        }
     }
 
     /**
@@ -302,6 +318,7 @@ class DirectChatService
         }
 
         $files = MessageAttachments::resolve($user, $fileIds);
+        MessageAttachments::assertAgentSendsNoImages($user, (int) $chat->agent_id, $files);
         $recipient = $chat->otherParticipant($user);
         $shouldPing = $chat->unreadCountFor($recipient) === 0;
 
@@ -316,6 +333,7 @@ class DirectChatService
         $message->setRelation('attachments', $files->values());
 
         $chat->touch();
+        $this->broadcaster->directMessage($chat, $message);
 
         if ($shouldPing) {
             try {

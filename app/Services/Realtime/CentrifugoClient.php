@@ -7,7 +7,7 @@ use RuntimeException;
 
 /**
  * Thin wrapper over the Centrifugo server HTTP API (v6: `POST /api/{method}`,
- * `X-API-Key` header). Only what presence needs: publish + presence_stats.
+ * `X-API-Key` header): publish / broadcast + presence_stats.
  */
 class CentrifugoClient
 {
@@ -15,6 +15,17 @@ class CentrifugoClient
     public function publish(string $channel, array $data): void
     {
         $this->call('publish', ['channel' => $channel, 'data' => $data]);
+    }
+
+    /**
+     * Same payload to several channels in one call (chat → both participants).
+     *
+     * @param  list<string>  $channels
+     * @param  array<string, mixed>  $data
+     */
+    public function broadcast(array $channels, array $data): void
+    {
+        $this->call('broadcast', ['channels' => array_values($channels), 'data' => $data]);
     }
 
     /** Unique users currently subscribed to a presence-enabled channel. */

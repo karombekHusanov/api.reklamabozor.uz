@@ -7,6 +7,7 @@ use App\Models\ChatMessage;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Order\OrderNotifier;
+use App\Services\Realtime\ChatBroadcaster;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -14,6 +15,7 @@ class ChatService
 {
     public function __construct(
         private readonly OrderNotifier $notifier,
+        private readonly ChatBroadcaster $broadcaster,
     ) {}
 
     /**
@@ -64,12 +66,25 @@ class ChatService
             ->get();
 
         // Opening (or polling) the thread means the user has seen everything sent to them.
-        $chat->messages()
+        $this->markRead($user, $chat);
+
+        return $messages;
+    }
+
+    /** Mark everything sent to $user as read and tell the other side. */
+    public function markRead(User $user, Chat $chat): void
+    {
+        abort_if(! $chat->isParticipant($user), 404);
+
+        $updated = $chat->messages()
             ->where('sender_id', '!=', $user->id)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
 
-        return $messages;
+        if ($updated > 0) {
+            $other = $user->id === $chat->client_id ? $chat->agent_id : $chat->client_id;
+            $this->broadcaster->read('order', $chat->id, $user->id, (int) $other);
+        }
     }
 
     /**
@@ -92,6 +107,7 @@ class ChatService
         }
 
         $files = MessageAttachments::resolve($user, $fileIds);
+        MessageAttachments::assertAgentSendsNoImages($user, (int) $chat->agent_id, $files);
 
         $recipient = $chat->otherParticipant($user);
 
@@ -109,6 +125,7 @@ class ChatService
         $message->setRelation('attachments', $files->values());
 
         $chat->touch();
+        $this->broadcaster->orderMessage($chat, $message);
 
         if ($shouldPing) {
             try {

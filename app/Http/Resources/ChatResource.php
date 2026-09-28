@@ -50,6 +50,8 @@ class ChatResource extends JsonResource
                 ? new ChatMessageResource($this->lastMessage)
                 : null),
             'unread_count' => (int) $this->unreadCountFor($user),
+            // The agency side may attach documents only, never images.
+            'can_send_images' => $user->id !== $this->agent_id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

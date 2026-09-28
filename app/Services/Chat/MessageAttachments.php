@@ -49,6 +49,25 @@ final class MessageAttachments
     }
 
     /**
+     * Client ↔ agent chats: the agent side may not send images (contact
+     * details / off-platform deals in screenshots). Documents stay allowed.
+     *
+     * @param  Collection<int, File>  $files
+     */
+    public static function assertAgentSendsNoImages(User $user, int $agentId, Collection $files): void
+    {
+        if ($user->id !== $agentId) {
+            return;
+        }
+
+        if ($files->contains(fn (File $file): bool => str_starts_with((string) $file->mime_type, 'image/'))) {
+            throw ValidationException::withMessages([
+                'file_ids' => ['Agencies cannot send images in chat.'],
+            ]);
+        }
+    }
+
+    /**
      * Attach resolved files to a message's pivot, keeping the picked order.
      *
      * @param  BelongsToMany<File, covariant \Illuminate\Database\Eloquent\Model>  $relation

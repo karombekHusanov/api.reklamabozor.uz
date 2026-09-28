@@ -76,6 +76,8 @@ class DirectChatResource extends JsonResource
             'blocked_at' => $this->blocked_at,
             'blocked_by' => $this->blocked_by,
             'can_write' => $this->canWrite($user),
+            // The agency side may attach documents only, never images.
+            'can_send_images' => $user->id !== $this->agent_id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

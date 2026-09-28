@@ -56,7 +56,7 @@ class RealtimePresenceTest extends TestCase
         });
     }
 
-    public function test_client_token_subscribes_only_to_the_pulse_channel(): void
+    public function test_client_token_subscribes_to_pulse_and_own_chat_channel(): void
     {
         $user = User::factory()->create();
         Sanctum::actingAs($user);
@@ -69,7 +69,7 @@ class RealtimePresenceTest extends TestCase
 
         $claims = $this->claims($data['token']);
         $this->assertSame((string) $user->id, $claims['sub']);
-        $this->assertSame(['live:pulse'], $claims['channels']);
+        $this->assertSame(['live:pulse', 'user:'.$user->id], $claims['channels']);
         $this->assertGreaterThan(now()->timestamp, $claims['exp']);
     }
 
@@ -85,7 +85,7 @@ class RealtimePresenceTest extends TestCase
 
         $token = $this->postJson('/api/v1/realtime/token')->assertOk()->json('data.token');
 
-        $this->assertSame(['live:pulse', 'live:agents'], $this->claims($token)['channels']);
+        $this->assertSame(['live:pulse', 'user:'.$user->id, 'live:agents'], $this->claims($token)['channels']);
     }
 
     public function test_token_endpoint_reports_disabled_and_requires_auth(): void

@@ -38,7 +38,15 @@ return [
         'pulse' => 'live:pulse',
         // Approved agencies only: presence for `agents_online`.
         'agents' => 'live:agents',
+        // Personal channel prefix (`user:{id}`): chat messages + read receipts.
+        // Namespace `user` has no client-side subscribe — only the connection
+        // token puts a user into their own channel.
+        'user_prefix' => 'user:',
     ],
+
+    // Shared secret Centrifugo sends on RPC proxy calls (`chat.send`,
+    // `chat.read`) — must equal `rpc.proxy.http.static_headers` in its config.
+    'proxy_secret' => env('CENTRIFUGO_PROXY_SECRET'),
 
     // How long a published snapshot is trusted by GET /stats/live.
     'snapshot_ttl_seconds' => 60,
