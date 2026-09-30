@@ -97,6 +97,7 @@ class CardPaymentService
                 $gateway->sendCardOtp($ref, (string) $source->cardNumber, (string) $source->expiryYymm);
             }
         } catch (CardPaymentException $e) {
+            $this->logDeclined($payment, 'start', $e);
             $this->fail($payment);
 
             throw $this->userError($e->getMessage(), 'card_declined');
@@ -135,6 +136,8 @@ class CardPaymentService
         try {
             $event = $this->gateway()->confirmCardOtp($payment->gateway_ref, $otp);
         } catch (CardPaymentException $e) {
+            $this->logDeclined($payment, 'confirm_otp', $e);
+
             throw $this->userError($e->getMessage(), 'otp_invalid');
         } catch (\Throwable $e) {
             // The debit may still have gone through — the status sync settles it.
@@ -176,6 +179,8 @@ class CardPaymentService
             try {
                 $bound = $gateway->confirmCardBinding((string) $payment->meta['bind_ref'], $otp);
             } catch (CardPaymentException $e) {
+                $this->logDeclined($payment, 'bind_confirm', $e);
+
                 throw $this->userError($e->getMessage(), 'otp_invalid');
             } catch (\Throwable $e) {
                 Log::warning('gateway.card.bind_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
@@ -206,6 +211,7 @@ class CardPaymentService
             $ref = $gateway->startCardPayment((int) $payment->amount_tiyin, $payment->reference);
             $payment->update(['gateway_ref' => $ref]);
         } catch (CardPaymentException $e) {
+            $this->logDeclined($payment, 'token_start', $e);
             $this->fail($payment);
 
             throw $this->userError($e->getMessage(), 'card_declined');
@@ -219,6 +225,7 @@ class CardPaymentService
         try {
             $event = $gateway->chargeCardToken($ref, $card->card_token);
         } catch (CardPaymentException $e) {
+            $this->logDeclined($payment, 'token_charge', $e);
             $this->fail($payment);
 
             throw $this->userError($e->getMessage(), 'card_declined');
@@ -253,6 +260,21 @@ class CardPaymentService
         }
 
         return $gateway;
+    }
+
+    /**
+     * The provider's own reason for refusing (wrong/expired code, card
+     * declined, binding not allowed…) — otherwise it only reaches the agent.
+     * The message never holds the card number: we don't log the request.
+     */
+    private function logDeclined(GatewayPayment $payment, string $stage, CardPaymentException $e): void
+    {
+        Log::warning('gateway.card.declined', [
+            'payment' => $payment->id,
+            'user' => $payment->user_id,
+            'stage' => $stage,
+            'error' => $e->getMessage(),
+        ]);
     }
 
     private function fail(GatewayPayment $payment): void

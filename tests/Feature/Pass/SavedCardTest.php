@@ -13,6 +13,7 @@ use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /** Card binding: "save card" once (one SMS), then pay by token with no card data and no SMS. */
@@ -149,6 +150,7 @@ class SavedCardTest extends TestCase
 
     public function test_wrong_code_on_binding_keeps_it_open_and_saves_nothing(): void
     {
+        Log::spy();
         $agent = $this->agent();
         $ref = $this->as($agent)->postJson('/api/v1/agent/pass/card', [
             'card_number' => self::CARD, 'expiry' => '01/28', 'save_card' => true,
@@ -158,6 +160,9 @@ class SavedCardTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('code', 'otp_invalid');
 
+        Log::shouldHaveReceived('warning')->withArgs(
+            fn (string $message, array $context) => $message === 'gateway.card.declined' && $context['stage'] === 'bind_confirm',
+        )->once();
         $this->assertSame(0, SavedCard::query()->count());
 
         $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '111111'])
