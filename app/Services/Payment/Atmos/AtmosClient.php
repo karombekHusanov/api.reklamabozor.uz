@@ -222,7 +222,7 @@ class AtmosClient
         $response = $this->http()->post($path, $payload);
 
         if ($response->status() === 401) {
-            Cache::forget(self::TOKEN_CACHE_KEY);
+            Cache::forget($this->tokenCacheKey());
             $response = $this->http()->post($path, $payload);
         }
 
@@ -262,7 +262,7 @@ class AtmosClient
 
     private function accessToken(): string
     {
-        return Cache::remember(self::TOKEN_CACHE_KEY, now()->addMinutes(50), function (): string {
+        return Cache::remember($this->tokenCacheKey(), now()->addMinutes(50), function (): string {
             $response = $this->base()
                 ->withBasicAuth((string) config('atmos.consumer_key'), (string) config('atmos.consumer_secret'))
                 ->asForm()
@@ -276,6 +276,15 @@ class AtmosClient
 
             return $token;
         });
+    }
+
+    /**
+     * Scoped to the credentials, so swapping DEV → PROD keys never reuses a
+     * token cached for the other store.
+     */
+    private function tokenCacheKey(): string
+    {
+        return self::TOKEN_CACHE_KEY.'.'.substr(hash('sha256', config('atmos.consumer_key').'|'.config('atmos.store_id')), 0, 16);
     }
 
     private function assertConfigured(): void
