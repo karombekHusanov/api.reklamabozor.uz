@@ -85,6 +85,47 @@ class OrderTest extends TestCase
         ]);
     }
 
+    public function test_client_can_send_budget_and_deadline_range(): void
+    {
+        [, $token] = $this->authedUser();
+        $category = Category::factory()->create();
+        $from = now()->addDays(2)->toDateString();
+        $to = now()->addDays(9)->toDateString();
+
+        $this->withToken($token)->postJson('/api/v1/orders', [
+            'category_id' => $category->id,
+            'description' => 'Banner for the new shop opening',
+            'route' => 'tezkor',
+            'budget' => 5000000,
+            'deadline_from' => $from,
+            'deadline_to' => $to,
+            ...$this->locationPayload(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.deadline_from', $from)
+            ->assertJsonPath('data.deadline_to', $to)
+            ->assertJsonPath('data.budget_max', '5000000.00');
+    }
+
+    public function test_deadline_range_must_be_ordered_and_in_the_future(): void
+    {
+        [, $token] = $this->authedUser();
+
+        $this->withToken($token)->postJson('/api/v1/orders', [
+            'description' => 'Banner for the new shop opening',
+            'route' => 'tezkor',
+            'deadline_from' => now()->addDays(5)->toDateString(),
+            'deadline_to' => now()->addDays(2)->toDateString(),
+        ])->assertUnprocessable()->assertJsonValidationErrors('deadline_to');
+
+        $this->withToken($token)->postJson('/api/v1/orders', [
+            'description' => 'Banner for the new shop opening',
+            'route' => 'tezkor',
+            'deadline_from' => now()->subDay()->toDateString(),
+            'deadline_to' => now()->addDays(2)->toDateString(),
+        ])->assertUnprocessable()->assertJsonValidationErrors('deadline_from');
+    }
+
     public function test_client_can_set_show_files_in_showcase_false(): void
     {
         Http::fake();

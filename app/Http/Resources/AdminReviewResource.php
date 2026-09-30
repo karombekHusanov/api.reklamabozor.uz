@@ -23,7 +23,7 @@ class AdminReviewResource extends JsonResource
             'id' => $this->id,
             'order_id' => $this->order_id,
             'direction' => $this->direction->value,
-            'rating' => (float) $this->rating,
+            'rating' => $this->rating !== null ? (float) $this->rating : null,
             'criteria' => $this->criteria,
             'comment' => $this->comment,
             'status' => $this->status->value,

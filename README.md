@@ -1,13 +1,29 @@
 # AdSpace Backend
 
-Modern Laravel 13 API backend for the AdSpace platform.
+Laravel 13 API for the PRB (Reklama Bozor) ad marketplace — Telegram Mini App + admin panel.
+Prod: `https://api.reklamamarket.uz`. Full project guide: root `CLAUDE.md` (setup, deploy, gotchas)
+and `PROJECT_LOGIC.md` (domain, flows, full API reference).
 
 ## Stack
 
-- PHP 8.3+
-- Laravel 13
-- Laravel Sanctum (token-based API authentication)
-- PostgreSQL (SQLite used in tests for speed)
+- PHP 8.3 (composer platform pinned to 8.3.6)
+- Laravel 13 + Sanctum (Bearer tokens)
+- PostgreSQL 16 (SQLite `:memory:` in tests), Redis 7 (cache/queue)
+- Centrifugo v6 (WebSocket: presence, live stats, client ↔ agent chat)
+- Integrations: Telegram Bot API, ATMOS (card payments), Kapitalbank OpenAPI (bank transfers),
+  OpenRouter (AI assistant), dompdf (contracts, invoices, acts)
+
+## Key subsystems
+
+| Area | Where |
+|------|-------|
+| Orders, offers (otklik), contracts, amendments | `app/Services/Order`, `app/Services/Contract`, `resources/legal` |
+| Order payments (bank transfer / cash, Kapitalbank auto-match), payouts | `app/Services/Payment/PaymentService.php`, `BankReconciliationService`, `PayoutService` |
+| Propusk / wallet / card payments (ATMOS), refunds | `app/Services/Pass/*`, `app/Services/Payment/Atmos`, `app/Services/Payment/Gateway` |
+| Realtime (Centrifugo) — presence, stats, chat push + RPC proxy | `app/Services/Realtime/*`, `deploy/centrifugo/README.md` |
+| Chats (deal / direct / global), admin chat history | `app/Services/Chat/*`, `app/Services/Admin/ChatAdminService.php` |
+| Telegram: user notifications, ops group, payments group, webhook | `app/Services/Telegram/*` |
+| AI assistant (order drafts, category detection) | `app/Services/Assistant/*`, `php artisan assistant:eval` |
 
 ## Getting Started
 
@@ -157,6 +173,12 @@ Key variables in `.env`:
 | `DB_CONNECTION`| Database driver (pgsql; sqlite/mysql also supported) |
 | `DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` | Postgres connection |
 | `QUEUE_CONNECTION` | Queue driver               |
+| `TELEGRAM_ADMIN_CHAT_ID` / `TELEGRAM_PAYMENTS_CHAT_ID` | Ops group / payments feed group (empty = off) |
+| `REALTIME_ENABLED`, `CENTRIFUGO_WS_URL`, `CENTRIFUGO_API_URL`, `CENTRIFUGO_API_KEY`, `CENTRIFUGO_HMAC_SECRET`, `CENTRIFUGO_PROXY_SECRET` | Centrifugo (see `deploy/centrifugo/README.md`) |
+| `ASSISTANT_ENABLED`, `ASSISTANT_API_KEY`, `ASSISTANT_MODEL` | AI assistant (OpenRouter; default `google/gemini-3.5-flash-lite`) |
+| `PASSES_ENFORCE`, `PASSES_WALLET_ENABLED`, `PASSES_GATEWAY` | Propusk / per-response fees; `atmos` or `fake` |
+| `ATMOS_CONSUMER_KEY`, `ATMOS_CONSUMER_SECRET`, `ATMOS_STORE_ID`, `ATMOS_HTTP_PROXY` | ATMOS card payments; proxy only for local dev (ATMOS doesn't answer every network) |
+| `KAPITALBANK_ENABLED`, `KAPITALBANK_*` | Bank statement reconciliation / payout queue |
 
 ## License
 

@@ -62,19 +62,23 @@ class RatingCriteria
     }
 
     /**
-     * Compute the weighted deal score from raw criterion scores (each 1–5).
+     * Weighted deal score over the criteria that were actually rated (weights
+     * renormalised); null when nothing was rated (comment-only review).
      *
      * @param  array<string, int>  $scores  code => score
      */
-    public static function dealScore(Role $role, array $scores): float
+    public static function dealScore(Role $role, array $scores): ?float
     {
-        $criteria = self::forRole($role);
         $sum = 0.0;
+        $weights = 0.0;
 
-        foreach ($criteria as $criterion) {
-            $sum += $criterion['weight'] * ($scores[$criterion['code']] ?? 0);
+        foreach (self::forRole($role) as $criterion) {
+            if (isset($scores[$criterion['code']])) {
+                $sum += $criterion['weight'] * $scores[$criterion['code']];
+                $weights += $criterion['weight'];
+            }
         }
 
-        return round($sum, 2);
+        return $weights > 0 ? round($sum / $weights, 2) : null;
     }
 }

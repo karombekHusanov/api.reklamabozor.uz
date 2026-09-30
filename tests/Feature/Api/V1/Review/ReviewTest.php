@@ -186,6 +186,41 @@ class ReviewTest extends TestCase
         ], ['Authorization' => 'Bearer '.$this->token($client)])->assertUnprocessable();
     }
 
+    public function test_partial_criteria_review_is_accepted(): void
+    {
+        Http::fake();
+        [$order, $client] = $this->completedDeal();
+
+        $this->postJson("/api/v1/orders/{$order->id}/review", [
+            'criteria' => [['code' => 'result_quality', 'score' => 4]],
+        ], ['Authorization' => 'Bearer '.$this->token($client)])
+            ->assertCreated()
+            ->assertJsonPath('data.rating', 4);
+    }
+
+    public function test_comment_only_review_is_accepted_without_rating(): void
+    {
+        Http::fake();
+        [$order, $client] = $this->completedDeal();
+
+        $this->postJson("/api/v1/orders/{$order->id}/review", [
+            'comment' => 'Yaxshi ishladi',
+        ], ['Authorization' => 'Bearer '.$this->token($client)])
+            ->assertCreated()
+            ->assertJsonPath('data.rating', null);
+    }
+
+    public function test_empty_review_is_rejected(): void
+    {
+        Http::fake();
+        [$order, $client] = $this->completedDeal();
+
+        $this->postJson("/api/v1/orders/{$order->id}/review", [
+            'criteria' => [],
+            'comment' => '  ',
+        ], ['Authorization' => 'Bearer '.$this->token($client)])->assertUnprocessable();
+    }
+
     public function test_review_criteria_endpoint(): void
     {
         $user = User::factory()->create();

@@ -34,6 +34,13 @@ class PublicOrderDetailResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
+            'deadline_from' => $this->deadline_from?->toDateString(),
+            'deadline_to' => $this->deadline_to?->toDateString(),
+            // Approved providers weigh a request by its budget; nobody else sees it.
+            'budget_max' => $this->when(
+                $user?->approvedProfile() !== null,
+                fn () => $this->budget_max,
+            ),
             'category' => new CategoryResource($this->whenLoaded('category')),
             'region' => new RegionResource($this->whenLoaded('region')),
             'district' => new RegionResource($this->whenLoaded('district')),

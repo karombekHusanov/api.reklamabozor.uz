@@ -69,6 +69,33 @@ class OrderShowcaseTest extends TestCase
         $this->assertArrayNotHasKey('attachment_files', $row);
     }
 
+    public function test_showcase_budget_is_visible_to_approved_providers_only(): void
+    {
+        $client = User::factory()->create();
+        Order::factory()->for($client, 'client')->status(OrderStatus::New)->create([
+            'budget_max' => 5000000,
+            'deadline_from' => '2026-10-12',
+            'deadline_to' => '2026-10-20',
+        ]);
+
+        $guest = $this->getJson('/api/v1/orders/showcase')->assertOk();
+        $this->assertArrayNotHasKey('budget_max', $guest->json('data.0'));
+        $this->assertSame('2026-10-12', $guest->json('data.0.deadline_from'));
+
+        $category = Category::factory()->create();
+        [, $token] = $this->approvedProvider($category);
+
+        $this->getJson('/api/v1/orders/showcase', ['Authorization' => "Bearer $token"])
+            ->assertOk()
+            ->assertJsonPath('data.0.budget_max', '5000000.00');
+
+        // The guard memoises the user inside one test process; a real request starts clean.
+        $this->app['auth']->forgetGuards();
+        $plain = User::factory()->create()->createToken('t')->plainTextToken;
+        $viaClient = $this->getJson('/api/v1/orders/showcase', ['Authorization' => "Bearer $plain"])->assertOk();
+        $this->assertArrayNotHasKey('budget_max', $viaClient->json('data.0'));
+    }
+
     public function test_showcase_hides_cancelled_orders(): void
     {
         Order::factory()->status(OrderStatus::Cancelled)->create();
@@ -237,6 +264,24 @@ class OrderShowcaseTest extends TestCase
         $this->assertNull($data['my_offer']);
         $this->assertArrayNotHasKey('budget_min', $data);
         $this->assertArrayNotHasKey('budget_max', $data);
+    }
+
+    public function test_detail_budget_is_visible_to_approved_providers_only(): void
+    {
+        $client = User::factory()->create();
+        $order = Order::factory()->for($client, 'client')->status(OrderStatus::New)->create(['budget_max' => 8000000]);
+
+        $category = Category::factory()->create();
+        [, $providerToken] = $this->approvedProvider($category);
+
+        $this->getJson("/api/v1/orders/showcase/{$order->id}", ['Authorization' => "Bearer $providerToken"])
+            ->assertOk()
+            ->assertJsonPath('data.budget_max', '8000000.00');
+
+        $this->app['auth']->forgetGuards();
+        $plain = User::factory()->create()->createToken('t')->plainTextToken;
+        $response = $this->getJson("/api/v1/orders/showcase/{$order->id}", ['Authorization' => "Bearer $plain"])->assertOk();
+        $this->assertArrayNotHasKey('budget_max', $response->json('data'));
     }
 
     public function test_detail_includes_attachment_files_by_default(): void

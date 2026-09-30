@@ -27,6 +27,8 @@ class AgentOrderResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'deadline' => $this->deadline?->value,
+            'deadline_from' => $this->deadline_from?->toDateString(),
+            'deadline_to' => $this->deadline_to?->toDateString(),
             'category' => new CategoryResource($this->whenLoaded('category')),
             'region' => new RegionResource($this->whenLoaded('region')),
             'district' => new RegionResource($this->whenLoaded('district')),

@@ -28,6 +28,7 @@ class StarsCalculator
 
         $query = Review::query()
             ->where('status', ReviewStatus::Approved)
+            ->whereNotNull('rating')
             ->where('reviewee_id', $userId);
 
         if ($role === Role::Client) {

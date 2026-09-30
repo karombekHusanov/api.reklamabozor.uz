@@ -25,7 +25,7 @@ class ReviewService
     /**
      * Client rates the winning provider on their completed order.
      *
-     * @param  array{criteria: list<array{code: string, score: int}>, comment?: string|null}  $data
+     * @param  array{criteria?: list<array{code: string, score: int}>|null, comment?: string|null}  $data
      */
     public function submitClientReview(User $client, Order $order, array $data): Review
     {
@@ -42,7 +42,8 @@ class ReviewService
         $this->assertNoExistingReview($order, ReviewDirection::ClientToProvider);
 
         $providerRole = $this->resolveProviderRole($acceptedOffer->agent_profile_id);
-        $scores = $this->extractScores($data['criteria']);
+        $criteria = $data['criteria'] ?? [];
+        $scores = $this->extractScores($criteria);
         $this->validateCriteria($providerRole, $scores);
         $dealScore = RatingCriteria::dealScore($providerRole, $scores);
 
@@ -55,7 +56,7 @@ class ReviewService
             'agent_profile_id' => $acceptedOffer->agent_profile_id,
             'reviewer_id' => $client->id,
             'reviewee_id' => $acceptedOffer->agent_id,
-            'criteria' => $data['criteria'],
+            'criteria' => $criteria,
             'rating' => $dealScore,
             'comment' => $data['comment'] ?? null,
             'status' => ReviewStatus::Pending,
@@ -69,7 +70,7 @@ class ReviewService
     /**
      * Provider rates the client on their completed order.
      *
-     * @param  array{criteria: list<array{code: string, score: int}>, comment?: string|null}  $data
+     * @param  array{criteria?: list<array{code: string, score: int}>|null, comment?: string|null}  $data
      */
     public function submitProviderReview(User $provider, Order $order, array $data): Review
     {
@@ -81,7 +82,8 @@ class ReviewService
         $this->assertCompleted($order);
         $this->assertNoExistingReview($order, ReviewDirection::ProviderToClient);
 
-        $scores = $this->extractScores($data['criteria']);
+        $criteria = $data['criteria'] ?? [];
+        $scores = $this->extractScores($criteria);
         $this->validateCriteria(Role::Client, $scores);
         $dealScore = RatingCriteria::dealScore(Role::Client, $scores);
 
@@ -94,7 +96,7 @@ class ReviewService
             'agent_profile_id' => $acceptedOffer->agent_profile_id,
             'reviewer_id' => $provider->id,
             'reviewee_id' => $order->client_id,
-            'criteria' => $data['criteria'],
+            'criteria' => $criteria,
             'rating' => $dealScore,
             'comment' => $data['comment'] ?? null,
             'status' => ReviewStatus::Pending,
@@ -185,15 +187,11 @@ class ReviewService
      */
     private function validateCriteria(Role $role, array $scores): void
     {
-        $requiredCodes = RatingCriteria::codesForRole($role);
+        $unknown = array_diff(array_keys($scores), RatingCriteria::codesForRole($role));
 
-        $providedCodes = array_keys($scores);
-        sort($requiredCodes);
-        sort($providedCodes);
-
-        if ($requiredCodes !== $providedCodes) {
+        if ($unknown !== []) {
             throw ValidationException::withMessages([
-                'criteria' => ['Criteria codes must exactly match the required set for this role: '.implode(', ', $requiredCodes)],
+                'criteria' => ['Unknown criteria: '.implode(', ', $unknown)],
             ]);
         }
 

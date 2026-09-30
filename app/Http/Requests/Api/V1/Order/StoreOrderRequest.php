@@ -81,6 +81,11 @@ class StoreOrderRequest extends FormRequest
                 'integer',
                 Rule::exists('agent_profiles', 'id')->where('status', AgentProfileStatus::Approved->value),
             ],
+            // Work window picked on the calendar (both dates or neither) and
+            // the client's budget in so'm (stored as the upper bound).
+            'deadline_from' => ['nullable', 'required_with:deadline_to', 'date_format:Y-m-d', 'after_or_equal:today'],
+            'deadline_to' => ['nullable', 'required_with:deadline_from', 'date_format:Y-m-d', 'after_or_equal:deadline_from'],
+            'budget' => ['nullable', 'integer', 'min:1', 'max:100000000000'],
             // How soon the work is needed (optional urgency preset).
             'deadline' => ['nullable', Rule::enum(OrderDeadline::class)],
             // Files the client uploaded for this order. Optional: the simplified

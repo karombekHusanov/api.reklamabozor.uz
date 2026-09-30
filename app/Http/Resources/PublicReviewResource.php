@@ -23,7 +23,7 @@ class PublicReviewResource extends JsonResource
         return [
             'id' => $this->id,
             'direction' => $this->direction->value,
-            'rating' => (float) $this->rating,
+            'rating' => $this->rating !== null ? (float) $this->rating : null,
             'criteria' => $this->criteria,
             'comment' => $this->comment,
             'created_at' => $this->created_at,
