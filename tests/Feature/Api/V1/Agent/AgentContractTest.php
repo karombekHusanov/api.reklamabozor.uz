@@ -44,6 +44,9 @@ class AgentContractTest extends TestCase
             'bank_account' => '20208000900123456789',
             'mfo' => '00440',
             'phone' => '+998901234567',
+            'legal_address' => 'Toshkent sh., Chilonzor t., 1-uy',
+            'director_pinfl' => '12345678901234',
+            'director_position' => 'Direktor',
             'accept_offer' => true,
             ...$overrides,
         ];

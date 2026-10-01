@@ -79,10 +79,10 @@
                 @if ($profile->legal_form)
                     <div class="row">Tashkiliy shakl: {{ $profile->legal_form }}</div>
                 @endif
-                <div class="row">Rahbar: {{ $profile->director_name ?: '—' }}</div>
+                <div class="row">{{ $profile->director_position ?: ($profile->legal_form === 'YaTT' ? 'Tadbirkor' : 'Rahbar') }}: {{ $profile->director_name ?: '—' }}</div>
                 <div class="row">STIR (INN): {{ $profile->inn ?: '—' }}</div>
                 <div class="row">Telefon: {{ $profile->phone ?: '—' }}</div>
-                <div class="row">Manzil: {{ $profile->location_label ?: '—' }}</div>
+                <div class="row">Manzil: {{ $profile->legal_address ?: $profile->location_label ?: '—' }}</div>
                 <div class="row">H/r: {{ $profile->bank_account ?: '—' }}</div>
                 <div class="row">Bank: {{ $profile->bank_name ?: '—' }}</div>
                 <div class="row">MFO: {{ $profile->mfo ?: '—' }}</div>

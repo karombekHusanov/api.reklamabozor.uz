@@ -57,6 +57,9 @@ class AgentProfileTest extends TestCase
             'bank_account' => '20208000900123456789',
             'mfo' => '00440',
             'phone' => '+998901112233',
+            'legal_address' => 'Toshkent sh., Chilonzor t., 1-uy',
+            'director_pinfl' => '12345678901234',
+            'director_position' => 'Direktor',
             'accept_offer' => true,
         ], $overrides);
     }
@@ -123,7 +126,44 @@ class AgentProfileTest extends TestCase
                 'company_name', 'legal_form', 'inn', 'director_name', 'director_passport',
                 'director_passport_file_id', 'registration_certificate_file_id',
                 'bank_name', 'bank_account', 'mfo', 'phone',
+                'legal_address', 'director_pinfl',
             ]);
+    }
+
+    public function test_yatt_is_not_asked_for_a_position(): void
+    {
+        [$user, $token] = $this->authedUser();
+
+        $payload = $this->applicationPayload($user, ['legal_form' => 'YaTT']);
+        unset($payload['director_position']);
+
+        $this->postJson('/api/v1/agent/profile', $payload, ['Authorization' => 'Bearer '.$token])
+            ->assertCreated()
+            ->assertJsonPath('data.legal_form', 'YaTT')
+            ->assertJsonPath('data.director_position', null);
+    }
+
+    public function test_company_forms_require_a_position(): void
+    {
+        [$user, $token] = $this->authedUser();
+
+        foreach (['MChJ', 'AJ'] as $form) {
+            $payload = $this->applicationPayload($user, ['legal_form' => $form]);
+            unset($payload['director_position']);
+
+            $this->postJson('/api/v1/agent/profile', $payload, ['Authorization' => 'Bearer '.$token])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['director_position']);
+        }
+    }
+
+    public function test_legal_form_must_be_one_of_the_known_forms(): void
+    {
+        [$user, $token] = $this->authedUser();
+
+        $this->postJson('/api/v1/agent/profile', $this->applicationPayload($user, ['legal_form' => 'QK']), ['Authorization' => 'Bearer '.$token])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['legal_form']);
     }
 
     public function test_application_rejects_file_not_owned_by_user(): void

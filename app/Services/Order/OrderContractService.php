@@ -362,7 +362,7 @@ class OrderContractService
                     'Ҳ/р' => $agent['bank_account'],
                     'Банк' => $agent['bank_name'],
                     'МФО' => $agent['mfo'],
-                    'Раҳбар' => $agent['director_name'],
+                    ($agent['director_position'] ?? null) ?: ($agent['legal_form'] === 'YaTT' ? 'Тадбиркор' : 'Раҳбар') => $agent['director_name'],
                     'Тел' => $agent['phone'],
                 ]),
             ],
@@ -382,12 +382,13 @@ class OrderContractService
                 ?: trim(($agent?->first_name ?? '').' '.($agent?->last_name ?? '')),
             'legal_form' => $profile?->legal_form,
             'director_name' => $profile?->director_name,
+            'director_position' => $profile?->director_position,
             'inn' => $profile?->inn,
             'bank_name' => $profile?->bank_name,
             'bank_account' => $profile?->bank_account,
             'mfo' => $profile?->mfo,
             'phone' => $profile?->phone ?? $agent?->phone,
-            'address' => $profile?->location_label,
+            'address' => $profile?->legal_address ?: $profile?->location_label,
         ];
     }
 

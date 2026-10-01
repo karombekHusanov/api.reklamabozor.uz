@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Agent;
 
+use App\Enums\LegalForm;
 use App\Enums\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,11 +30,16 @@ class StoreAgentProfileRequest extends FormRequest
     {
         return [
             'company_name' => ['required', 'string', 'max:200'],
-            // Legal-entity form, free text (e.g. YaTT, MChJ, AJ).
-            'legal_form' => ['required', 'string', 'max:100'],
+            'legal_form' => ['required', Rule::in(LegalForm::values())],
             // Uzbekistan INN/STIR — 9 digits.
             'inn' => ['required', 'string', 'regex:/^\d{9}$/'],
+            // Legal address (YaTT: registration address) — printed on contracts and acts.
+            'legal_address' => ['required', 'string', 'max:300'],
+            // The signer: the entrepreneur themself (YaTT) or the company manager.
             'director_name' => ['required', 'string', 'max:200'],
+            'director_pinfl' => ['required', 'string', 'regex:/^\d{14}$/'],
+            // Company-only (MChJ / AJ): the manager's position.
+            'director_position' => [Rule::requiredIf($this->isCompany()), 'nullable', 'string', 'max:100'],
             // Passport series + number, e.g. AA1234567.
             'director_passport' => ['required', 'string', 'regex:/^[A-Za-z]{2}\d{7}$/'],
             // KYC scans — must reference files the user uploaded themselves.
@@ -49,6 +55,22 @@ class StoreAgentProfileRequest extends FormRequest
             // Click-wrap: the agency partnership offer must be accepted.
             'accept_offer' => ['required', 'accepted'],
         ];
+    }
+
+    /**
+     * A YaTT is the entrepreneur themself: drop the company-only position
+     * if it came along so it can't be stored stale.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (! $this->isCompany()) {
+            $this->merge(['director_position' => null]);
+        }
+    }
+
+    private function isCompany(): bool
+    {
+        return LegalForm::tryFrom((string) $this->input('legal_form'))?->isCompany() ?? false;
     }
 
     /**
