@@ -50,7 +50,7 @@ class FinanceReportTest extends TestCase
 
         $order = Order::factory()->status(OrderStatus::Completed)->create([
             'payment_state' => OrderPaymentState::Paid,
-            'paid_at' => now()->subDay(),
+            'paid_at' => now(),
             'completed_at' => now(),
         ]);
 
@@ -67,7 +67,7 @@ class FinanceReportTest extends TestCase
             'status' => PaymentStatus::Success,
             'method' => PaymentMethod::BankTransfer,
             'amount' => $priceSom * 100,
-            'paid_at' => now()->subDay(),
+            'paid_at' => now(),
         ]);
 
         Payout::factory()->create([
@@ -135,7 +135,7 @@ class FinanceReportTest extends TestCase
             'status' => PaymentStatus::Revert,
             'method' => PaymentMethod::Cash,
             'amount' => 40_000_000,
-            'paid_at' => now()->subDay(),
+            'paid_at' => now(),
             'refunded_at' => now(),
         ]);
 
