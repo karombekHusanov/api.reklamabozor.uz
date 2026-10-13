@@ -77,6 +77,19 @@ class AgentOrderResource extends JsonResource
         /** @var Order $order */
         $order = $this->resource;
 
-        return $myOffer === null && $order->status->isOpenForOffers();
+        if ($myOffer !== null || ! $order->status->isOpenForOffers()) {
+            return false;
+        }
+
+        // Tender orders are open only to tender-eligible providers (a legal
+        // entity with complete bank requisites) — individuals are Tezkor-only.
+        if ($order->isTender()) {
+            $profile = $request->user()?->approvedProfile();
+            if ($profile !== null && ! $profile->canBidOnTender()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

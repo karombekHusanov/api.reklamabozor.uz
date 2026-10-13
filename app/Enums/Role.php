@@ -12,16 +12,16 @@ enum Role: string
 
     /**
      * Roles a user may grant themselves via PATCH /me/role. Client is the
-     * baseline; designer is an individual provider, instantly self-served.
-     * Agent is a legal-entity provider conferred ONLY through KYC approval —
-     * never self-selected. (Seller is deferred, see PROFILE_ARCHITECTURE.md §8;
-     * left self-selectable until its flow is decided.)
+     * baseline. Providers ("ijrochi") are conferred ONLY through admin-approved
+     * KYC (agent / individual tracks grant the agent role), never self-selected
+     * — the designer self-serve track is deprecated. (Seller is deferred, see
+     * PROFILE_ARCHITECTURE.md §8; left self-selectable until its flow is decided.)
      *
      * @return list<self>
      */
     public static function selfSelectable(): array
     {
-        return [self::Client, self::Designer, self::Seller];
+        return [self::Client, self::Seller];
     }
 
     public function isSelfSelectable(): bool

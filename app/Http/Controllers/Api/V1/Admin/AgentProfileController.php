@@ -25,6 +25,7 @@ class AgentProfileController extends ApiController
 
         $paginator = $this->agentAdminService->list([
             'status' => $validated['status'] ?? null,
+            'provider_type' => $validated['provider_type'] ?? null,
             'search' => $validated['search'] ?? null,
             'per_page' => $validated['per_page'] ?? 15,
             'sort' => $validated['sort'] ?? 'created_at',

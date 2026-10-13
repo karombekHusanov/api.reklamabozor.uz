@@ -35,6 +35,7 @@ class AgentProfile extends Model
         'portfolioItems.attachmentFiles',
         'companyLogoFile',
         'directorPassportFile',
+        'selfieFile',
         'registrationCertificateFile',
         'contractFile',
         'signedContractFile',
@@ -73,6 +74,7 @@ class AgentProfile extends Model
         'director_position',
         'director_passport',
         'director_passport_file_id',
+        'selfie_file_id',
         'registration_certificate_file_id',
         'bank_name',
         'bank_account',
@@ -86,6 +88,7 @@ class AgentProfile extends Model
         'location_label',
         'results_text',
         'workflow_steps',
+        'alt_contact',
         'status',
         'rejection_reason',
         'approved_at',
@@ -116,6 +119,12 @@ class AgentProfile extends Model
     public function directorPassportFile(): BelongsTo
     {
         return $this->belongsTo(File::class, 'director_passport_file_id');
+    }
+
+    /** The individual executor's selfie scan (light KYC). */
+    public function selfieFile(): BelongsTo
+    {
+        return $this->belongsTo(File::class, 'selfie_file_id');
     }
 
     public function registrationCertificateFile(): BelongsTo
@@ -154,6 +163,27 @@ class AgentProfile extends Model
     public function isLegalEntity(): bool
     {
         return $this->provider_type === ProviderType::Agent;
+    }
+
+    /**
+     * Individual ("jismoniy") executor — the light passport+selfie KYC track.
+     * Tezkor-only: cannot bid on Tender orders, has no contract/payout/bank.
+     */
+    public function isIndividual(): bool
+    {
+        return $this->provider_type === ProviderType::Individual;
+    }
+
+    /**
+     * Whether this profile may respond to Tender orders. Only a legal entity
+     * (agent) with complete bank requisites qualifies — Tender payouts run
+     * exclusively over bank transfer, so an incomplete set would strand the
+     * money. Individual executors are Tezkor-only. The single gate mirrored by
+     * {@see OfferService::submitOffer()}, the agent feed, and the showcase CTA.
+     */
+    public function canBidOnTender(): bool
+    {
+        return $this->isLegalEntity() && $this->hasBankRequisites();
     }
 
     /**

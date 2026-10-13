@@ -17,6 +17,7 @@ class AgentAdminService
     /**
      * @param  array{
      *     status?: string|null,
+     *     provider_type?: string|null,
      *     search?: string|null,
      *     per_page?: int,
      *     sort?: string,
@@ -30,6 +31,10 @@ class AgentAdminService
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
+        }
+
+        if (! empty($filters['provider_type'])) {
+            $query->where('provider_type', $filters['provider_type']);
         }
 
         if (! empty($filters['search'])) {

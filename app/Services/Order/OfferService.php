@@ -56,6 +56,13 @@ class OfferService
             return new Collection;
         }
 
+        // Tender-ineligible providers (individuals, or legal entities without
+        // complete bank requisites) never see Tender orders — force the feed to
+        // Tezkor even if Tender was explicitly requested.
+        if (! $profile->canBidOnTender()) {
+            $route = OrderRoute::Tezkor;
+        }
+
         $categoryIds = $profile->categories->pluck('id')->values();
 
         $orders = Order::query()
@@ -173,6 +180,17 @@ class OfferService
         if ($profile === null) {
             throw ValidationException::withMessages([
                 'order' => ['This order is outside your service categories.'],
+            ]);
+        }
+
+        // Tender gate: only a legal entity with complete bank requisites may bid
+        // on a Tender order (payouts run over bank transfer). Individuals are
+        // Tezkor-only; a legal entity missing requisites gets a distinct nudge.
+        if ($order->isTender() && ! $profile->canBidOnTender()) {
+            throw ValidationException::withMessages([
+                'order' => [$profile->isIndividual()
+                    ? 'Individual executors can respond to Tezkor requests only.'
+                    : 'Complete your bank requisites before responding to Tender orders.'],
             ]);
         }
 

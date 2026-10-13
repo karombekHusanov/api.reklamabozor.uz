@@ -224,7 +224,7 @@ class OrderNotifier
         $order = $offer->order;
 
         if ($offer->agent?->telegram_id !== null) {
-            $deepLink = $this->orderDeepLink($order);
+            $deepLink = $this->miniAppLink($this->agentOrderPath($order, $offer));
             $markup = $deepLink !== null
                 ? $this->bot->openAppInlineKeyboard("📂 Buyurtmani ko'rish", $deepLink)
                 : null;
@@ -488,7 +488,7 @@ class OrderNotifier
         $this->sendToUser($agent, implode("\n", [
             "\u{1F39F} <b>Propusk faollashtirildi.</b>",
             'Amal qilish muddati: <b>'.$pass->expires_at->timezone(config('app.timezone'))->format('d.m.Y H:i').'</b> gacha.',
-        ]), "📂 So'rovlarni ko'rish", '/business?tab=orders');
+        ]), "📂 So'rovlarni ko'rish", '/agent');
     }
 
     /** Manager decision on the account's Tender access. */
@@ -604,7 +604,7 @@ class OrderNotifier
             'Buyurtma yana "jarayonda" holatiga qaytdi.',
             $deadlineLine,
             'Shu muddatgacha tuzatib, qayta topshiring — aks holda buyurtma ko\'rib chiqish uchun administratsiyaga yuboriladi.',
-        ])), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+        ])), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order, $order->acceptedOffer));
 
         $this->admin->disputeOpened($order);
     }
@@ -624,7 +624,7 @@ class OrderNotifier
             "⏳ Buyurtma <b>#{$order->id}</b> (".e($order->title).') bo\'yicha tuzatish muddati tugamoqda.',
             "Muddat: <b>{$deadline}</b>gacha.",
             'Shu vaqtgacha ishni tuzatib topshirmasangiz, buyurtma admin ko\'rib chiqishiga yuboriladi.',
-        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order, $order->acceptedOffer));
     }
 
     /**
@@ -639,7 +639,7 @@ class OrderNotifier
         $this->sendToUser($order->acceptedOffer?->agent, implode("\n", [
             "🚩 Buyurtma <b>#{$order->id}</b> (".e($order->title).') bo\'yicha mijoz sizni ishni hali boshlamagansiz deb shikoyat qildi.',
             "Agar ish boshlangan bo'lsa, darhol chatda mijozga yozing yoki topshiriqni yuklang — admin tez orada ko'rib chiqadi.",
-        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order, $order->acceptedOffer));
     }
 
     /**
@@ -670,7 +670,7 @@ class OrderNotifier
             $refunded
                 ? "Bu chiqimingizga (payout) ta'sir qilishi mumkin — tafsilot uchun operatorga murojaat qiling."
                 : 'Buyurtma odatdagidek davom etadi, qo\'shimcha choralar ko\'rish shart emas.',
-        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order));
+        ]), "📂 Buyurtmani ko'rish", $this->agentOrderPath($order, $order->acceptedOffer));
     }
 
     /**
@@ -761,13 +761,14 @@ class OrderNotifier
 
     /**
      * Provider-facing deep link. Agents don't own the order, so the client
-     * order route (/orders/{id}) 404s for them — they land on their own
-     * workspace instead, which focuses the order (open card to bid, or the
-     * active-deal card once their offer was accepted) via the `order` query.
+     * order route (/orders/{id}) 404s for them: with their offer known they
+     * land on its deal page, otherwise on the request itself.
      */
-    private function agentOrderPath(Order $order): string
+    private function agentOrderPath(Order $order, ?Offer $offer = null): string
     {
-        return '/offers?order='.$order->id;
+        return $offer !== null
+            ? '/offers/'.$offer->id
+            : '/live-orders/'.$order->id;
     }
 
     private function buildOfferMessage(Offer $offer): string

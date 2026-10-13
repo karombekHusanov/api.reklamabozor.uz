@@ -59,6 +59,22 @@ class AgentProfileFactory extends Factory
         ]);
     }
 
+    /** Individual ("jismoniy") executor — light KYC, no legal-entity requisites. */
+    public function individual(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'provider_type' => ProviderType::Individual,
+            'inn' => null,
+            'legal_address' => null,
+            'bank_name' => null,
+            'bank_account' => null,
+            'mfo' => null,
+            'registration_certificate_file_id' => null,
+            'offer_version' => null,
+            'offer_accepted_at' => null,
+        ]);
+    }
+
     public function approved(): static
     {
         return $this->state(fn (array $attributes) => [

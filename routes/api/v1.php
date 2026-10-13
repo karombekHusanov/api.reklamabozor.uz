@@ -37,10 +37,10 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
 use App\Http\Controllers\Api\V1\Chat\DirectChatController;
 use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
-use App\Http\Controllers\Api\V1\Designer\DesignerProfileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Individual\IndividualProfileController;
 use App\Http\Controllers\Api\V1\Legal\PublicOfferController;
 use App\Http\Controllers\Api\V1\LegalEntityController;
 use App\Http\Controllers\Api\V1\Order\OfferController;
@@ -228,8 +228,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Advantages catalog (active) — providers pick from it in the profile editor.
     Route::get('/advantages', [AdvantageController::class, 'index']);
 
-    // Designer profile: minimal form, no KYC, approved instantly.
-    Route::post('/designer/profile', [DesignerProfileController::class, 'store']);
+    // Individual ("jismoniy") executor profile: light passport+selfie KYC,
+    // admin-approved, Tezkor-only. (The designer self-serve track is deprecated.)
+    Route::post('/individual/profile', [IndividualProfileController::class, 'store']);
+    Route::put('/individual/profile', [IndividualProfileController::class, 'update']);
 
     // Provider portfolio ("qilgan ishlarimiz") — approved profiles only.
     Route::get('/agent/portfolio', [AgentPortfolioController::class, 'index']);

@@ -14,26 +14,36 @@ class AgentProfileResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // Individual ("jismoniy") executors have no legal-entity requisites —
+        // those fields are hidden (null) and only the light passport+selfie KYC
+        // plus contact details are shown.
+        $individual = $this->isIndividual();
+
         return [
             'id' => $this->id,
+            'is_individual' => $individual,
 
             // Verification / KYC (Phase 1).
             'company_name' => $this->company_name,
-            'legal_form' => $this->legal_form,
-            'inn' => $this->inn,
-            'legal_address' => $this->legal_address,
-            'director_pinfl' => $this->director_pinfl,
-            'director_position' => $this->director_position,
+            'legal_form' => $individual ? null : $this->legal_form,
+            'inn' => $individual ? null : $this->inn,
+            'legal_address' => $individual ? null : $this->legal_address,
+            'director_pinfl' => $individual ? null : $this->director_pinfl,
+            'director_position' => $individual ? null : $this->director_position,
+            // For individuals this is their full name.
             'director_name' => $this->director_name,
-            'director_passport' => $this->director_passport,
+            'director_passport' => $individual ? null : $this->director_passport,
             'director_passport_file_id' => $this->director_passport_file_id,
             'director_passport_file' => $this->directorPassportFile?->url(),
-            'registration_certificate_file_id' => $this->registration_certificate_file_id,
-            'registration_certificate_file' => $this->registrationCertificateFile?->url(),
-            'bank_name' => $this->bank_name,
-            'bank_account' => $this->bank_account,
-            'mfo' => $this->mfo,
+            'selfie_file_id' => $this->selfie_file_id,
+            'selfie' => $this->selfieFile?->url(),
+            'registration_certificate_file_id' => $individual ? null : $this->registration_certificate_file_id,
+            'registration_certificate_file' => $individual ? null : $this->registrationCertificateFile?->url(),
+            'bank_name' => $individual ? null : $this->bank_name,
+            'bank_account' => $individual ? null : $this->bank_account,
+            'mfo' => $individual ? null : $this->mfo,
             'phone' => $this->phone,
+            'alt_contact' => $this->alt_contact,
 
             // Presentation (Phase 2).
             'company_logo_file_id' => $this->company_logo_file_id,

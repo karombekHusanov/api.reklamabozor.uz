@@ -55,15 +55,15 @@ class AcceptOfferTest extends TestCase
             'Authorization' => 'Bearer '.$token,
         ])->assertOk();
 
-        // Winner: congratulation with order id, agreed price, and a deep link.
-        Http::assertSent(function ($request) use ($order) {
+        // Winner: congratulation with order id, agreed price, and a deep link to the deal.
+        Http::assertSent(function ($request) use ($order, $chosen) {
             $text = $request['text'] ?? '';
             $url = $request['reply_markup']['inline_keyboard'][0][0]['web_app']['url'] ?? '';
 
             return ($request['chat_id'] ?? null) === 111000111
                 && str_contains($text, "#{$order->id}")
                 && str_contains($text, '3 000 000')
-                && $url === "https://app.test/offers?order={$order->id}";
+                && $url === "https://app.test/offers/{$chosen->id}";
         });
 
         // Loser: told the order went to someone else.

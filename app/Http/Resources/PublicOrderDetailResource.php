@@ -94,6 +94,15 @@ class PublicOrderDetailResource extends JsonResource
             return false;
         }
 
+        // Tender orders are open only to tender-eligible providers (a legal
+        // entity with complete bank requisites) — individuals are Tezkor-only.
+        if ($order->isTender()) {
+            $profile = $user->approvedProfile();
+            if ($profile !== null && ! $profile->canBidOnTender()) {
+                return false;
+            }
+        }
+
         $myOffer = $this->relationLoaded('offers') ? $this->offers->first() : null;
         if ($myOffer !== null) {
             return false;

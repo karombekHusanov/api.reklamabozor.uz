@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Agent;
 
+use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Models\AgentProfile;
 use App\Models\Category;
@@ -118,12 +119,11 @@ class AgentOrderTest extends TestCase
         $profile->categories()->attach($designerCategory);
 
         $token = $user->createToken('test')->plainTextToken;
-        $order = Order::factory()->for($designerCategory)->create();
+        // Tezkor (interest only): Tender is gated to legal entities with bank requisites.
+        $order = Order::factory()->for($designerCategory)->create(['route' => OrderRoute::Tezkor]);
 
-        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
-            'price' => 1_200_000,
-            'comment' => 'Design in a week.',
-        ], ['Authorization' => 'Bearer '.$token])->assertCreated();
+        $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [], ['Authorization' => 'Bearer '.$token])
+            ->assertCreated();
 
         $this->assertDatabaseHas('offers', [
             'order_id' => $order->id,
