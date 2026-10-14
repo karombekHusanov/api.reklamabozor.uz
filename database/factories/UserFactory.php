@@ -37,13 +37,6 @@ class UserFactory extends Factory
         ]);
     }
 
-    public function designer(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'role' => Role::Designer,
-        ]);
-    }
-
     public function seller(): static
     {
         return $this->state(fn (array $attributes) => [

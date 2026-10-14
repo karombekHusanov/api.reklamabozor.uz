@@ -39,7 +39,7 @@ class OfferResource extends JsonResource
                 'provider_type' => $profile?->provider_type?->value,
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
-                // Individuals (designers) often have no logo — the Telegram avatar stands in.
+                // Individual executors often have no logo — the Telegram avatar stands in.
                 'avatar' => $this->agent?->avatarFile?->url(),
                 'location_label' => $profile?->location_label,
                 'stars' => $rating?->stars !== null ? (float) $rating->stars : null,

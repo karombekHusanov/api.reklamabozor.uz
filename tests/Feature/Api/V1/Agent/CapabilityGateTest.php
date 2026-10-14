@@ -7,12 +7,11 @@ use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Services\Agent\AgentProfileService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
- * Phase 4: capability is derived from category types, and agency (agent-type)
- * categories require a legal-entity profile. PROFILE_ARCHITECTURE.md §3, R3.
+ * Capability is derived from category types; either executor track (legal
+ * entity / individual) may list any category. PROFILE_ARCHITECTURE.md §3.
  */
 class CapabilityGateTest extends TestCase
 {
@@ -50,22 +49,19 @@ class CapabilityGateTest extends TestCase
         );
     }
 
-    public function test_an_individual_designer_cannot_list_agency_categories(): void
+    public function test_an_individual_executor_may_list_both_category_types(): void
     {
-        $profile = AgentProfile::factory()->designer()->approved()->create(); // individual
+        // Both executor tracks pick any active category; the individual track is
+        // separated by Tender eligibility, not by what it may offer.
+        $profile = AgentProfile::factory()->individual()->approved()->create();
         $agentCat = Category::factory()->create(['type' => CategoryType::Agent]);
-
-        $this->expectException(ValidationException::class);
-        $this->service()->updateDetails($profile, ['category_ids' => [$agentCat->id]]);
-    }
-
-    public function test_an_individual_designer_may_still_list_designer_categories(): void
-    {
-        $profile = AgentProfile::factory()->designer()->approved()->create();
         $designCat = Category::factory()->create(['type' => CategoryType::Designer]);
 
-        $this->service()->updateDetails($profile, ['category_ids' => [$designCat->id]]);
+        $this->service()->updateDetails($profile, ['category_ids' => [$agentCat->id, $designCat->id]]);
 
-        $this->assertSame(['designer'], $profile->fresh()->servedCapabilities());
+        $this->assertEqualsCanonicalizing(
+            ['agent', 'designer'],
+            $profile->fresh()->servedCapabilities(),
+        );
     }
 }

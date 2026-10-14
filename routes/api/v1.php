@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Admin\AdvantageController as AdminAdvantageController;
 use App\Http\Controllers\Api\V1\Admin\AgentProfileController as AdminAgentProfileController;
+use App\Http\Controllers\Api\V1\Admin\AgentProfileUpgradeController as AdminAgentProfileUpgradeController;
 use App\Http\Controllers\Api\V1\Admin\AmendmentController as AdminAmendmentController;
 use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
 use App\Http\Controllers\Api\V1\Admin\BannerController as AdminBannerController;
@@ -255,6 +256,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/profile/contract', [AgentProfileController::class, 'uploadSignedContract']);
         // (Re-)accept the current agency partnership offer.
         Route::post('/profile/accept-offer', [AgentProfileController::class, 'acceptOffer']);
+        // Individual executor → legal-entity track (Tender access), manager-approved.
+        Route::get('/profile/upgrade', [AgentProfileController::class, 'showUpgrade']);
+        Route::post('/profile/upgrade', [AgentProfileController::class, 'requestUpgrade'])->middleware('throttle:10,1');
 
         // Order opportunities + the agent's offers.
         Route::get('/orders', [AgentOrderController::class, 'index']);
@@ -344,6 +348,11 @@ Route::prefix('admin')
         Route::get('/agents/{agentProfile}', [AdminAgentProfileController::class, 'show']);
         Route::patch('/agents/{agentProfile}/status', [AdminAgentProfileController::class, 'updateStatus']);
         Route::post('/agents/{agentProfile}/contract/reject', [AdminAgentProfileController::class, 'rejectContract']);
+        // Individual executors asking for the legal-entity status.
+        Route::get('/agent-upgrades', [AdminAgentProfileUpgradeController::class, 'index']);
+        Route::get('/agent-upgrades/{agentProfileUpgrade}', [AdminAgentProfileUpgradeController::class, 'show']);
+        Route::post('/agent-upgrades/{agentProfileUpgrade}/approve', [AdminAgentProfileUpgradeController::class, 'approve']);
+        Route::post('/agent-upgrades/{agentProfileUpgrade}/reject', [AdminAgentProfileUpgradeController::class, 'reject']);
 
         // Advantages catalog CRUD + portfolio takedown.
         Route::get('/advantages', [AdminAdvantageController::class, 'index']);

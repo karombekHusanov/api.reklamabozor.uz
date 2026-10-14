@@ -3,11 +3,13 @@
 namespace App\Services\Order;
 
 use App\Enums\AgentProfileStatus;
+use App\Enums\AgentProfileUpgradeStatus;
 use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\PayoutTranche;
 use App\Jobs\SendNewOrderNotification;
 use App\Models\AgentPass;
+use App\Models\AgentProfileUpgrade;
 use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
@@ -489,6 +491,27 @@ class OrderNotifier
             "\u{1F39F} <b>Propusk faollashtirildi.</b>",
             'Amal qilish muddati: <b>'.$pass->expires_at->timezone(config('app.timezone'))->format('d.m.Y H:i').'</b> gacha.',
         ]), "📂 So'rovlarni ko'rish", '/agent');
+    }
+
+    /** Manager decision on an individual executor's legal-entity upgrade request. */
+    public function notifyProfileUpgradeDecision(AgentProfileUpgrade $upgrade): void
+    {
+        $upgrade->loadMissing('user');
+
+        if ($upgrade->status === AgentProfileUpgradeStatus::Approved) {
+            $this->sendToUser($upgrade->user, implode("\n", [
+                '✅ <b>Yuridik maqom tasdiqlandi.</b>',
+                'Profilingiz endi '.e($upgrade->company_name).' nomidan ishlaydi — Tender so\'rovlarida ham qatnasha olasiz.',
+            ]), "📂 So'rovlarni ko'rish", '/agent');
+
+            return;
+        }
+
+        $this->sendToUser($upgrade->user, implode("\n", array_filter([
+            "ℹ️ <b>Yuridik maqomga o'tish arizangiz rad etildi.</b>",
+            $upgrade->rejection_reason ? 'Sabab: '.e($upgrade->rejection_reason) : null,
+            'Jismoniy shaxs sifatida ishlashda davom etasiz; ma\'lumotlarni tuzatib qayta yuborishingiz mumkin.',
+        ])), '📝 Profilni ochish', '/profile');
     }
 
     /** Manager decision on the account's Tender access. */

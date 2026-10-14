@@ -98,7 +98,7 @@ class PersonTypeTest extends TestCase
     public function test_effective_type_reverts_to_declaration_when_role_bound_status_is_lost(): void
     {
         // An agent (legal) who declared individual, then loses the agent role
-        // (e.g. admin moves them to designer): effective type reverts, no stale.
+        // (e.g. KYC rejected): effective type reverts, no stale.
         $user = User::factory()->create([
             'role' => Role::Agent,
             'roles' => [Role::Client, Role::Agent],
@@ -107,8 +107,7 @@ class PersonTypeTest extends TestCase
         $this->assertSame(PersonType::LegalEntity, $user->effectivePersonType());
 
         $user->revokeRole(Role::Agent);
-        $user->grantRole(Role::Designer);
-        $user->role = Role::Designer;
+        $user->role = Role::Client;
         $user->save();
 
         $this->assertSame(PersonType::Individual, $user->fresh()->effectivePersonType());

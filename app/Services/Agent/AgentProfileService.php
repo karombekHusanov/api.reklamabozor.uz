@@ -3,11 +3,9 @@
 namespace App\Services\Agent;
 
 use App\Enums\AgentProfileStatus;
-use App\Enums\CategoryType;
 use App\Enums\ProviderType;
 use App\Enums\Role;
 use App\Models\AgentProfile;
-use App\Models\Category;
 use App\Models\User;
 use App\Services\Legal\PublicOfferService;
 use Illuminate\Validation\ValidationException;
@@ -40,7 +38,7 @@ class AgentProfileService
         }
 
         // Applying makes the user an agent so their (pending) provider surface
-        // shows immediately — mirrors the designer flow. Real powers (bidding,
+        // shows immediately — mirrors the individual flow. Real powers (bidding,
         // verified badge) stay gated by the APPROVED profile, so the role alone
         // grants nothing until an admin approves. PROFILE_ARCHITECTURE.md §4.
         $user->grantRole(Role::Agent);
@@ -75,13 +73,25 @@ class AgentProfileService
     {
         unset($data['accept_offer']);
 
+        // An APPROVED individual executor keeps working while a manager reviews
+        // its legal KYC — that goes through the upgrade request
+        // (AgentProfileUpgradeService), never through this form.
+        if ($profile->isIndividual() && $profile->status === AgentProfileStatus::Approved) {
+            throw ValidationException::withMessages([
+                'profile' => ['Approved individual executors request the legal-entity status via /agent/profile/upgrade.'],
+            ]);
+        }
+
         if ($profile->status === AgentProfileStatus::Approved) {
             throw ValidationException::withMessages([
                 'status' => ['Approved profiles cannot be edited from the application form.'],
             ]);
         }
 
+        // A not-yet-approved individual application has no work at stake, so
+        // submitting the full legal KYC simply switches it to the legal track.
         $profile->fill($data);
+        $profile->provider_type = ProviderType::Agent;
         $profile->status = AgentProfileStatus::Pending;
         $profile->rejection_reason = null;
         $profile->save();
@@ -124,8 +134,9 @@ class AgentProfileService
         $profile->fill($data);
         $profile->save();
 
+        // Both executor tracks may list any active category; what separates
+        // them is Tender eligibility (AgentProfile::canBidOnTender()).
         if ($categoryIds !== null) {
-            $this->assertCategoriesAllowed($profile, $categoryIds);
             $profile->categories()->sync($categoryIds);
         }
 
@@ -134,31 +145,5 @@ class AgentProfileService
         }
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
-    }
-
-    /**
-     * Capability upgrade gate (R3, PROFILE_ARCHITECTURE.md §3): agency
-     * (agent-type) categories are a legal-entity service. An individual
-     * (designer) profile may not list them — offering agency services requires
-     * upgrading through agent KYC + a signed contract first.
-     *
-     * @param  list<int>  $categoryIds
-     */
-    private function assertCategoriesAllowed(AgentProfile $profile, array $categoryIds): void
-    {
-        if ($profile->isLegalEntity() || $categoryIds === []) {
-            return;
-        }
-
-        $listsAgentType = Category::query()
-            ->whereIn('id', $categoryIds)
-            ->where('type', CategoryType::Agent)
-            ->exists();
-
-        if ($listsAgentType) {
-            throw ValidationException::withMessages([
-                'category_ids' => ['Agency categories require a verified legal-entity (agent) profile.'],
-            ]);
-        }
     }
 }

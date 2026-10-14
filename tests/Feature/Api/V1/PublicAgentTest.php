@@ -164,12 +164,12 @@ class PublicAgentTest extends TestCase
 
     public function test_provider_type_is_pinned_to_the_profile_not_the_owners_active_role(): void
     {
-        // An approved agency whose owner later flips their active role to
-        // designer (multirole). The agency profile must still read as 'agent' —
-        // provider_type comes from the profile, not the live role.
+        // An approved agency whose owner's active role is client (multirole).
+        // The agency profile must still read as 'agent' — provider_type comes
+        // from the profile, not the live role.
         $owner = User::factory()->create([
-            'role' => 'designer',
-            'roles' => ['client', 'agent', 'designer'],
+            'role' => 'client',
+            'roles' => ['client', 'agent'],
         ]);
         $profile = AgentProfile::factory()->for($owner)->approved()->create();
 

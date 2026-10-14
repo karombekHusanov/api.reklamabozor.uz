@@ -27,7 +27,6 @@ class GradeCalculator
         return match ($role) {
             Role::Client => $this->clientGrade($userId, $stars),
             Role::Agent => $this->agentGrade($userId, $stars, $agentProfileId),
-            Role::Designer => $this->designerGrade($userId, $stars, $agentProfileId),
             Role::Seller => 50,
             default => 50,
         };
@@ -183,53 +182,6 @@ class GradeCalculator
         }
 
         return max(0, 10 - $penalty);
-    }
-
-    // ── Designer Grade ─────────────────────────────────────────────
-
-    private function designerGrade(int $userId, float $stars, ?int $agentProfileId): int
-    {
-        $since = $this->windowStart();
-
-        $completedQuery = $this->providerCompletedQuery($userId, $agentProfileId, $since);
-        $completed = $completedQuery->count();
-
-        $gmv = $this->providerGmv($userId, $agentProfileId, $since);
-
-        $reviewsReceived = $this->reviewsReceived($userId, $agentProfileId, $since);
-
-        $dealsEntered = $this->dealsEntered($userId, $agentProfileId, $since);
-
-        // D6: on_time — no concrete deadline date → full 10 points
-        $d6 = 10.0;
-
-        $d1 = $this->clip($completed / 20) * 20;
-        $d2 = $this->clip($gmv / 50_000_000) * 15;
-        $d3 = $this->clip($reviewsReceived / 20) * 10;
-        $d4 = (($stars - 1) / 4) * 25;
-        $d5 = ($completed / max($dealsEntered, 1)) * 15;
-        $d7 = $this->designerPenalty($userId, $agentProfileId, $since);
-
-        return $this->clampGrade($d1 + $d2 + $d3 + $d4 + $d5 + $d6 + $d7);
-    }
-
-    /**
-     * D7 penalty — max 5, deductions: dispute −3.
-     */
-    private function designerPenalty(int $userId, ?int $agentProfileId, Carbon $since): float
-    {
-        $penalty = 0;
-        $orderIds = $this->providerOrderIds($userId, $agentProfileId, $since);
-
-        if ($orderIds->isNotEmpty()) {
-            $disputes = Order::whereIn('id', $orderIds)
-                ->whereNotNull('disputed_at')
-                ->where('disputed_at', '>=', $since)
-                ->count();
-            $penalty += $disputes * 3;
-        }
-
-        return max(0, 5 - $penalty);
     }
 
     // ── Shared helpers ─────────────────────────────────────────────

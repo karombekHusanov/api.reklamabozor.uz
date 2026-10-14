@@ -6,13 +6,16 @@ use App\Enums\AgentProfileStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Agent\AcceptAgentOfferRequest;
 use App\Http\Requests\Api\V1\Agent\StoreAgentProfileRequest;
+use App\Http\Requests\Api\V1\Agent\StoreAgentProfileUpgradeRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileDetailsRequest;
 use App\Http\Requests\Api\V1\Agent\UpdateAgentProfileRequest;
 use App\Http\Requests\Api\V1\Agent\UploadSignedContractRequest;
 use App\Http\Resources\AgentProfileResource;
+use App\Http\Resources\AgentProfileUpgradeResource;
 use App\Models\File;
 use App\Services\Agent\AgentContractService;
 use App\Services\Agent\AgentProfileService;
+use App\Services\Agent\AgentProfileUpgradeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,6 +24,7 @@ class AgentProfileController extends ApiController
     public function __construct(
         private readonly AgentProfileService $agentProfiles,
         private readonly AgentContractService $contracts,
+        private readonly AgentProfileUpgradeService $upgrades,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -91,6 +95,38 @@ class AgentProfileController extends ApiController
         $updated = $this->agentProfiles->acceptOffer($profile, $request->ip());
 
         return $this->success(new AgentProfileResource($updated), 'Offer accepted');
+    }
+
+    /**
+     * The latest request to be raised to the legal-entity track (or null).
+     */
+    public function showUpgrade(Request $request): JsonResponse
+    {
+        $upgrade = $request->user()->profile?->latestUpgrade;
+
+        return $this->success($upgrade ? new AgentProfileUpgradeResource($upgrade) : null);
+    }
+
+    /**
+     * An approved individual executor submits the full legal KYC to become a
+     * legal-entity executor (Tender access). The profile keeps working while
+     * the manager reviews it.
+     */
+    public function requestUpgrade(StoreAgentProfileUpgradeRequest $request): JsonResponse
+    {
+        $profile = $this->agentProfiles->findForUser($request->user());
+
+        if ($profile === null) {
+            return $this->error('You have no executor profile yet.', 404);
+        }
+
+        $upgrade = $this->upgrades->submit($profile, $request->validated(), $request->ip());
+
+        return $this->success(
+            new AgentProfileUpgradeResource($upgrade),
+            'Legal-entity request submitted',
+            $upgrade->wasRecentlyCreated ? 201 : 200,
+        );
     }
 
     /**

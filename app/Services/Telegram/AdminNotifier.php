@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Enums\OrderProblemReason;
 use App\Enums\PaymentMethod;
+use App\Models\AgentProfileUpgrade;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderAmendment;
@@ -342,6 +343,19 @@ class AdminNotifier
             '👤 Klient: '.$this->userLabel($order->client),
             '📁 '.e($order->category?->name_uz ?? $order->title),
             'Klient awaiting_payment holatida buyurtmani bekor qildi.',
+        ]));
+    }
+
+    /** An individual executor asked to be raised to the legal-entity track. */
+    public function profileUpgradeRequested(AgentProfileUpgrade $upgrade): void
+    {
+        $upgrade->loadMissing('user');
+
+        $this->send('profile_upgrade_requested', implode("\n", [
+            "⬆️ <b>Yuridik maqomga o'tish arizasi #{$upgrade->id}</b>",
+            '👤 Ijrochi: '.$this->userLabel($upgrade->user),
+            '🏢 '.e($upgrade->company_name)." ({$upgrade->legal_form}, STIR {$upgrade->inn})",
+            'Admin panelda ko\'rib chiqing.',
         ]));
     }
 

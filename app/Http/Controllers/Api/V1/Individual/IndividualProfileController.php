@@ -9,6 +9,7 @@ use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Individual\StoreIndividualProfileRequest;
 use App\Http\Resources\AgentProfileResource;
 use App\Models\AgentProfile;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -30,7 +31,7 @@ class IndividualProfileController extends ApiController
         }
 
         // Creating an individual profile IS becoming a provider — grant the
-        // agent role here (mirrors agent/designer flows). No self-select step,
+        // agent role here (mirrors the legal-entity flow). No self-select step,
         // no PATCH /me/role. PROFILE_ARCHITECTURE.md §4.
         $user->grantRole(Role::Agent);
         $user->role = Role::Agent;
@@ -63,6 +64,14 @@ class IndividualProfileController extends ApiController
             return $this->error('You have no individual application to update.', 404);
         }
 
+        // Only the individual track is edited here — a legal-entity profile
+        // must never be downgraded through this form.
+        if (! $profile->isIndividual()) {
+            throw ValidationException::withMessages([
+                'profile' => ['Legal-entity executor applications are edited via the agent form.'],
+            ]);
+        }
+
         if ($profile->status === AgentProfileStatus::Approved) {
             throw ValidationException::withMessages([
                 'status' => ['Approved profiles cannot be edited from the application form.'],
@@ -89,7 +98,7 @@ class IndividualProfileController extends ApiController
      *
      * @return array<string, mixed>
      */
-    private function attributes(StoreIndividualProfileRequest $request, \App\Models\User $user): array
+    private function attributes(StoreIndividualProfileRequest $request, User $user): array
     {
         $validated = $request->validated();
 

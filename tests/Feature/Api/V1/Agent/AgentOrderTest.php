@@ -115,7 +115,7 @@ class AgentOrderTest extends TestCase
         $user = User::factory()->create();
         $designerCategory = Category::factory()->designer()->create();
 
-        $profile = AgentProfile::factory()->for($user)->designer()->approved()->create();
+        $profile = AgentProfile::factory()->for($user)->individual()->approved()->create();
         $profile->categories()->attach($designerCategory);
 
         $token = $user->createToken('test')->plainTextToken;

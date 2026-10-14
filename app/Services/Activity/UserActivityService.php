@@ -56,7 +56,7 @@ class UserActivityService
             throw new NotFoundHttpException('Agent profile not found.');
         }
 
-        $isProviderRole = in_array($role, [Role::Agent, Role::Designer], true);
+        $isProviderRole = $role === Role::Agent;
 
         $chats = $this->chatUnread($user);
         $chats['global_unread'] = (int) $this->globalChat->unread($user)['count'];
@@ -68,7 +68,7 @@ class UserActivityService
         } else {
             $client = $this->clientBlock($user);
             if ($profile === null) {
-                // KYC-pending agent/designer still gets a stub so the client can
+                // KYC-pending executor still gets a stub so the client can
                 // prompt "finish your profile" — ordinary clients stay null.
                 $provider = $isProviderRole ? $this->emptyProviderBlock() : null;
             } else {
@@ -296,7 +296,7 @@ class UserActivityService
     }
 
     /**
-     * Stub for agent/designer role holders who have not submitted KYC yet.
+     * Stub for agent role holders who have not submitted KYC yet.
      *
      * @return array<string, mixed>
      */
@@ -365,7 +365,7 @@ class UserActivityService
                 + (int) $client['reviews_pending'];
         }
 
-        if (in_array($role, [Role::Agent, Role::Designer], true) && $provider !== null) {
+        if ($role === Role::Agent && $provider !== null) {
             $total += (int) $provider['reviews_pending'];
         }
 

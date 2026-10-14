@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Optional legal-entity verification for self-declared legal clients/designers.
+ * Optional legal-entity verification for self-declared legal clients.
  * Not required to use the app; it unlocks the "verified" badge once an admin
  * approves the submitted INN + registration document.
  */

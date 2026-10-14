@@ -20,7 +20,7 @@ class GlobalChatMessageResource extends JsonResource
         $user = $this->user;
         // 1 user = 1 profile: the sender's single provider profile (null for a
         // pure client). Not keyed off the active role — the profile's own kind
-        // stands on its own, so an agent↔designer role switch never flips it.
+        // stands on its own, so a role change never flips it.
         $profile = $user->profile;
 
         return [

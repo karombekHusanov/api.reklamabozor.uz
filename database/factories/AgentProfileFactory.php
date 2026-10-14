@@ -52,13 +52,6 @@ class AgentProfileFactory extends Factory
         ];
     }
 
-    public function designer(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'provider_type' => ProviderType::Designer,
-        ]);
-    }
-
     /** Individual ("jismoniy") executor — light KYC, no legal-entity requisites. */
     public function individual(): static
     {

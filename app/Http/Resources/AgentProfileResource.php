@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AgentProfileStatus;
+use App\Enums\AgentProfileUpgradeStatus;
 use App\Models\AgentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -88,6 +90,21 @@ class AgentProfileResource extends JsonResource
                 'signed_at' => $this->contract_signed_at,
                 'approved' => $this->contractApproved(),
             ] : null,
+
+            // Individual → legal-entity track request (latest, any status).
+            // `can_request`: an approved individual with nothing pending.
+            'upgrade' => [
+                'can_request' => $this->isIndividual()
+                    && $this->status === AgentProfileStatus::Approved
+                    && $this->latestUpgrade?->status !== AgentProfileUpgradeStatus::Pending,
+                'latest' => $this->latestUpgrade ? [
+                    'id' => $this->latestUpgrade->id,
+                    'status' => $this->latestUpgrade->status->value,
+                    'rejection_reason' => $this->latestUpgrade->rejection_reason,
+                    'submitted_at' => $this->latestUpgrade->updated_at,
+                    'reviewed_at' => $this->latestUpgrade->reviewed_at,
+                ] : null,
+            ],
 
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

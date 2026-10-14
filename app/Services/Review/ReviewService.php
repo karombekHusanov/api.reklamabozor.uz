@@ -6,7 +6,6 @@ use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
 use App\Enums\ReviewStatus;
 use App\Enums\Role;
-use App\Models\AgentProfile;
 use App\Models\Order;
 use App\Models\Review;
 use App\Models\User;
@@ -41,7 +40,7 @@ class ReviewService
 
         $this->assertNoExistingReview($order, ReviewDirection::ClientToProvider);
 
-        $providerRole = $this->resolveProviderRole($acceptedOffer->agent_profile_id);
+        $providerRole = Role::Agent;
         $criteria = $data['criteria'] ?? [];
         $scores = $this->extractScores($criteria);
         $this->validateCriteria($providerRole, $scores);
@@ -149,23 +148,6 @@ class ReviewService
                 'order' => ['A review has already been submitted for this direction.'],
             ]);
         }
-    }
-
-    /**
-     * Resolve the provider role from the agent_profile's provider_type.
-     */
-    private function resolveProviderRole(?int $agentProfileId): Role
-    {
-        if ($agentProfileId === null) {
-            return Role::Agent;
-        }
-
-        $providerType = AgentProfile::where('id', $agentProfileId)->value('provider_type');
-
-        return match ($providerType?->value ?? 'agent') {
-            'designer' => Role::Designer,
-            default => Role::Agent,
-        };
     }
 
     /**

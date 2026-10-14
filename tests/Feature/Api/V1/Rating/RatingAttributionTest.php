@@ -29,17 +29,17 @@ class RatingAttributionTest extends TestCase
 
     public function test_provider_rating_is_a_single_row_owned_by_the_profile(): void
     {
-        // Holds both provider roles, but owns one agent-type profile.
+        // Holds the agent role and owns one profile.
         $user = User::factory()->agent()->create([
-            'roles' => [Role::Client, Role::Agent, Role::Designer],
+            'roles' => [Role::Client, Role::Agent],
             'role_selected_at' => now(),
         ]);
         $profile = AgentProfile::factory()->approved()->for($user, 'user')->create();
 
-        // A stale null-profile designer stub from before the profile existed.
+        // A stale null-profile agent stub from before the profile existed.
         UserRating::create([
             'user_id' => $user->id,
-            'role' => Role::Designer,
+            'role' => Role::Agent,
             'agent_profile_id' => null,
             'stars' => 5.00,
             'stars_count' => 0,
@@ -55,15 +55,11 @@ class RatingAttributionTest extends TestCase
             'role' => Role::Agent->value,
             'agent_profile_id' => $profile->id,
         ]);
-        // The stale designer / null-profile provider row was pruned.
-        $this->assertDatabaseMissing('user_ratings', [
-            'user_id' => $user->id,
-            'role' => Role::Designer->value,
-        ]);
+        // The stale null-profile provider row was pruned.
         $this->assertSame(
             1,
             UserRating::where('user_id', $user->id)
-                ->whereIn('role', [Role::Agent->value, Role::Designer->value])
+                ->where('role', Role::Agent->value)
                 ->count(),
         );
 
@@ -81,14 +77,14 @@ class RatingAttributionTest extends TestCase
     public function test_me_rating_maps_a_provider_role_query_to_the_profile_row(): void
     {
         $user = User::factory()->agent()->create([
-            'roles' => [Role::Client, Role::Agent, Role::Designer],
+            'roles' => [Role::Client, Role::Agent],
             'role_selected_at' => now(),
         ]);
         $profile = AgentProfile::factory()->approved()->for($user, 'user')->create();
         app(RatingService::class)->recomputeForUser($user->id);
 
-        // Asking for the designer rating returns the profile's (agent-keyed) row.
-        $this->getJson('/api/v1/me/rating?role=designer', $this->auth($user))
+        // Asking for the agent rating returns the profile's row.
+        $this->getJson('/api/v1/me/rating?role=agent', $this->auth($user))
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.agent_profile_id', $profile->id)

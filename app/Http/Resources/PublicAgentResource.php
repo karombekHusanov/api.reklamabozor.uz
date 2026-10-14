@@ -23,18 +23,18 @@ class PublicAgentResource extends JsonResource
             'id' => $this->id,
             'user_id' => $this->user_id,
             'company_name' => $this->company_name,
-            // Designers are individuals: without a studio name the card shows
+            // Individual executors: without a studio name the card shows
             // the person's own (live) name and Telegram avatar.
             'display_name' => $this->company_name
                 ?: trim($this->user->first_name.' '.($this->user->last_name ?? '')),
             'avatar' => $this->user->avatarFile?->url(),
             'provider_type' => $this->provider_type->value,
             // Capacities offered, derived from category types (agent | designer).
-            // Which marketplace lists this profile appears in. A legal entity may
-            // serve both. PROFILE_ARCHITECTURE.md §3.
+            // Which marketplace lists this profile appears in.
+            // Either executor track may serve both. PROFILE_ARCHITECTURE.md §3.
             'capabilities' => $this->servedCapabilities(),
-            // Legal nature of the provider (agents/sellers are verified legal
-            // entities; a designer may be an individual or a legal entity).
+            // Legal nature of the executor, from its KYC track (individual /
+            // legal entity).
             'person_type' => $this->user->effectivePersonType()?->value,
             'person_type_verified' => $this->user->isVerifiedLegalEntity(),
             'company_logo' => $this->companyLogoFile?->url(),

@@ -31,14 +31,6 @@ class RatingCriteria
                 ['code' => 'value_for_money', 'weight' => 0.10],
                 ['code' => 'transparency', 'weight' => 0.10],
             ],
-            Role::Designer => [
-                ['code' => 'creative_quality', 'weight' => 0.25],
-                ['code' => 'brief_match', 'weight' => 0.20],
-                ['code' => 'revisions', 'weight' => 0.15],
-                ['code' => 'communication', 'weight' => 0.10],
-                ['code' => 'deadline', 'weight' => 0.15],
-                ['code' => 'files_delivery', 'weight' => 0.15],
-            ],
             Role::Seller => [
                 ['code' => 'product_accuracy', 'weight' => 0.25],
                 ['code' => 'product_quality', 'weight' => 0.25],

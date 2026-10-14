@@ -85,7 +85,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Optional legal-entity verification request (self-declared client/designer).
+     * Optional legal-entity verification request (self-declared client).
      */
     public function legalEntityVerification(): HasOne
     {
@@ -257,32 +257,47 @@ class User extends Authenticatable
     }
 
     /**
-     * Whether the user's legal nature is fixed by their role: `agent` and
-     * `seller` are always legal entities (KYC / bank account), so they never
-     * self-declare and are treated as verified.
+     * Whether the user is an individual ("jismoniy") executor: the agent role on
+     * the individual KYC track (`provider_type=individual`).
      */
-    public function hasRoleBoundLegalStatus(): bool
+    public function isIndividualExecutor(): bool
     {
-        return $this->hasRole(Role::Agent) || $this->hasRole(Role::Seller);
+        return $this->hasRole(Role::Agent) && $this->profile?->isIndividual() === true;
     }
 
     /**
-     * The legal nature that actually applies: derived as `legal_entity` for
-     * agents/sellers, otherwise the self-declared value (null until asked).
-     * Deriving rather than storing keeps it correct across role changes — e.g.
-     * an individual client who becomes a verified agent reads as a legal entity,
-     * and reverts to their own choice if that agent role is later removed.
+     * Whether the user's legal nature is fixed as a legal entity by their role:
+     * a legal-entity executor (agent role, `provider_type=agent`) or a seller —
+     * they provide KYC / a bank account, so they never self-declare.
+     */
+    public function hasRoleBoundLegalStatus(): bool
+    {
+        return $this->hasRole(Role::Seller)
+            || ($this->hasRole(Role::Agent) && ! $this->isIndividualExecutor());
+    }
+
+    /**
+     * The legal nature that actually applies: derived from the executor's KYC
+     * track (individual / legal entity) or the seller role, otherwise the
+     * self-declared value (null until asked). Deriving rather than storing keeps
+     * it correct across role changes — e.g. an individual client who becomes a
+     * legal-entity executor reads as a legal entity, and reverts to their own
+     * choice if that agent role is later removed.
      */
     public function effectivePersonType(): ?PersonType
     {
+        if ($this->isIndividualExecutor()) {
+            return PersonType::Individual;
+        }
+
         return $this->hasRoleBoundLegalStatus() ? PersonType::LegalEntity : $this->person_type;
     }
 
     /**
-     * Whether the effective legal-entity status is confirmed. Role-bound legal
-     * entities (agent/seller) are verified out of the box; a self-declared legal
-     * entity (client/designer) becomes verified when their verification request
-     * is approved.
+     * Whether the effective legal-entity status is confirmed. A legal-entity
+     * executor is verified once their profile is approved (an individual
+     * executor never is); a seller out of the box; a self-declared legal-entity
+     * client when their verification request is approved.
      */
     public function isVerifiedLegalEntity(): bool
     {
@@ -319,6 +334,11 @@ class User extends Authenticatable
      */
     public function legalEntityStatus(): ?LegalEntityStatus
     {
+        // Individual executors make no legal-entity claim.
+        if ($this->isIndividualExecutor()) {
+            return null;
+        }
+
         // Agent: approved once the profile is approved, otherwise still pending
         // verification — never "approved" on the role bit alone.
         if ($this->hasRole(Role::Agent)) {

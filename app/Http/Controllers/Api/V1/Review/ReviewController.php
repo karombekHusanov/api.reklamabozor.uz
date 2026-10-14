@@ -53,7 +53,7 @@ class ReviewController extends ApiController
     public function criteria(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'role' => ['required', Rule::in(['client', 'agent', 'designer', 'seller'])],
+            'role' => ['required', Rule::in(['client', 'agent', 'seller'])],
         ]);
 
         $role = Role::from($validated['role']);

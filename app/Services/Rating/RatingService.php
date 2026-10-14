@@ -29,9 +29,9 @@ class RatingService
             return;
         }
 
-        // 1 user = 1 profile (Variant 1): agent/designer reputation is a single
-        // combined rating owned by that one profile — computed once under the
-        // profile's own kind, not paired per provider role. Client (and the
+        // 1 user = 1 profile (Variant 1): executor reputation is a single rating
+        // owned by that one profile — computed once under the agent role, for
+        // either KYC track. Client (and the
         // deferred seller stub) stay role-keyed with no profile.
         $profile = AgentProfile::where('user_id', $userId)->first();
 
@@ -40,10 +40,9 @@ class RatingService
                 continue;
             }
 
-            // Agent/designer with a profile: handled once after the loop, so a
-            // held provider role that isn't the profile's kind doesn't create a
-            // stray null-profile row (capability comes from categories).
-            if ($profile !== null && in_array($role, [Role::Agent, Role::Designer], true)) {
+            // Executor with a profile: handled once after the loop, so the held
+            // agent role doesn't also create a stray null-profile row.
+            if ($profile !== null && $role === Role::Agent) {
                 continue;
             }
 
@@ -56,14 +55,13 @@ class RatingService
             $providerRole = $profile->provider_type->toRole();
             $this->recomputeOne($userId, $providerRole, $profile->id);
 
-            // Prune any stale agent/designer rows that aren't this canonical
-            // profile row (an old null-profile stub, or the other kind) so
-            // cachedRating() and /me/rating resolve to exactly one provider row.
+            // Prune any stale provider rows that aren't this canonical profile
+            // row (an old null-profile stub) so cachedRating() and /me/rating
+            // resolve to exactly one provider row.
             UserRating::where('user_id', $userId)
-                ->whereIn('role', [Role::Agent->value, Role::Designer->value])
+                ->where('role', $providerRole->value)
                 ->where(fn ($query) => $query
-                    ->where('role', '!=', $providerRole->value)
-                    ->orWhereNull('agent_profile_id')
+                    ->whereNull('agent_profile_id')
                     ->orWhere('agent_profile_id', '!=', $profile->id))
                 ->delete();
         }

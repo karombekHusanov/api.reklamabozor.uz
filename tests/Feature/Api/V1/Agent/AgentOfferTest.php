@@ -133,9 +133,9 @@ class AgentOfferTest extends TestCase
             ->assertOk();
     }
 
-    public function test_designers_are_not_bound_by_the_agent_offer(): void
+    public function test_individual_executors_are_not_bound_by_the_agent_offer(): void
     {
-        $profile = AgentProfile::factory()->designer()->offerNotAccepted()->create();
+        $profile = AgentProfile::factory()->individual()->offerNotAccepted()->create();
 
         $this->assertTrue($profile->hasAcceptedCurrentOffer());
 

@@ -84,9 +84,10 @@ class StatsTest extends TestCase
             'status' => AgentProfileStatus::Approved,
             'provider_type' => 'agent',
         ]);
-        AgentProfile::factory()->create([
+        // An individual executor's track is not a marketplace capability —
+        // without categories it is counted in neither list.
+        AgentProfile::factory()->individual()->create([
             'status' => AgentProfileStatus::Approved,
-            'provider_type' => 'designer',
         ]);
         AgentProfile::factory()->create([
             'status' => AgentProfileStatus::Pending,
@@ -96,6 +97,6 @@ class StatsTest extends TestCase
         $this->getJson('/api/v1/stats/live')
             ->assertOk()
             ->assertJsonPath('data.agencies_total', 1)
-            ->assertJsonPath('data.designers_total', 1);
+            ->assertJsonPath('data.designers_total', 0);
     }
 }

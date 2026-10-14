@@ -15,7 +15,7 @@ use Illuminate\Validation\Rule;
 
 class GlobalChatController extends ApiController
 {
-    private const MODERATABLE_ROLES = [Role::Client, Role::Agent, Role::Designer, Role::Seller];
+    private const MODERATABLE_ROLES = [Role::Client, Role::Agent, Role::Seller];
 
     public function __construct(
         private readonly GlobalChatAdminService $chat,

@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1\Individual;
 
 use App\Enums\AgentProfileStatus;
 use App\Enums\OrderRoute;
+use App\Enums\PersonType;
 use App\Enums\ProviderType;
 use App\Enums\Role;
 use App\Models\AgentProfile;
@@ -11,8 +12,10 @@ use App\Models\Category;
 use App\Models\File;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Agent\AgentProfileService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class IndividualProfileTest extends TestCase
@@ -231,9 +234,92 @@ class IndividualProfileTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_designer_role_is_not_self_selectable(): void
+    public function test_designer_role_and_track_no_longer_exist(): void
     {
-        $this->assertNotContains(Role::Designer, Role::selfSelectable());
-        $this->assertFalse(Role::Designer->isSelfSelectable());
+        $this->assertNull(Role::tryFrom('designer'));
+        $this->assertNull(ProviderType::tryFrom('designer'));
+        $this->assertSame([Role::Client, Role::Seller], Role::selfSelectable());
+    }
+
+    // --- legal nature follows the KYC track --------------------------------
+
+    public function test_individual_executor_reads_as_an_individual_not_a_legal_entity(): void
+    {
+        [$user] = $this->provider(fn ($f) => $f->individual()->approved()->create());
+        $user->grantRole(Role::Agent);
+        $user->role = Role::Agent;
+        $user->save();
+        $user = $user->fresh();
+
+        $this->assertTrue($user->isIndividualExecutor());
+        $this->assertFalse($user->hasRoleBoundLegalStatus());
+        $this->assertSame(PersonType::Individual, $user->effectivePersonType());
+        $this->assertFalse($user->isVerifiedLegalEntity());
+        $this->assertNull($user->legalEntityStatus());
+    }
+
+    public function test_legal_entity_executor_reads_as_a_verified_legal_entity(): void
+    {
+        [$user] = $this->provider(fn ($f) => $f->approved()->create());
+        $user->grantRole(Role::Agent);
+        $user->role = Role::Agent;
+        $user->save();
+        $user = $user->fresh();
+
+        $this->assertFalse($user->isIndividualExecutor());
+        $this->assertSame(PersonType::LegalEntity, $user->effectivePersonType());
+        $this->assertTrue($user->isVerifiedLegalEntity());
+    }
+
+    public function test_individual_executor_cannot_request_legal_entity_verification(): void
+    {
+        [$user, $headers] = $this->provider(fn ($f) => $f->individual()->approved()->create());
+        $user->forceFill(['role' => Role::Agent, 'roles' => [Role::Client, Role::Agent], 'person_type' => PersonType::LegalEntity])->save();
+
+        $this->postJson('/api/v1/me/legal-entity', ['inn' => '123456789'], $headers)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('person_type');
+    }
+
+    // --- each form edits only its own track --------------------------------
+
+    // Service-level: the HTTP form needs the full legal payload, which the
+    // upgrade tests cover end to end.
+    public function test_agent_form_switches_a_not_yet_approved_individual_to_the_legal_track(): void
+    {
+        [$user] = $this->provider(fn ($f) => $f->individual()->rejected()->create());
+
+        $profile = app(AgentProfileService::class)->resubmit($user->profile, ['company_name' => 'X MChJ']);
+
+        $this->assertSame(ProviderType::Agent, $profile->provider_type);
+        $this->assertSame(AgentProfileStatus::Pending, $profile->status);
+        $this->assertSame('X MChJ', $profile->company_name);
+    }
+
+    public function test_agent_form_cannot_resubmit_an_approved_individual(): void
+    {
+        [$user] = $this->provider(fn ($f) => $f->individual()->approved()->create());
+
+        try {
+            app(AgentProfileService::class)->resubmit($user->profile, ['company_name' => 'X MChJ']);
+            $this->fail('Expected approved individuals to be routed to the upgrade request.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('profile', $e->errors());
+        }
+
+        $profile = $user->profile->fresh();
+        $this->assertSame(ProviderType::Individual, $profile->provider_type);
+        $this->assertSame(AgentProfileStatus::Approved, $profile->status);
+    }
+
+    public function test_individual_form_cannot_downgrade_a_legal_entity_application(): void
+    {
+        [$user, $headers] = $this->provider(fn ($f) => $f->rejected()->create());
+
+        $this->putJson('/api/v1/individual/profile', $this->payload($user), $headers)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('profile');
+
+        $this->assertSame(ProviderType::Agent, $user->profile->fresh()->provider_type);
     }
 }

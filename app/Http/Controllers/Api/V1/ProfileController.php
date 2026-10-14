@@ -29,7 +29,7 @@ class ProfileController extends ApiController
 
     /**
      * Self-declared legal nature (individual / legal entity). Asked only of
-     * client/designer users; agents & sellers derive it from their role, so the
+     * clients; executors derive it from their KYC track and sellers from their role, so the
      * stored value is ignored for them ({@see User::effectivePersonType()}).
      * A self-declared legal entity stays unverified until Phase-2 verification.
      */

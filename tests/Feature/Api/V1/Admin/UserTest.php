@@ -111,16 +111,16 @@ class UserTest extends TestCase
         ]);
 
         $this->patchJson("/api/v1/admin/users/{$user->id}", [
-            'role' => 'designer',
+            'role' => 'seller',
         ], [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])
             ->assertOk()
-            ->assertJsonPath('data.role', 'designer')
-            ->assertJsonPath('data.roles', ['client', 'agent', 'designer']);
+            ->assertJsonPath('data.role', 'seller')
+            ->assertJsonPath('data.roles', ['client', 'agent', 'seller']);
 
         $fresh = $user->fresh();
-        $this->assertTrue($fresh->hasRole(Role::Designer));
+        $this->assertTrue($fresh->hasRole(Role::Seller));
         $this->assertTrue($fresh->hasRole(Role::Agent));
     }
 
@@ -135,7 +135,7 @@ class UserTest extends TestCase
         AgentProfile::factory()->for($user)->approved()->create();
 
         $this->patchJson("/api/v1/admin/users/{$user->id}", [
-            'role' => 'designer',
+            'role' => 'seller',
         ], [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])->assertOk();

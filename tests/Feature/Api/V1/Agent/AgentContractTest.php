@@ -136,10 +136,10 @@ class AgentContractTest extends TestCase
         $this->assertSame(AgentProfileStatus::Pending, $profile->fresh()->status);
     }
 
-    public function test_designer_profile_requires_no_contract(): void
+    public function test_individual_profile_requires_no_contract(): void
     {
         $user = User::factory()->create();
-        $profile = AgentProfile::factory()->designer()->approved()->for($user)->create();
+        $profile = AgentProfile::factory()->individual()->approved()->for($user)->create();
 
         $this->assertFalse($profile->requiresContract());
         $this->assertTrue($profile->contractApproved());

@@ -39,6 +39,7 @@ class AgentProfile extends Model
         'registrationCertificateFile',
         'contractFile',
         'signedContractFile',
+        'latestUpgrade',
     ];
 
     /**
@@ -121,6 +122,18 @@ class AgentProfile extends Model
         return $this->belongsTo(File::class, 'director_passport_file_id');
     }
 
+    /** Requests to raise this (individual) profile to the legal-entity track. */
+    public function upgrades(): HasMany
+    {
+        return $this->hasMany(AgentProfileUpgrade::class);
+    }
+
+    /** The most recent upgrade request, whatever its status. */
+    public function latestUpgrade(): HasOne
+    {
+        return $this->hasOne(AgentProfileUpgrade::class)->latestOfMany();
+    }
+
     /** The individual executor's selfie scan (light KYC). */
     public function selfieFile(): BelongsTo
     {
@@ -145,8 +158,8 @@ class AgentProfile extends Model
     }
 
     /**
-     * Only agencies (legal entities) sign the platform agreement; designers
-     * (individuals, instant-approved) do not.
+     * Only legal-entity executors accept the agency offer / sign the platform
+     * agreement; individual executors do not.
      */
     public function requiresContract(): bool
     {
@@ -156,7 +169,7 @@ class AgentProfile extends Model
     /**
      * Whether this profile is a legal-entity provider. `provider_type` is the
      * profile's legal/KYC track — agent = legal entity (company KYC + contract),
-     * designer = individual (light). It is NOT the marketplace capability, which
+     * individual = jismoniy executor (light). It is NOT the marketplace capability, which
      * is derived from categories ({@see servedCapabilities()}).
      * PROFILE_ARCHITECTURE.md §3.
      */
@@ -188,8 +201,8 @@ class AgentProfile extends Model
 
     /**
      * The capacities this profile actually offers, derived from the category
-     * types it lists (agent | designer). A legal entity may serve both; an
-     * individual serves designer only. Drives which marketplace lists it
+     * types it lists (agent | designer). Either executor track may serve both.
+     * Drives which marketplace lists it
      * appears in and its capacity stats.
      *
      * @return list<string>

@@ -24,7 +24,7 @@ class AgentContractService
     /**
      * Render the agreement PDF from the profile's KYC data, store it, and reset
      * the contract to "awaiting signature". Any previously signed scan is
-     * discarded — the agent must sign the fresh version. No-op for designers.
+     * discarded — the agent must sign the fresh version. No-op for individual executors.
      */
     public function generateFor(AgentProfile $profile): AgentProfile
     {

@@ -79,15 +79,6 @@ class GradeCalculatorTest extends TestCase
         $this->assertEquals(35, $grade);
     }
 
-    public function test_designer_baseline(): void
-    {
-        $designer = User::factory()->create();
-        $grade = $this->calc->compute($designer->id, Role::Designer, 5.0);
-
-        // D1=0, D2=0, D3=0, D4=25, D5=0, D6=10, D7=5 → 40
-        $this->assertEquals(40, $grade);
-    }
-
     public function test_grade_listing_boost(): void
     {
         $this->assertEquals(5, GradeCalculator::listingBoost(100));
