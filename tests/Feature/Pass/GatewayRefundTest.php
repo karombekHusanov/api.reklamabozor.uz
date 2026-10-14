@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Pass;
 
+use App\Enums\GatewayPaymentPurpose;
 use App\Enums\GatewayPaymentStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\AgentPass;
@@ -30,7 +31,7 @@ class GatewayRefundTest extends TestCase
         parent::setUp();
 
         config([
-            'passes.gateway' => 'fake', 'passes.price_som' => 1000, 'passes.hours' => 24,
+            'passes.gateway' => 'fake',
             'passes.wallet_enabled' => true, 'passes.response_price_som' => 1000,
         ]);
     }
@@ -101,16 +102,24 @@ class GatewayRefundTest extends TestCase
         $this->assertSame(500_000, app(WalletService::class)->balanceTiyin($agent));
     }
 
-    public function test_refunding_a_pass_payment_ends_that_pass(): void
+    /** An older payment bought a (now retired) Propusk: refunding voids that pass, not the balance. */
+    public function test_refunding_an_old_pass_payment_ends_that_pass(): void
     {
         $agent = $this->agent();
-        $payment = $this->pay($agent, '/api/v1/agent/pass/card');
-        $this->assertSame('active', AgentPass::query()->where('gateway_payment_id', $payment->id)->value('status'));
+        $payment = $this->pay($agent, '/api/v1/agent/wallet/card', ['amount_som' => 1000]);
+        // Reshape it into a pre-retirement pass purchase: no balance credit, a pass row.
+        $payment->update(['purpose' => GatewayPaymentPurpose::Pass]);
+        app(WalletService::class)->adjust($agent, -100_000, 'as pass', User::factory()->admin()->create());
+        AgentPass::query()->create([
+            'user_id' => $agent->id, 'starts_at' => now(), 'expires_at' => now()->addDay(),
+            'price_tiyin' => 100_000, 'source' => 'gateway', 'status' => 'active', 'gateway_payment_id' => $payment->id,
+        ]);
 
         $this->admin();
         $this->postJson("/api/v1/admin/gateway-payments/{$payment->id}/refund", ['reason' => 'xato to‘lov'])->assertOk();
 
         $this->assertSame('refunded', AgentPass::query()->where('gateway_payment_id', $payment->id)->value('status'));
+        $this->assertSame(0, app(WalletService::class)->balanceTiyin($agent));
     }
 
     public function test_gateway_refusal_rolls_everything_back(): void

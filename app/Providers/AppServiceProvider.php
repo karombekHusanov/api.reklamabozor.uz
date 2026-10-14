@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\PaymentGateway;
 use App\Models\PersonalAccessToken;
+use App\Services\Pass\PassSettings;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,6 +15,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Per-order fee settings: memoised per request / queue job (an order
+        // list reads them once per row), fresh on the next one.
+        $this->app->scoped(PassSettings::class);
+
         // Online payment adapter, resolved lazily by driver name. `fake` is
         // dev-only; no driver configured (prod default) → RuntimeException,
         // which GatewayPaymentService turns into 503 gateway_unavailable.

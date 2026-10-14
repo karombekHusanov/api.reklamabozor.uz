@@ -2,16 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Enums\PassMode;
+use App\Enums\TezkorBilling;
 use App\Enums\WalletTransactionType;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Admin\AdjustWalletRequest;
-use App\Http\Requests\Api\V1\Admin\GrantPassRequest;
 use App\Http\Resources\AgentPassResource;
 use App\Models\AgentPass;
 use App\Models\User;
 use App\Models\WalletTransaction;
-use App\Services\Pass\PassService;
 use App\Services\Pass\PassSettings;
 use App\Services\Pass\WalletService;
 use Illuminate\Http\JsonResponse;
@@ -19,11 +17,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/** Admin: Propusk list / revenue, balance ledger, manual grant, wallet adjust, settings. */
+/** Admin: per-order fee revenue, balance ledger, wallet adjust, settings (+ old Propusk history). */
 class PassController extends ApiController
 {
     public function __construct(
-        private readonly PassService $passes,
         private readonly PassSettings $settings,
         private readonly WalletService $wallet,
     ) {}
@@ -114,22 +111,27 @@ class PassController extends ApiController
 
         // Fees are stored as debits (negative) — revenue is their absolute sum.
         $responseTiyin = -(int) $ledger(WalletTransactionType::ResponseFee)->sum('amount_tiyin');
+        $takeTiyin = -(int) $ledger(WalletTransactionType::TakeFee)->sum('amount_tiyin');
         $topupTiyin = (int) $ledger(WalletTransactionType::Topup)->sum('amount_tiyin');
 
-        $responsesPerDay = $ledger(WalletTransactionType::ResponseFee)
+        $feesPerDay = fn (WalletTransactionType $type) => $ledger($type)
             ->selectRaw('DATE(created_at) as day, COUNT(*) as count, SUM(amount_tiyin) as sum_tiyin')
             ->groupBy(DB::raw('DATE(created_at)'))
             ->get()
             ->keyBy(fn ($r) => (string) $r->day);
+        $responsesPerDay = $feesPerDay(WalletTransactionType::ResponseFee);
+        $takesPerDay = $feesPerDay(WalletTransactionType::TakeFee);
 
-        // One row per day with both revenue streams.
+        // One row per day with every revenue stream.
         $days = $perDay->keyBy('date');
-        foreach ($responsesPerDay as $day => $r) {
+        foreach ([...$responsesPerDay->keys(), ...$takesPerDay->keys()] as $day) {
             $days[$day] ??= ['date' => $day, 'count' => 0, 'sum_som' => 0];
         }
         $perDay = $days->map(fn (array $d) => $d + [
             'responses_count' => (int) ($responsesPerDay[$d['date']]->count ?? 0),
             'responses_sum_som' => intdiv(-(int) ($responsesPerDay[$d['date']]->sum_tiyin ?? 0), 100),
+            'takes_count' => (int) ($takesPerDay[$d['date']]->count ?? 0),
+            'takes_sum_som' => intdiv(-(int) ($takesPerDay[$d['date']]->sum_tiyin ?? 0), 100),
         ])->sortKeys()->values();
 
         return $this->success([
@@ -144,11 +146,16 @@ class PassController extends ApiController
                 'count' => $ledger(WalletTransactionType::ResponseFee)->count(),
                 'sum_som' => intdiv($responseTiyin, 100),
             ],
+            // Tezkor pay_on_pick: fees the picked agency paid to take the job.
+            'takes' => [
+                'count' => $ledger(WalletTransactionType::TakeFee)->count(),
+                'sum_som' => intdiv($takeTiyin, 100),
+            ],
             'topups' => [
                 'count' => $ledger(WalletTransactionType::Topup)->count(),
                 'sum_som' => intdiv($topupTiyin, 100),
             ],
-            'revenue_som' => intdiv($total + $responseTiyin, 100),
+            'revenue_som' => intdiv($total + $responseTiyin + $takeTiyin, 100),
             'per_day' => $perDay,
         ]);
     }
@@ -197,8 +204,8 @@ class PassController extends ApiController
                 ] : null,
                 'type' => $t->type->value,
                 'amount_som' => intdiv($t->amount_tiyin, 100),
-                // "otklik:{order}:{agent}:…" (older rows: "claim:…") — the order the fee was for.
-                'order_id' => preg_match('/^(?:otklik|claim):(\d+):/', (string) $t->reference, $m) ? (int) $m[1] : null,
+                // "otklik:{order}:{agent}" / "take:{order}:{agent}" (older rows: "claim:…") — the order the fee was for.
+                'order_id' => preg_match('/^(?:otklik|take|claim):(\d+):/', (string) $t->reference, $m) ? (int) $m[1] : null,
                 'note' => $t->note,
                 'created_by' => $t->created_by,
                 'created_at' => $t->created_at?->toIso8601String(),
@@ -210,13 +217,6 @@ class PassController extends ApiController
                 'total' => $paginator->total(),
             ],
         ]);
-    }
-
-    public function grant(GrantPassRequest $request, User $user): JsonResponse
-    {
-        $pass = $this->passes->grant($user, (int) $request->validated('hours'), $request->user(), $request->validated('reason'));
-
-        return $this->success(new AgentPassResource($pass), 'Propusk granted', 201);
     }
 
     public function wallet(User $user): JsonResponse
@@ -239,10 +239,9 @@ class PassController extends ApiController
     public function updateSettings(Request $request): JsonResponse
     {
         $v = $request->validate([
-            'mode' => ['sometimes', Rule::enum(PassMode::class)],
-            'price_som' => ['sometimes', 'integer', 'min:0', 'max:100000000'],
-            'hours' => ['sometimes', 'integer', 'min:1', 'max:8760'],
             'response_price_som' => ['sometimes', 'integer', 'min:0', 'max:100000000'],
+            'tezkor_billing' => ['sometimes', Rule::enum(TezkorBilling::class)],
+            'pick_pay_minutes' => ['sometimes', 'integer', 'min:5', 'max:1440'],
         ]);
 
         $this->settings->update($v);

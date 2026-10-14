@@ -3,10 +3,11 @@
 namespace Tests\Feature\Pass;
 
 use App\Enums\GatewayPaymentStatus;
-use App\Models\AgentPass;
 use App\Models\AgentProfile;
 use App\Models\GatewayPayment;
 use App\Models\User;
+use App\Models\WalletTransaction;
+use App\Services\Pass\WalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Cache;
@@ -23,7 +24,7 @@ class AtmosGatewayTest extends TestCase
 
         config([
             'passes.gateway' => 'atmos',
-            'passes.price_som' => 1000,
+            'passes.wallet_enabled' => true,
             'atmos.base_url' => 'https://atmos.test',
             'atmos.consumer_key' => 'key',
             'atmos.consumer_secret' => 'secret',
@@ -66,7 +67,7 @@ class AtmosGatewayTest extends TestCase
     {
         app('auth')->forgetGuards();
         $this->withToken($agent->createToken('t')->plainTextToken)
-            ->postJson('/api/v1/agent/pass/purchase')
+            ->postJson('/api/v1/agent/wallet/topup', ['amount_som' => 1000])
             ->assertCreated()
             ->assertJsonPath('data.checkout_url', 'https://checkout.atmos.test/ru/invoice?id=t');
 
@@ -85,7 +86,7 @@ class AtmosGatewayTest extends TestCase
         ];
     }
 
-    public function test_purchase_creates_atmos_invoice_with_reference_as_account(): void
+    public function test_topup_creates_atmos_invoice_with_reference_as_account(): void
     {
         $this->fakeAtmos();
         $payment = $this->buy($this->agent());
@@ -98,7 +99,7 @@ class AtmosGatewayTest extends TestCase
             && $r['store_id'] === 77);
     }
 
-    public function test_billing_callback_authorises_but_does_not_activate(): void
+    public function test_billing_callback_authorises_but_does_not_credit(): void
     {
         $this->fakeAtmos();
         $payment = $this->buy($this->agent());
@@ -107,7 +108,7 @@ class AtmosGatewayTest extends TestCase
             ->assertOk()->assertJson(['status' => 1]);
 
         $this->assertSame(GatewayPaymentStatus::Pending, $payment->fresh()->status);
-        $this->assertSame(0, AgentPass::query()->count());
+        $this->assertSame(0, WalletTransaction::query()->count());
     }
 
     public function test_billing_callback_rejects_bad_sign_and_wrong_amount(): void
@@ -131,7 +132,7 @@ class AtmosGatewayTest extends TestCase
             ->assertOk()->assertJson(['status' => 0]);
     }
 
-    public function test_pass_activates_once_when_invoice_is_final_success(): void
+    public function test_balance_is_credited_once_when_invoice_is_final_success(): void
     {
         $this->fakeAtmos();
         $agent = $this->agent();
@@ -139,14 +140,14 @@ class AtmosGatewayTest extends TestCase
 
         $this->fakeAtmos(paid: true, final: true);
         $this->artisan('gateway:reconcile-payments')->assertSuccessful();
-        $this->assertSame(0, AgentPass::query()->count(), 'too fresh to reconcile');
+        $this->assertSame(0, WalletTransaction::query()->count(), 'too fresh to reconcile');
 
         $this->travel(2)->minutes();
         $this->artisan('gateway:reconcile-payments')->assertSuccessful();
         $this->artisan('gateway:reconcile-payments')->assertSuccessful();
 
         $this->assertSame(GatewayPaymentStatus::Success, $payment->fresh()->status);
-        $this->assertSame(1, AgentPass::query()->where('user_id', $agent->id)->count());
+        $this->assertSame(100000, app(WalletService::class)->balanceTiyin($agent));
     }
 
     public function test_polling_pass_endpoint_settles_a_paid_invoice(): void
@@ -159,7 +160,7 @@ class AtmosGatewayTest extends TestCase
         app('auth')->forgetGuards();
         $this->withToken($agent->createToken('t2')->plainTextToken)
             ->getJson('/api/v1/agent/pass')
-            ->assertOk()->assertJsonPath('data.active', true);
+            ->assertOk()->assertJsonPath('data.balance_som', 1000);
     }
 
     public function test_unpaid_invoice_expires_after_ttl(): void
@@ -171,6 +172,6 @@ class AtmosGatewayTest extends TestCase
         $this->artisan('gateway:reconcile-payments')->assertSuccessful();
 
         $this->assertSame(GatewayPaymentStatus::Failed, $payment->fresh()->status);
-        $this->assertSame(0, AgentPass::query()->count());
+        $this->assertSame(0, WalletTransaction::query()->count());
     }
 }

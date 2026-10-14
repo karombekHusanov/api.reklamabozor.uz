@@ -3,11 +3,11 @@
 namespace Tests\Feature\Pass;
 
 use App\Enums\GatewayPaymentStatus;
-use App\Models\AgentPass;
 use App\Models\AgentProfile;
 use App\Models\GatewayPayment;
 use App\Models\User;
 use App\Services\Pass\GatewayPaymentService;
+use App\Services\Pass\WalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
@@ -26,7 +26,7 @@ class CardPaymentTest extends TestCase
     {
         parent::setUp();
 
-        config(['passes.gateway' => 'fake', 'passes.price_som' => 1000, 'passes.hours' => 24]);
+        config(['passes.gateway' => 'fake', 'passes.wallet_enabled' => true, 'passes.response_price_som' => 1000]);
     }
 
     private function agent(): User
@@ -46,10 +46,10 @@ class CardPaymentTest extends TestCase
 
     private function start(User $agent, string $card = self::CARD, string $expiry = '01/28'): TestResponse
     {
-        return $this->as($agent)->postJson('/api/v1/agent/pass/card', ['card_number' => $card, 'expiry' => $expiry]);
+        return $this->as($agent)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 1000, 'card_number' => $card, 'expiry' => $expiry]);
     }
 
-    public function test_card_then_sms_code_activates_the_pass(): void
+    public function test_card_then_sms_code_credits_the_balance(): void
     {
         $agent = $this->agent();
 
@@ -62,13 +62,11 @@ class CardPaymentTest extends TestCase
         $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '111111'])
             ->assertOk()
             ->assertJsonPath('data.status', 'success')
-            ->assertJsonPath('data.summary.active', true);
+            ->assertJsonPath('data.summary.balance_som', 1000);
 
-        $this->assertSame(1, AgentPass::query()->where('user_id', $agent->id)->count());
-
-        // Replaying the confirm never activates a second pass.
+        // Replaying the confirm never credits twice.
         $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '111111'])->assertOk();
-        $this->assertSame(1, AgentPass::query()->where('user_id', $agent->id)->count());
+        $this->assertSame(100000, app(WalletService::class)->balanceTiyin($agent));
     }
 
     public function test_wrong_code_keeps_the_payment_open_for_a_retry(): void
@@ -143,8 +141,6 @@ class CardPaymentTest extends TestCase
             ->assertJsonPath('data.status', 'success')
             ->assertJsonPath('data.summary.balance_som', 10000);
 
-        // No pass is bought by a top-up.
-        $this->assertSame(0, AgentPass::query()->where('user_id', $agent->id)->count());
     }
 
     public function test_wallet_top_up_needs_the_wallet_and_a_minimum(): void
@@ -197,7 +193,7 @@ class CardPaymentTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'success');
 
-        $this->assertSame(1, AgentPass::query()->where('user_id', $agent->id)->count());
+        $this->assertSame(100000, app(WalletService::class)->balanceTiyin($agent));
     }
 
     public function test_atmos_wrong_code_and_status_sync(): void

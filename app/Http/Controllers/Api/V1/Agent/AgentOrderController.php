@@ -21,6 +21,7 @@ use App\Models\Order;
 use App\Services\Chat\DirectChatService;
 use App\Services\Order\OfferService;
 use App\Services\Order\OrderService;
+use App\Services\Order\TezkorPickService;
 use App\Services\Review\ReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,6 +34,7 @@ class AgentOrderController extends ApiController
         private readonly OrderService $orders,
         private readonly ReviewService $reviews,
         private readonly DirectChatService $directChats,
+        private readonly TezkorPickService $picks,
     ) {}
 
     /**
@@ -105,6 +107,31 @@ class AgentOrderController extends ApiController
         $offer = $this->offers->withdraw($request->user(), $offer);
 
         return $this->success(new AgentOfferResource($offer), 'Offer withdrawn');
+    }
+
+    /**
+     * Tezkor pay_on_pick: the client picked this otklik — pay the per-order
+     * fee and take the job (402 `insufficient_balance` when the wallet is short).
+     */
+    public function takeOffer(Request $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->picks->take($request->user(), $offer);
+
+        return $this->success(
+            new AgentOfferDetailResource($this->offers->findForAgent($request->user(), $offer)),
+            'Job taken',
+        );
+    }
+
+    /** Tezkor pay_on_pick: turn the client's pick down — the otklik is withdrawn. */
+    public function declinePick(Request $request, Offer $offer): JsonResponse
+    {
+        $offer = $this->picks->decline($request->user(), $offer);
+
+        return $this->success(
+            new AgentOfferDetailResource($this->offers->findForAgent($request->user(), $offer)),
+            'Pick declined',
+        );
     }
 
     /**

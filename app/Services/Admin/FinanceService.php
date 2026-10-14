@@ -144,9 +144,10 @@ class FinanceService
             ->where('price_tiyin', '>', 0)
             ->whereBetween('created_at', [$from, $to]);
 
-        // Fees are stored as wallet debits (negative amounts).
+        // Per-order fees (on otklik, or on take under Tezkor pay_on_pick) are
+        // stored as wallet debits (negative amounts).
         $fees = WalletTransaction::query()
-            ->where('type', WalletTransactionType::ResponseFee)
+            ->whereIn('type', [WalletTransactionType::ResponseFee, WalletTransactionType::TakeFee])
             ->whereBetween('created_at', [$from, $to]);
 
         $passSales = (int) (clone $sales)->sum('price_tiyin');

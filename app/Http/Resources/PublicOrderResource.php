@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Order;
 use App\Services\Location\LocationPrivacy;
+use App\Services\Order\PassGate;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -40,6 +41,8 @@ class PublicOrderResource extends JsonResource
             ),
             'status' => $this->status->value,
             'route' => $this->route->value,
+            // When the per-order fee is taken and how much (otklik vs take).
+            'billing' => app(PassGate::class)->billingFor($this->resource),
             // For the map: a 1 km circle around the request, never the point.
             ...array_diff_key(
                 LocationPrivacy::fields($this->lat, $this->lng, null, 'order:'.$this->id, false),

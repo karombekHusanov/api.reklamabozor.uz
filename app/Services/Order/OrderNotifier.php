@@ -8,7 +8,6 @@ use App\Enums\OfferStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\PayoutTranche;
 use App\Jobs\SendNewOrderNotification;
-use App\Models\AgentPass;
 use App\Models\AgentProfileUpgrade;
 use App\Models\DirectChat;
 use App\Models\Offer;
@@ -467,6 +466,65 @@ class OrderNotifier
             $this->agentOrderPath($order),
         );
 
+        $this->notifyTezkorLosers($order);
+    }
+
+    /** Tezkor pay_on_pick: the client picked this agency — it has a window to pay and take the job. */
+    public function notifyTezkorPicked(Order $order, Offer $offer, int $feeSom): void
+    {
+        $title = e((string) $order->title);
+        $until = $order->pick_expires_at?->timezone(config('app.timezone'))->format('H:i');
+
+        $this->sendToUser($offer->agent, implode("\n", array_filter([
+            "\u{1F389} <b>Mijoz sizni tanladi!</b>",
+            "So'rov <b>#{$order->id}</b> ({$title}) bo'yicha mijoz sizni tanladi.",
+            $feeSom > 0
+                ? 'Ishni olish uchun <b>'.number_format($feeSom, 0, '.', ' ')." so'm</b> to'lang".($until ? " — <b>{$until}</b> gacha." : '.')
+                : 'Ishni olishni tasdiqlang'.($until ? " — <b>{$until}</b> gacha." : '.'),
+            'Vaqtida tasdiqlanmasa, mijoz boshqa agentlikni tanlashi mumkin.',
+        ])), '✅ Ishni olish', $this->agentOrderPath($order, $offer));
+    }
+
+    /** Tezkor pay_on_pick: the picked agency paid and took the job. */
+    public function notifyTezkorTaken(Order $order): void
+    {
+        $title = e((string) $order->title);
+
+        $this->sendToUser($order->client, implode("\n", [
+            '✅ <b>Agentlik ishni oldi.</b>',
+            "So'rov <b>#{$order->id}</b> ({$title}) bo'yicha siz tanlagan agentlik ishni tasdiqladi — kontaktlari ochildi.",
+        ]), "📂 So'rovni ko'rish", '/orders/'.$order->id);
+
+        $this->notifyTezkorLosers($order);
+    }
+
+    /**
+     * Tezkor pay_on_pick: the pick lapsed — the agency declined / withdrew
+     * (`declined`) or did not pay in time (`expired`). The client picks again.
+     */
+    public function notifyTezkorPickLapsed(Order $order, Offer $offer, string $reason): void
+    {
+        $title = e((string) $order->title);
+
+        $this->sendToUser($order->client, implode("\n", [
+            $reason === 'expired'
+                ? '⏳ <b>Tanlangan agentlik vaqtida tasdiqlamadi.</b>'
+                : 'ℹ️ <b>Tanlangan agentlik ishni olmadi.</b>',
+            "So'rov <b>#{$order->id}</b> ({$title}) ochiq — boshqa agentlikni tanlashingiz mumkin.",
+        ]), "📂 So'rovni ko'rish", '/orders/'.$order->id);
+
+        if ($reason === 'expired') {
+            $this->sendToUser($offer->agent, implode("\n", [
+                "⏳ So'rov <b>#{$order->id}</b> ({$title}) bo'yicha ishni olish vaqti tugadi.",
+                'Mijoz sizni yana tanlashi yoki boshqa agentlikni tanlashi mumkin.',
+            ]), "📂 So'rovni ko'rish", $this->agentOrderPath($order, $offer));
+        }
+    }
+
+    private function notifyTezkorLosers(Order $order): void
+    {
+        $title = e((string) $order->title);
+
         $losers = $order->offers()
             ->where('status', OfferStatus::Rejected)
             ->with('agent')
@@ -482,15 +540,6 @@ class OrderNotifier
                 report($e);
             }
         }
-    }
-
-    /** A Propusk became active (paid via the gateway/wallet or granted by a manager). */
-    public function notifyPassActivated(User $agent, AgentPass $pass): void
-    {
-        $this->sendToUser($agent, implode("\n", [
-            "\u{1F39F} <b>Propusk faollashtirildi.</b>",
-            'Amal qilish muddati: <b>'.$pass->expires_at->timezone(config('app.timezone'))->format('d.m.Y H:i').'</b> gacha.',
-        ]), "📂 So'rovlarni ko'rish", '/agent');
     }
 
     /** Manager decision on an individual executor's legal-entity upgrade request. */

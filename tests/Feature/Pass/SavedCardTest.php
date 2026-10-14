@@ -3,11 +3,11 @@
 namespace Tests\Feature\Pass;
 
 use App\Enums\GatewayPaymentStatus;
-use App\Models\AgentPass;
 use App\Models\AgentProfile;
 use App\Models\GatewayPayment;
 use App\Models\SavedCard;
 use App\Models\User;
+use App\Services\Pass\WalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +27,7 @@ class SavedCardTest extends TestCase
     {
         parent::setUp();
 
-        config(['passes.gateway' => 'fake', 'passes.price_som' => 1000, 'passes.hours' => 24]);
+        config(['passes.gateway' => 'fake', 'passes.wallet_enabled' => true, 'passes.response_price_som' => 1000]);
     }
 
     private function agent(): User
@@ -47,7 +47,8 @@ class SavedCardTest extends TestCase
 
     private function saveCard(User $agent): SavedCard
     {
-        $ref = $this->as($agent)->postJson('/api/v1/agent/pass/card', [
+        $ref = $this->as($agent)->postJson('/api/v1/agent/wallet/card', [
+            'amount_som' => 1000,
             'card_number' => self::CARD, 'expiry' => '01/28', 'save_card' => true,
         ])->assertCreated()->assertJsonPath('data.requires_otp', true)->json('data.payment_ref');
 
@@ -64,7 +65,7 @@ class SavedCardTest extends TestCase
         $card = $this->saveCard($agent);
 
         $this->assertSame('8600 •••• 2365', $card->pan_mask);
-        $this->assertSame(1, AgentPass::query()->where('user_id', $agent->id)->count());
+        $this->assertSame(100000, app(WalletService::class)->balanceTiyin($agent));
         $this->assertSame($card->id, GatewayPayment::query()->firstOrFail()->meta['saved_card_id']);
 
         $this->as($agent)->getJson('/api/v1/agent/cards')
@@ -85,7 +86,7 @@ class SavedCardTest extends TestCase
             ->assertJsonPath('data.requires_otp', false)
             ->assertJsonPath('data.status', 'success')
             ->assertJsonPath('data.card_mask', '8600 •••• 2365')
-            ->assertJsonPath('data.summary.balance_som', 5000);
+            ->assertJsonPath('data.summary.balance_som', 6000); // 1000 from binding + 5000
 
         $this->assertNotNull($card->refresh()->last_used_at);
     }
@@ -108,7 +109,7 @@ class SavedCardTest extends TestCase
         $card = $this->saveCard($agent);
         $card->update(['card_token' => 'fake_declined_x']);
 
-        $this->as($agent)->postJson('/api/v1/agent/pass/card', ['card_id' => $card->id])
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 1000, 'card_id' => $card->id])
             ->assertStatus(422)
             ->assertJsonPath('code', 'card_declined');
 
@@ -120,7 +121,7 @@ class SavedCardTest extends TestCase
         $card = $this->saveCard($this->agent());
         $other = $this->agent();
 
-        $this->as($other)->postJson('/api/v1/agent/pass/card', ['card_id' => $card->id])->assertStatus(422);
+        $this->as($other)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 1000, 'card_id' => $card->id])->assertStatus(422);
         $this->as($other)->deleteJson("/api/v1/agent/cards/{$card->id}")->assertNotFound();
         $this->as($other)->getJson('/api/v1/agent/cards')->assertJsonCount(0, 'data.items');
 
@@ -135,7 +136,7 @@ class SavedCardTest extends TestCase
         $this->as($agent)->deleteJson("/api/v1/agent/cards/{$card->id}")->assertOk();
 
         $this->assertNull($card->fresh());
-        $this->as($agent)->postJson('/api/v1/agent/pass/card', ['card_id' => $card->id])->assertStatus(422);
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 1000, 'card_id' => $card->id])->assertStatus(422);
     }
 
     public function test_card_id_cannot_be_mixed_with_card_data(): void
@@ -143,7 +144,8 @@ class SavedCardTest extends TestCase
         $agent = $this->agent();
         $card = $this->saveCard($agent);
 
-        $this->as($agent)->postJson('/api/v1/agent/pass/card', [
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', [
+            'amount_som' => 1000,
             'card_id' => $card->id, 'card_number' => self::CARD, 'expiry' => '01/28',
         ])->assertStatus(422)->assertJsonValidationErrors('card_id');
     }
@@ -152,7 +154,8 @@ class SavedCardTest extends TestCase
     {
         Log::spy();
         $agent = $this->agent();
-        $ref = $this->as($agent)->postJson('/api/v1/agent/pass/card', [
+        $ref = $this->as($agent)->postJson('/api/v1/agent/wallet/card', [
+            'amount_som' => 1000,
             'card_number' => self::CARD, 'expiry' => '01/28', 'save_card' => true,
         ])->json('data.payment_ref');
 
@@ -215,7 +218,7 @@ class SavedCardTest extends TestCase
         Http::assertSent(fn (HttpRequest $r) => str_ends_with($r->url(), '/merchant/pay/apply') && $r['otp'] === '111111');
 
         // Next payment by token only.
-        $this->as($agent)->postJson('/api/v1/agent/pass/card', ['card_id' => $card->id])
+        $this->as($agent)->postJson('/api/v1/agent/wallet/card', ['amount_som' => 1000, 'card_id' => $card->id])
             ->assertCreated()
             ->assertJsonPath('data.status', 'success');
 

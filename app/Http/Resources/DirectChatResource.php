@@ -56,6 +56,13 @@ class DirectChatResource extends JsonResource
                 'title' => $order?->title,
                 'status' => $order?->status?->value,
                 'route' => $order?->route?->value,
+                // Tezkor: pay_on_pick turns "Kelishildi" into a pick the agency pays to take.
+                'tezkor_billing' => $order?->tezkorBilling()?->value,
+                'pick' => $order !== null && $order->hasActivePick() ? [
+                    'offer_id' => $order->picked_offer_id,
+                    'picked_at' => $order->picked_at,
+                    'expires_at' => $order->pick_expires_at,
+                ] : null,
                 'category' => $order?->relationLoaded('category') && $order->category
                     ? new CategoryResource($order->category)
                     : null,

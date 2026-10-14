@@ -223,8 +223,9 @@ class OfferService
                 ]);
             }
 
-            // Propusk / per-otklik fee — same rule for Tezkor and Tender.
-            $this->passes->assertCanRespond($agent, $order);
+            // Per-order fee on the otklik (Tender, Tezkor pay_to_respond);
+            // free under Tezkor pay_on_pick — the picked agent pays on take.
+            $fee = $this->passes->chargeOtklik($agent, $order);
 
             /** @var Offer $offer */
             $offer = $order->offers()->create([
@@ -233,6 +234,8 @@ class OfferService
                 'price' => $data['price'] ?? null,
                 'comment' => $data['comment'] ?? null,
                 'status' => OfferStatus::Pending,
+                'fee_tiyin' => $fee > 0 ? $fee : null,
+                'fee_paid_at' => $fee > 0 ? now() : null,
             ]);
 
             if ($order->status === OrderStatus::New) {
@@ -331,6 +334,13 @@ class OfferService
         }
 
         $offer->update(['status' => OfferStatus::Withdrawn]);
+
+        // Tezkor pay_on_pick: withdrawing the picked otklik frees the client to
+        // pick again. Resolved lazily — TezkorPickService → OrderService →
+        // PaymentService → OfferService would be a constructor cycle.
+        if ($offer->order?->picked_offer_id === $offer->id) {
+            app(TezkorPickService::class)->releaseWithdrawn($offer);
+        }
 
         return $offer;
     }

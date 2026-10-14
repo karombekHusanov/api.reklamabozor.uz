@@ -44,6 +44,10 @@ Schedule::command('orders:remind-stale')->dailyAt('10:30')->withoutOverlapping()
 // Propusk payments. Cheap no-op when nothing is pending.
 Schedule::command('gateway:reconcile-payments')->everyMinute()->withoutOverlapping();
 
+// Tezkor pay_on_pick: a picked agency that did not pay in time loses the
+// pick, the client is told to choose again. Cheap no-op when nothing lapsed.
+Schedule::command('tezkor:expire-picks')->everyMinute()->withoutOverlapping();
+
 // Live stats (Centrifugo presence) → pushed to every connected mini app, so
 // clients never poll /stats/live. No-op until REALTIME_ENABLED=true.
 Schedule::command('stats:publish-live')->everyTenSeconds()->withoutOverlapping();

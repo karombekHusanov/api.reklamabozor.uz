@@ -7,6 +7,7 @@ use App\Models\ContractAcceptance;
 use App\Models\Offer;
 use App\Services\Chat\DirectChatService;
 use App\Services\Location\LocationPrivacy;
+use App\Services\Order\PassGate;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,6 +43,9 @@ class AgentOfferDetailResource extends JsonResource
             'is_interest' => $this->isInterest(),
             'can_accept' => $this->canAccept(),
             'can_withdraw' => $this->canWithdraw(),
+            // Tezkor pay_on_pick: the client picked this otklik — pay to take it
+            // before `expires_at`, or the client picks again.
+            'pick' => $this->pickPayload(),
             'items' => OfferItemResource::collection($this->whenLoaded('items')),
             'price_updated_at' => $this->price_updated_at,
             'price_edit_count' => (int) $this->price_edit_count,
@@ -71,6 +75,7 @@ class AgentOfferDetailResource extends JsonResource
                 ),
                 'status' => $order->status->value,
                 // Tezkor has no pricelist/contract/payment — the UI switches on this.
+                'billing' => $order ? app(PassGate::class)->billingFor($order) : null,
                 'route' => $order->route->value,
                 'category' => $order->relationLoaded('category') && $order->category
                     ? new CategoryResource($order->category)
@@ -111,6 +116,22 @@ class AgentOfferDetailResource extends JsonResource
                 ],
                 'created_at' => $order->created_at,
             ] : null,
+        ];
+    }
+
+    /** @return array{picked_at: mixed, expires_at: mixed, fee_som: int}|null */
+    private function pickPayload(): ?array
+    {
+        $order = $this->order;
+
+        if ($order === null || $order->picked_offer_id !== $this->id || ! $order->hasActivePick()) {
+            return null;
+        }
+
+        return [
+            'picked_at' => $order->picked_at,
+            'expires_at' => $order->pick_expires_at,
+            'fee_som' => intdiv(app(PassGate::class)->feeTiyin($order), 100),
         ];
     }
 }

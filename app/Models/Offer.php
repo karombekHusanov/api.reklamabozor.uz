@@ -31,6 +31,8 @@ class Offer extends Model
         'status',
         'price_updated_at',
         'price_edit_count',
+        'fee_tiyin',
+        'fee_paid_at',
     ];
 
     public function order(): BelongsTo
@@ -199,6 +201,8 @@ class Offer extends Model
             'status' => OfferStatus::class,
             'price_updated_at' => 'datetime',
             'price_edit_count' => 'integer',
+            'fee_tiyin' => 'integer',
+            'fee_paid_at' => 'datetime',
         ];
     }
 }

@@ -178,7 +178,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/orders/{order}/dispute', [OrderController::class, 'dispute']);
     // Client cancels their own order — open for offers, or unpaid checkout.
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
-    // Tezkor: client picks one of the responding agencies and closes as agreed.
+    // Tezkor: client picks one of the responding agencies — closes as agreed
+    // (pay_to_respond) or reserves a pay-to-take window for it (pay_on_pick).
     Route::post('/orders/{order}/close', [OrderController::class, 'close']);
     // Client reports an agent who took the advance but never started —
     // flags the order into the admin problem-orders queue.
@@ -272,6 +273,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->middleware('throttle:20,1');
         Route::post('/offers/{offer}/withdraw', [AgentOrderController::class, 'withdrawOffer'])
             ->middleware('throttle:20,1');
+        // Tezkor pay_on_pick: the picked agency pays to take the job, or declines.
+        Route::post('/offers/{offer}/take', [AgentOrderController::class, 'takeOffer'])
+            ->middleware('throttle:10,1');
+        Route::post('/offers/{offer}/decline-pick', [AgentOrderController::class, 'declinePick'])
+            ->middleware('throttle:10,1');
         Route::patch('/offers/{offer}', [AgentOrderController::class, 'updateOffer'])
             ->middleware('throttle:10,1');
         // Contract built from the draft pricelist, shown before the agent sends it.
@@ -283,14 +289,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         // Earnings: escrow payouts owed/paid + withdrawable balance.
         Route::get('/payouts', [AgentPayoutController::class, 'index']);
 
-        // Propusk (daily pass) + dormant wallet.
+        // Per-order fee summary + wallet (the daily Propusk is retired).
         Route::get('/pass', [AgentPassController::class, 'show']);
-        Route::post('/pass/purchase', [AgentPassController::class, 'purchase'])->middleware('throttle:10,1');
-        // In-app card form (ATMOS merchant API): card → SMS code → confirm.
-        Route::post('/pass/card', [AgentPassController::class, 'cardStart'])->middleware('throttle:6,1');
+        // In-app card top-up (ATMOS merchant API): card → SMS code → confirm.
         Route::post('/pass/card/{reference}/confirm', [AgentPassController::class, 'cardConfirm'])
             ->whereUuid('reference')->middleware('throttle:10,1');
-        Route::get('/pass/history', [AgentPassController::class, 'history']);
         Route::get('/wallet', [AgentPassController::class, 'wallet']);
         Route::post('/wallet/topup', [AgentPassController::class, 'topup'])->middleware('throttle:10,1');
         // In-app card form top-up (confirm via /pass/card/{reference}/confirm).
@@ -315,8 +318,7 @@ Route::prefix('admin')
         Route::post('/users/{user}/tender-access', [AdminTenderAccessController::class, 'grant']);
         Route::delete('/users/{user}/tender-access', [AdminTenderAccessController::class, 'revoke']);
 
-        // Propusk: manual grant + wallet (adjust works even while the wallet is off).
-        Route::post('/users/{user}/pass', [AdminPassController::class, 'grant']);
+        // Per-order fees: wallet + ledger (adjust works even while the wallet is off).
         Route::get('/users/{user}/wallet', [AdminPassController::class, 'wallet']);
         Route::post('/users/{user}/wallet/adjust', [AdminPassController::class, 'adjustWallet']);
         Route::get('/passes', [AdminPassController::class, 'index']);

@@ -40,8 +40,18 @@ class OrderResource extends JsonResource
             'route' => $this->route->value,
             // Tezkor: the agency the client picked (null until "Kelishildi").
             'claim' => $this->when($this->isTezkor(), fn () => $this->claimPayload()),
-            // Tezkor: the client may pick one of the pending otkliks.
-            'can_close' => $this->isTezkor() && $this->status->isOpenForOffers(),
+            // Tezkor: when the per-order fee is taken (pay_to_respond | pay_on_pick).
+            'tezkor_billing' => $this->tezkorBilling()?->value,
+            // Tezkor pay_on_pick: the agency the client picked has until
+            // `expires_at` to pay and take the job (null = no live pick).
+            'pick' => $this->when($this->isTezkor(), fn () => $this->hasActivePick() ? [
+                'offer_id' => $this->picked_offer_id,
+                'picked_at' => $this->picked_at,
+                'expires_at' => $this->pick_expires_at,
+            ] : null),
+            // Tezkor: the client may pick one of the pending otkliks (not
+            // while a pay_on_pick pick is waiting for the agency).
+            'can_close' => $this->isTezkor() && $this->status->isOpenForOffers() && ! $this->hasActivePick(),
             // Money runs on its own track: the deal is active from the moment
             // the contract is accepted, the payment may still be outstanding.
             'payment_state' => $this->payment_state?->value,

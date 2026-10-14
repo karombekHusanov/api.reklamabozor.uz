@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1\Order;
 
+use App\Enums\TezkorBilling;
 use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Order\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Services\Order\OrderService;
+use App\Services\Order\TezkorPickService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,6 +16,7 @@ class OrderController extends ApiController
 {
     public function __construct(
         private readonly OrderService $orders,
+        private readonly TezkorPickService $picks,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -73,14 +76,22 @@ class OrderController extends ApiController
     }
 
     /**
-     * Tezkor: client picks one of the agencies that responded and marks the
-     * request as agreed — it is closed as completed.
+     * Tezkor: client picks one of the agencies that responded. Under
+     * `pay_to_respond` the request closes as agreed at once; under
+     * `pay_on_pick` the agency is notified and closes it by paying to take
+     * the job (`pick` in the resource shows the pending window).
      */
     public function close(Request $request, Order $order): JsonResponse
     {
         $data = $request->validate([
             'offer_id' => ['required', 'integer'],
         ]);
+
+        if ($order->tezkorBilling() === TezkorBilling::PayOnPick) {
+            $order = $this->picks->pick($request->user(), $order, (int) $data['offer_id']);
+
+            return $this->success(new OrderResource($order), 'Agency picked — waiting for it to take the job.');
+        }
 
         $order = $this->orders->closeAgreed($request->user(), $order, (int) $data['offer_id']);
 

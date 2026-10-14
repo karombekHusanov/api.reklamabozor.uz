@@ -35,18 +35,9 @@ use Illuminate\Support\Str;
 class CardPaymentService
 {
     public function __construct(
-        private readonly PassSettings $settings,
         private readonly GatewayPaymentService $payments,
         private readonly SavedCardService $cards,
     ) {}
-
-    public function startPass(User $agent, CardSource $source): GatewayPayment
-    {
-        return $this->start(
-            $agent, GatewayPaymentPurpose::Pass, $this->settings->priceTiyin(),
-            ['hours' => $this->settings->hours()], $source,
-        );
-    }
 
     /** Wallet top-up; confirmed payments are credited by {@see GatewayPaymentService::handleEvent()}. */
     public function startTopup(User $agent, int $amountTiyin, CardSource $source): GatewayPayment

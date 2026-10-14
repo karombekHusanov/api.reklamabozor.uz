@@ -22,12 +22,11 @@ use Illuminate\Validation\ValidationException;
 /**
  * Creates gateway payments and applies their (idempotent) results. All state
  * changes happen under lockForUpdate on the payment row (GOTCHA #23), so a
- * duplicated callback can never activate two passes / credit twice.
+ * duplicated callback can never credit twice.
  */
 class GatewayPaymentService
 {
     public function __construct(
-        private readonly PassSettings $settings,
         private readonly WalletService $wallet,
         private readonly PaymentFeedNotifier $feed,
     ) {}
@@ -62,9 +61,7 @@ class GatewayPaymentService
      */
     public function handleEvent(GatewayEvent $event): ?GatewayPayment
     {
-        $activated = null;
-
-        $payment = DB::transaction(function () use ($event, &$activated): ?GatewayPayment {
+        $payment = DB::transaction(function () use ($event): ?GatewayPayment {
             /** @var GatewayPayment|null $payment */
             $payment = GatewayPayment::query()->where('gateway_ref', $event->gatewayRef)->lockForUpdate()->first();
 
@@ -100,21 +97,13 @@ class GatewayPaymentService
 
             $user = $payment->user;
 
-            if ($payment->purpose === GatewayPaymentPurpose::Pass) {
-                $hours = (int) ($payment->meta['hours'] ?? $this->settings->hours());
-                $activated = app(PassService::class)->activate(
-                    $user, $hours, $payment->amount_tiyin, 'gateway', $payment->id,
-                );
-            } else {
-                $this->wallet->credit($user, WalletTransactionType::Topup, $payment->amount_tiyin, 'gp:'.$payment->id);
-            }
+            // Every paid payment lands on the balance. The daily Propusk is
+            // retired — a pass payment started before that still reaches the
+            // agent as balance for per-order fees.
+            $this->wallet->credit($user, WalletTransactionType::Topup, $payment->amount_tiyin, 'gp:'.$payment->id);
 
             return $payment;
         });
-
-        if ($activated instanceof AgentPass) {
-            app(PassService::class)->notify($payment->user, $activated);
-        }
 
         return $payment;
     }
@@ -142,7 +131,7 @@ class GatewayPaymentService
 
     /**
      * Admin full refund of a successful card payment: take back what it bought
-     * (wallet credit / the pass it activated), then reverse the debit at the
+     * (the wallet credit, or the pass an older payment activated), then reverse the debit at the
      * provider — all in one transaction, so a refused reversal changes nothing.
      * A top-up the agent has already spent cannot be refunded (422).
      */
@@ -161,10 +150,12 @@ class GatewayPaymentService
                 throw ValidationException::withMessages(['payment' => ['This payment cannot be refunded through the gateway.']]);
             }
 
-            if ($payment->purpose === GatewayPaymentPurpose::Pass) {
-                AgentPass::query()
-                    ->where('gateway_payment_id', $payment->id)
-                    ->update(['status' => 'refunded', 'note' => $reason]);
+            // Older payments bought a (now retired) Propusk — void that pass;
+            // everything else was credited to the balance.
+            $passes = AgentPass::query()->where('gateway_payment_id', $payment->id);
+
+            if ($passes->exists()) {
+                $passes->update(['status' => 'refunded', 'note' => $reason]);
             } else {
                 $this->wallet->debit(
                     $payment->user, WalletTransactionType::Refund, $payment->amount_tiyin, 'gp-refund:'.$payment->id, $reason, $admin,

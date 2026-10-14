@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\Order;
 use App\Services\Chat\DirectChatService;
 use App\Services\Location\LocationPrivacy;
+use App\Services\Order\PassGate;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -49,6 +50,8 @@ class PublicOrderDetailResource extends JsonResource
             'attachment_files' => FileResource::collection($attachmentFiles),
             'status' => $this->status->value,
             'route' => $this->route->value,
+            // When the per-order fee is taken and how much (otklik vs take).
+            'billing' => app(PassGate::class)->billingFor($this->resource),
             // A 1 km circle; the exact point comes with the deal (offer detail).
             ...array_diff_key(
                 LocationPrivacy::fields($this->lat, $this->lng, null, 'order:'.$this->id, false),

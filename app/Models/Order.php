@@ -15,6 +15,7 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\ReviewDirection;
+use App\Enums\TezkorBilling;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -58,8 +59,12 @@ class Order extends Model
         'district_id',
         'status',
         'route',
+        'tezkor_billing',
         'claimed_agent_id',
         'claimed_at',
+        'picked_offer_id',
+        'picked_at',
+        'pick_expires_at',
         'payment_state',
         'activated_at',
         'payment_due_at',
@@ -144,6 +149,44 @@ class Order extends Model
     public function isTender(): bool
     {
         return ! $this->isTezkor();
+    }
+
+    /**
+     * Tezkor: when the per-order fee is taken. Null for Tender; older Tezkor
+     * rows (before the setting existed) charged on otklik.
+     */
+    public function tezkorBilling(): ?TezkorBilling
+    {
+        if (! $this->isTezkor()) {
+            return null;
+        }
+
+        return $this->tezkor_billing ?? TezkorBilling::PayToRespond;
+    }
+
+    /** True when the otklik itself carries the fee (Tender, or Tezkor pay_to_respond). */
+    public function chargesOnRespond(): bool
+    {
+        return $this->tezkorBilling() !== TezkorBilling::PayOnPick;
+    }
+
+    /** Tezkor pay_on_pick: the otklik the client picked, still waiting for the agent to pay. */
+    public function pickedOffer(): BelongsTo
+    {
+        return $this->belongsTo(Offer::class, 'picked_offer_id');
+    }
+
+    /**
+     * A live pick: the request is still open and the picked agent's payment
+     * window has not run out. An expired pick is ignored even before the
+     * sweeper clears it.
+     */
+    public function hasActivePick(): bool
+    {
+        return $this->picked_offer_id !== null
+            && $this->pick_expires_at !== null
+            && $this->pick_expires_at->isFuture()
+            && $this->status->isOpenForOffers();
     }
 
     /** Tezkor: the client has picked an agency (the request is closed). */
@@ -740,6 +783,9 @@ class Order extends Model
             'status' => OrderStatus::class,
             'route' => OrderRoute::class,
             'claimed_at' => 'datetime',
+            'tezkor_billing' => TezkorBilling::class,
+            'picked_at' => 'datetime',
+            'pick_expires_at' => 'datetime',
             'payment_state' => OrderPaymentState::class,
             'activated_at' => 'datetime',
             'payment_due_at' => 'datetime',

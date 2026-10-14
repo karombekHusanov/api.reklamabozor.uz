@@ -34,6 +34,13 @@ class AdminOrderResource extends JsonResource
             'location_label' => $this->location_label,
             'status' => $this->status->value,
             'route' => $this->route->value,
+            'tezkor_billing' => $this->tezkorBilling()?->value,
+            // Tezkor pay_on_pick: the otklik picked and waiting for the agency to pay.
+            'pick' => $this->hasActivePick() ? [
+                'offer_id' => $this->picked_offer_id,
+                'picked_at' => $this->picked_at,
+                'expires_at' => $this->pick_expires_at,
+            ] : null,
             // Tezkor: the agency the client picked (null = not closed yet).
             'claimed_at' => $this->claimed_at,
             'claimed_agent' => $this->whenLoaded('claimedAgent', fn () => $this->claimedAgent ? [

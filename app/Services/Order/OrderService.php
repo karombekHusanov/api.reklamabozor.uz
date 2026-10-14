@@ -9,6 +9,7 @@ use App\Enums\OrderProblemReason;
 use App\Enums\OrderProblemState;
 use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
+use App\Enums\TezkorBilling;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
@@ -19,6 +20,7 @@ use App\Models\Region;
 use App\Models\User;
 use App\Services\Assistant\CategoryClassifier;
 use App\Services\Hashtag\HashtagService;
+use App\Services\Pass\PassSettings;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
@@ -39,6 +41,7 @@ class OrderService
         private readonly OrderActService $acts,
         private readonly OrderProblemService $problems,
         private readonly CategoryClassifier $classifier,
+        private readonly PassSettings $passSettings,
     ) {}
 
     /**
@@ -116,8 +119,12 @@ class OrderService
             'district_id' => $districtId,
             'status' => OrderStatus::New,
             'route' => $route,
-            // Tezkor money never touches the platform.
-            ...($route === OrderRoute::Tezkor ? ['payment_state' => OrderPaymentState::NotRequired] : []),
+            // Tezkor money never touches the platform. Its fee model is frozen
+            // here, so an admin switching it never re-bills a live request.
+            ...($route === OrderRoute::Tezkor ? [
+                'payment_state' => OrderPaymentState::NotRequired,
+                'tezkor_billing' => $this->passSettings->tezkorBilling(),
+            ] : []),
         ]);
 
         $this->hashtags->syncForOrder($order, $data['hashtags'] ?? []);
@@ -452,10 +459,10 @@ class OrderService
     }
 
     /**
-     * Tezkor: the client picks one agency among the otkliks and closes the
-     * request as agreed ("Kelishildi"). The picked otklik is accepted, every
-     * other pending one is rejected. No payout, acts or contract — price and
-     * payment are agreed off-platform.
+     * Tezkor `pay_to_respond`: the client picks one agency among the otkliks
+     * (all of which already paid) and closes the request as agreed
+     * ("Kelishildi"). Under `pay_on_pick` the client's pick goes through
+     * {@see TezkorPickService::pick()} instead and the agency pays to take it.
      */
     public function closeAgreed(User $client, Order $order, int $offerId): Order
     {
@@ -471,6 +478,12 @@ class OrderService
                 ]);
             }
 
+            if ($locked->tezkorBilling() === TezkorBilling::PayOnPick) {
+                throw ValidationException::withMessages([
+                    'order' => ['On this request the picked agency takes the job by paying for it.'],
+                ]);
+            }
+
             /** @var Offer|null $offer */
             $offer = $locked->offers()
                 ->whereKey($offerId)
@@ -483,17 +496,7 @@ class OrderService
                 ]);
             }
 
-            $locked->update([
-                'claimed_agent_id' => $offer->agent_id,
-                'claimed_at' => now(),
-            ]);
-
-            $locked->offers()
-                ->whereKeyNot($offer->id)
-                ->where('status', OfferStatus::Pending)
-                ->update(['status' => OfferStatus::Rejected]);
-
-            $this->complete($locked, auto: false);
+            $this->closeWithAgency($locked, $offer);
         });
 
         $order->refresh();
@@ -505,6 +508,26 @@ class OrderService
         }
 
         return $this->withClientRelations($order);
+    }
+
+    /**
+     * Close a Tezkor request with the chosen agency: it becomes the work
+     * partner (contacts reveal), every other pending otklik is rejected and
+     * the request completes. The caller holds the order row lock.
+     */
+    public function closeWithAgency(Order $locked, Offer $offer): void
+    {
+        $locked->update([
+            'claimed_agent_id' => $offer->agent_id,
+            'claimed_at' => now(),
+        ]);
+
+        $locked->offers()
+            ->whereKeyNot($offer->id)
+            ->where('status', OfferStatus::Pending)
+            ->update(['status' => OfferStatus::Rejected]);
+
+        $this->complete($locked, auto: false);
     }
 
     /**
@@ -602,7 +625,7 @@ class OrderService
         }
     }
 
-    private function withClientRelations(Order $order): Order
+    public function withClientRelations(Order $order): Order
     {
         $order->load(Order::CLIENT_RELATIONS);
         Order::hydrateAttachmentFiles($order);

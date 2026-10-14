@@ -8,8 +8,6 @@ use App\Http\Controllers\ApiController;
 use App\Http\Requests\Api\V1\Agent\ConfirmCardPaymentRequest;
 use App\Http\Requests\Api\V1\Agent\StartCardPaymentRequest;
 use App\Http\Requests\Api\V1\Agent\StartWalletTopupRequest;
-use App\Http\Resources\AgentPassResource;
-use App\Models\AgentPass;
 use App\Models\GatewayPayment;
 use App\Models\SavedCard;
 use App\Models\WalletTransaction;
@@ -23,7 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
-/** Agent-facing Propusk (daily pass) + dormant wallet endpoints. */
+/** Agent-facing per-order fee summary + wallet (balance, card top-ups, saved cards). */
 class PassController extends ApiController
 {
     public function __construct(
@@ -54,51 +52,12 @@ class PassController extends ApiController
         return $this->success($this->passes->summary($request->user()));
     }
 
-    public function purchase(Request $request): JsonResponse
-    {
-        $agent = $request->user();
-
-        if ($agent->approvedProfile() === null) {
-            return $this->error('Only approved providers can buy a Propusk.', 403);
-        }
-
-        $result = $this->passes->purchase($agent);
-
-        return $this->success([
-            'activated' => $result['activated'],
-            'checkout_url' => $result['checkout_url'],
-            'payment_ref' => $result['payment_ref'],
-            'pass' => $result['pass'] !== null ? new AgentPassResource($result['pass']) : null,
-            'summary' => $this->passes->summary($agent),
-        ], $result['activated'] ? 'Propusk activated' : 'Payment created', 201);
-    }
-
     /**
-     * In-app card form, step 1. A typed card (card + expiry, optionally saved)
-     * gets an SMS code, confirmed in step 2 with the returned reference; a
-     * saved card (`card_id`) is charged at once — `requires_otp=false` and the
-     * result is in `status` / `summary`.
-     */
-    public function cardStart(StartCardPaymentRequest $request): JsonResponse
-    {
-        $agent = $request->user();
-
-        if ($agent->approvedProfile() === null) {
-            return $this->error('Only approved providers can buy a Propusk.', 403);
-        }
-
-        $source = $this->cardSource($request);
-
-        if ($source === null) {
-            return $this->error('Saved card not found.', 422);
-        }
-
-        return $this->cardStarted($this->cards->startPass($agent, $source), $source);
-    }
-
-    /**
-     * Wallet top-up from the in-app card form (per-otklik mode). Confirmed the
-     * same way as a Propusk card payment, via {@see cardConfirm()}.
+     * Wallet top-up from the in-app card form, step 1. A typed card (card +
+     * expiry, optionally saved) gets an SMS code, confirmed in step 2
+     * ({@see cardConfirm()}) with the returned reference; a saved card
+     * (`card_id`) is charged at once — `requires_otp=false` and the result is
+     * in `status` / `summary`.
      */
     public function walletCardStart(StartWalletTopupRequest $request): JsonResponse
     {
@@ -182,7 +141,7 @@ class PassController extends ApiController
         ], $payment->status === GatewayPaymentStatus::Success ? 'Payment completed' : 'Payment pending', 201);
     }
 
-    /** Step 2: the SMS code. On success the pass is active / the balance credited in the returned summary. */
+    /** Step 2: the SMS code. On success the balance is credited in the returned summary. */
     public function cardConfirm(ConfirmCardPaymentRequest $request, string $reference): JsonResponse
     {
         $agent = $request->user();
@@ -191,27 +150,7 @@ class PassController extends ApiController
         return $this->success([
             'status' => $payment->status->value,
             'summary' => $this->passes->summary($agent),
-        ], $payment->status === GatewayPaymentStatus::Success ? 'Propusk activated' : 'Payment pending');
-    }
-
-    public function history(Request $request): JsonResponse
-    {
-        $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
-
-        $paginator = AgentPass::query()
-            ->where('user_id', $request->user()->id)
-            ->latest('id')
-            ->paginate($perPage);
-
-        return $this->success([
-            'items' => AgentPassResource::collection($paginator->items()),
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-            ],
-        ]);
+        ], $payment->status === GatewayPaymentStatus::Success ? 'Balance topped up' : 'Payment pending');
     }
 
     /** Wallet balance + latest ledger rows (only meaningful when the wallet is enabled). */
@@ -233,7 +172,7 @@ class PassController extends ApiController
         ]);
     }
 
-    /** Top the wallet up through the gateway (wallet mode only). */
+    /** Top the wallet up through the hosted gateway checkout (wallet on only). */
     public function topup(Request $request): JsonResponse
     {
         if (! config('passes.wallet_enabled')) {

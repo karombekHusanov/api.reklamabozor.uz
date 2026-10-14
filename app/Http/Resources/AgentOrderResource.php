@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\Order;
 use App\Services\Chat\DirectChatService;
 use App\Services\Location\LocationPrivacy;
+use App\Services\Order\PassGate;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -46,6 +47,8 @@ class AgentOrderResource extends JsonResource
             ),
             'status' => $this->status->value,
             'route' => $this->route->value,
+            // When the per-order fee is taken and how much (otklik vs take).
+            'billing' => app(PassGate::class)->billingFor($this->resource),
             // Tezkor: the client picked this agent ("Kelishildi").
             'claimed_by_me' => $this->isTezkor() && $this->claimed_agent_id === $request->user()?->id,
             'can_offer' => $this->canOffer($request, $myOffer),
