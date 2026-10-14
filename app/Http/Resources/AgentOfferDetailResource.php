@@ -6,6 +6,7 @@ use App\Enums\ReviewDirection;
 use App\Models\ContractAcceptance;
 use App\Models\Offer;
 use App\Services\Chat\DirectChatService;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -63,9 +64,11 @@ class AgentOfferDetailResource extends JsonResource
                 'deadline_from' => $order->deadline_from?->toDateString(),
                 'deadline_to' => $order->deadline_to?->toDateString(),
                 'budget_max' => $order->budget_max,
-                'lat' => $order->lat,
-                'lng' => $order->lng,
-                'location_label' => $order->location_label,
+                // Exact once the client started work with this executor.
+                ...LocationPrivacy::fields(
+                    $order->lat, $order->lng, $order->location_label,
+                    'order:'.$order->id, $order->revealsExactLocationTo($request->user()),
+                ),
                 'status' => $order->status->value,
                 // Tezkor has no pricelist/contract/payment — the UI switches on this.
                 'route' => $order->route->value,

@@ -48,9 +48,10 @@ class StoreOrderRequest extends FormRequest
             // Free-text hashtags (normalized server-side to a shared catalog).
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
             'hashtags.*' => ['string', 'max:40'],
-            // Optional map pin — both coordinates or neither.
-            'lat' => ['nullable', 'required_with:lng', 'numeric', 'between:-90,90'],
-            'lng' => ['nullable', 'required_with:lat', 'numeric', 'between:-180,180'],
+            // Map pin — required: agencies see the request as a 1 km circle on
+            // the map, the exact point only once work starts.
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
             'location_label' => ['nullable', 'string', 'max:200'],
             // Optional admin region (null = all Uzbekistan). District must be a child of region.
             'region_id' => [

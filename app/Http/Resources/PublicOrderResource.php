@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Order;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -39,6 +40,11 @@ class PublicOrderResource extends JsonResource
             ),
             'status' => $this->status->value,
             'route' => $this->route->value,
+            // For the map: a 1 km circle around the request, never the point.
+            ...array_diff_key(
+                LocationPrivacy::fields($this->lat, $this->lng, null, 'order:'.$this->id, false),
+                ['location_label' => true],
+            ),
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
             'attachments_count' => count($this->allAttachmentFileIds()),

@@ -51,6 +51,8 @@ class OrderBudgetAndClassifyTest extends TestCase
     {
         return $this->postJson('/api/v1/orders', [
             'description' => 'Kafe uchun banner chiqarib o\'rnatish kerak.',
+            'lat' => 41.311081,
+            'lng' => 69.279716,
             ...$extra,
         ], ['Authorization' => 'Bearer '.$token]);
     }

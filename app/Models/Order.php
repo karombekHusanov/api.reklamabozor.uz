@@ -259,6 +259,46 @@ class Order extends Model
         return $this->hasMany(Payout::class);
     }
 
+    /**
+     * The executor (user id) the client started work with, or null. Work has
+     * started once the deal is active or done: Tender — the accepted offer of
+     * an in-progress / submitted / completed order; Tezkor — the agency the
+     * client picked ("Kelishildi"). Gates the exact locations
+     * ({@see revealsExactLocationTo()}).
+     */
+    public function workPartnerId(): ?int
+    {
+        if ($this->isTezkor()) {
+            return $this->claimed_agent_id;
+        }
+
+        if (! in_array($this->status, [OrderStatus::InProgress, OrderStatus::WorkSubmitted, OrderStatus::Completed], true)) {
+            return null;
+        }
+
+        $accepted = $this->relationLoaded('acceptedOffer')
+            ? $this->acceptedOffer
+            : $this->acceptedOffer()->first(['id', 'order_id', 'agent_id']);
+
+        return $accepted?->agent_id;
+    }
+
+    /**
+     * Whether `$user` may see the exact locations of this order and of the
+     * executor working on it: only the client and that executor, only once
+     * work has started. Everyone else gets the 1 km circle.
+     */
+    public function revealsExactLocationTo(?User $user): bool
+    {
+        if ($user === null) {
+            return false;
+        }
+
+        $partner = $this->workPartnerId();
+
+        return $partner !== null && ($user->id === $this->client_id || $user->id === $partner);
+    }
+
     public function acceptedOffer(): HasOne
     {
         return $this->hasOne(Offer::class)->where('status', OfferStatus::Accepted);

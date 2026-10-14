@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\ContractAcceptance;
 use App\Models\Offer;
 use App\Services\Chat\DirectChatService;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -21,6 +22,13 @@ class OfferResource extends JsonResource
         $rating = $profile?->cachedRating;
         $chat = app(DirectChatService::class)->findForOffer($this->resource);
         $viewer = $request->user();
+
+        // The agency's location: exact only for this offer's agency once the
+        // client started work with it (and only for the two of them).
+        $order = $this->order;
+        $exactLocation = $order !== null
+            && $order->workPartnerId() === $this->agent_id
+            && $order->revealsExactLocationTo($viewer);
 
         return [
             'id' => $this->id,
@@ -41,7 +49,10 @@ class OfferResource extends JsonResource
                 'company_logo' => $profile?->companyLogoFile?->url(),
                 // Individual executors often have no logo — the Telegram avatar stands in.
                 'avatar' => $this->agent?->avatarFile?->url(),
-                'location_label' => $profile?->location_label,
+                ...LocationPrivacy::fields(
+                    $profile?->lat, $profile?->lng, $profile?->location_label,
+                    'agent:'.$profile?->id, $exactLocation, publicArea: true,
+                ),
                 'stars' => $rating?->stars !== null ? (float) $rating->stars : null,
                 'stars_count' => (int) ($rating?->stars_count ?? 0),
                 'person_type' => $this->agent?->effectivePersonType()?->value,

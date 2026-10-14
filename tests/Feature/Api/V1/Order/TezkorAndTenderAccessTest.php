@@ -75,7 +75,7 @@ class TezkorAndTenderAccessTest extends TestCase
         Http::fake();
         $client = User::factory()->create();
 
-        $this->postJson('/api/v1/orders', ['description' => 'Banner kerak', 'route' => 'tender'], $this->auth($client))
+        $this->postJson('/api/v1/orders', ['description' => 'Banner kerak', 'route' => 'tender', 'lat' => 41.31, 'lng' => 69.28], $this->auth($client))
             ->assertForbidden();
 
         $this->assertSame(0, Order::count());
@@ -86,7 +86,7 @@ class TezkorAndTenderAccessTest extends TestCase
         Http::fake();
         $client = User::factory()->create();
 
-        $this->postJson('/api/v1/orders', ['description' => 'Banner kerak'], $this->auth($client))
+        $this->postJson('/api/v1/orders', ['description' => 'Banner kerak', 'lat' => 41.31, 'lng' => 69.28], $this->auth($client))
             ->assertCreated()
             ->assertJsonPath('data.route', 'tezkor')
             ->assertJsonPath('data.payment_state', 'not_required')
@@ -100,11 +100,11 @@ class TezkorAndTenderAccessTest extends TestCase
         $client = $this->grantedClient();
         $headers = $this->auth($client);
 
-        $this->postJson('/api/v1/orders', ['description' => 'Katta loyiha'], $headers)
+        $this->postJson('/api/v1/orders', ['description' => 'Katta loyiha', 'lat' => 41.31, 'lng' => 69.28], $headers)
             ->assertCreated()->assertJsonPath('data.route', 'tender');
-        $this->postJson('/api/v1/orders', ['description' => 'Katta loyiha', 'route' => 'tender'], $headers)
+        $this->postJson('/api/v1/orders', ['description' => 'Katta loyiha', 'route' => 'tender', 'lat' => 41.31, 'lng' => 69.28], $headers)
             ->assertCreated()->assertJsonPath('data.route', 'tender');
-        $this->postJson('/api/v1/orders', ['description' => 'Tezkor ish', 'route' => 'tezkor'], $headers)
+        $this->postJson('/api/v1/orders', ['description' => 'Tezkor ish', 'route' => 'tezkor', 'lat' => 41.31, 'lng' => 69.28], $headers)
             ->assertCreated()->assertJsonPath('data.route', 'tezkor');
     }
 
@@ -178,7 +178,7 @@ class TezkorAndTenderAccessTest extends TestCase
             ->assertJsonPath('data.can_create_tender', false)
             ->assertJsonPath('data.tender_access_status', 'revoked');
 
-        $this->postJson('/api/v1/orders', ['description' => 'Yana', 'route' => 'tender'], $this->auth($client))
+        $this->postJson('/api/v1/orders', ['description' => 'Yana', 'route' => 'tender', 'lat' => 41.31, 'lng' => 69.28], $this->auth($client))
             ->assertForbidden();
 
         // The tender that was already running is untouched and still accepts offers.

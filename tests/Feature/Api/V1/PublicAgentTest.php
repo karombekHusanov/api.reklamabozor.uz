@@ -228,7 +228,9 @@ class PublicAgentTest extends TestCase
             ->assertJsonPath('data.results_text', '500+ billboards installed')
             ->assertJsonPath('data.website_url', 'https://agency.uz')
             ->assertJsonPath('data.linkedin_url', 'https://linkedin.com/company/agency')
+            // Public: a 1 km circle + district/city, never the street address.
             ->assertJsonPath('data.location_label', 'Tashkent')
+            ->assertJsonPath('data.location_radius_m', 1000)
             ->assertJsonCount(1, 'data.reviews')
             ->assertJsonPath('data.reviews.0.rating', 5)
             ->assertJsonPath('data.reviews.0.comment', 'Great work!')

@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Order;
 use App\Services\Chat\DirectChatService;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -38,9 +39,11 @@ class AgentOrderResource extends JsonResource
             ),
             'budget_min' => $this->budget_min,
             'budget_max' => $this->budget_max,
-            'lat' => $this->lat,
-            'lng' => $this->lng,
-            'location_label' => $this->location_label,
+            // Exact only for the executor the client started work with.
+            ...LocationPrivacy::fields(
+                $this->lat, $this->lng, $this->location_label,
+                'order:'.$this->id, $this->revealsExactLocationTo($request->user()),
+            ),
             'status' => $this->status->value,
             'route' => $this->route->value,
             // Tezkor: the client picked this agent ("Kelishildi").

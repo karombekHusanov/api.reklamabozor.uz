@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Order;
 use App\Services\Chat\DirectChatService;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -48,6 +49,11 @@ class PublicOrderDetailResource extends JsonResource
             'attachment_files' => FileResource::collection($attachmentFiles),
             'status' => $this->status->value,
             'route' => $this->route->value,
+            // A 1 km circle; the exact point comes with the deal (offer detail).
+            ...array_diff_key(
+                LocationPrivacy::fields($this->lat, $this->lng, null, 'order:'.$this->id, false),
+                ['location_label' => true],
+            ),
             'views_count' => (int) ($this->views_count ?? 0),
             'offers_count' => (int) ($this->offers_count ?? 0),
             'client' => $this->whenLoaded('client', fn () => [

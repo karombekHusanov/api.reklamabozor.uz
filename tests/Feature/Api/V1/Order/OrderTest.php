@@ -240,13 +240,13 @@ class OrderTest extends TestCase
     {
         [, $token] = $this->authedUser();
 
-        // The MVP request form only insists on the description: category, region,
-        // files and the map pin are all optional.
+        // The request form insists on the description and the map pin (agencies
+        // see it as a 1 km circle); category, region and files stay optional.
         $this->postJson('/api/v1/orders', [], ['Authorization' => 'Bearer '.$token])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['description'])
+            ->assertJsonValidationErrors(['description', 'lat', 'lng'])
             ->assertJsonMissingValidationErrors([
-                'category_id', 'lat', 'lng', 'title', 'attachment_file_ids', 'region_id',
+                'category_id', 'title', 'attachment_file_ids', 'region_id',
             ]);
     }
 
@@ -262,21 +262,23 @@ class OrderTest extends TestCase
             ->assertJsonValidationErrors(['lng']);
     }
 
-    public function test_client_can_place_a_description_only_request(): void
+    public function test_client_can_place_a_request_with_just_a_description_and_pin(): void
     {
         Http::fake();
         [$client, $token] = $this->authedUser();
 
         $response = $this->postJson('/api/v1/orders', [
             'description' => '  Do\'kon ochilishi uchun bayram reklamasi kerak.  ',
+            'lat' => 41.311081,
+            'lng' => 69.279716,
         ], ['Authorization' => 'Bearer '.$token])->assertCreated();
 
         $order = Order::query()->where('client_id', $client->id)->firstOrFail();
 
         $this->assertNull($order->category_id);
         $this->assertNull($order->category_type);
-        $this->assertNull($order->lat);
-        $this->assertNull($order->lng);
+        $this->assertEquals(41.311081, (float) $order->lat);
+        $this->assertNull($order->location_label);
         // Title falls back to the request text when no category was picked.
         $this->assertSame("Do'kon ochilishi uchun bayram reklamasi kerak.", $order->title);
         $response->assertJsonPath('data.id', $order->id);

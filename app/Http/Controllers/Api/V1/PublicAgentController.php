@@ -8,6 +8,7 @@ use App\Enums\ProviderType;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicAgentResource;
 use App\Models\AgentProfile;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -108,9 +109,12 @@ class PublicAgentController extends ApiController
             ->withAvg('approvedReviews', 'rating')
             ->get()
             ->each(function (AgentProfile $profile) use ($lat, $lng): void {
-                $profile->distance_m = (int) round(
-                    $this->haversineMeters($lat, $lng, (float) $profile->lat, (float) $profile->lng)
-                );
+                // Measured to the public circle's centre and rounded to 100 m:
+                // distances to the exact point would let anyone triangulate it.
+                $circle = LocationPrivacy::approximate($profile->lat, $profile->lng, 'agent:'.$profile->id);
+                $profile->distance_m = (int) (round(
+                    $this->haversineMeters($lat, $lng, $circle['lat'], $circle['lng']) / 100
+                ) * 100);
             })
             ->sortBy('distance_m')
             ->take($limit)

@@ -140,7 +140,11 @@ class OrderResource extends JsonResource
                 'profile_id' => $profile?->id,
                 'company_name' => $profile?->company_name,
                 'company_logo' => $profile?->companyLogoFile?->url(),
+                // The client picked this agency — work started, exact location.
                 'location_label' => $profile?->location_label,
+                'lat' => $profile?->lat,
+                'lng' => $profile?->lng,
+                'location_radius_m' => null,
                 'stars' => $rating?->stars !== null ? (float) $rating->stars : null,
                 'stars_count' => (int) ($rating?->stars_count ?? 0),
                 'grade' => $rating?->grade ?? 50,

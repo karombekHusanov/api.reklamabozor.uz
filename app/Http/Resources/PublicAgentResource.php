@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\AgentProfile;
+use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -39,9 +40,9 @@ class PublicAgentResource extends JsonResource
             'person_type_verified' => $this->user->isVerifiedLegalEntity(),
             'company_logo' => $this->companyLogoFile?->url(),
             'bio' => $this->bio,
-            'location_label' => $this->location_label,
-            'lat' => $this->lat,
-            'lng' => $this->lng,
+            // Public surface: a 1 km circle and the district + city — never the
+            // exact point or the street address.
+            ...LocationPrivacy::fields($this->lat, $this->lng, $this->location_label, 'agent:'.$this->id, false, publicArea: true),
             // Distance in metres from the requested point — only set by the "nearby" endpoint.
             'distance_m' => $this->when($this->distance_m !== null, fn () => $this->distance_m),
             'website_url' => $this->website_url,
