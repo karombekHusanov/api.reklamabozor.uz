@@ -183,6 +183,14 @@ class OfferService
             ]);
         }
 
+        // Work gate: an approved executor starts working only once the profile
+        // lists its service categories and its location on the map.
+        if (! $profile->isReadyToWork()) {
+            throw ValidationException::withMessages([
+                'profile' => ['Add your service categories and map location to your profile before responding to requests.'],
+            ]);
+        }
+
         // Tender gate: only a legal entity with complete bank requisites may bid
         // on a Tender order (payouts run over bank transfer). Individuals are
         // Tezkor-only; a legal entity missing requisites gets a distinct nudge.

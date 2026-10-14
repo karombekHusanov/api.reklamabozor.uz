@@ -188,6 +188,21 @@ class AgentProfile extends Model
     }
 
     /**
+     * Whether an (approved) executor may start working: the profile must say
+     * WHAT it does and WHERE — at least one service category and a map pin.
+     * Either legal track. Enforced in {@see OfferService::submitOffer()}; the
+     * mini app checks the same before sending an otklik.
+     */
+    public function isReadyToWork(): bool
+    {
+        $hasCategories = $this->relationLoaded('categories')
+            ? $this->categories->isNotEmpty()
+            : $this->categories()->exists();
+
+        return $hasCategories && $this->lat !== null && $this->lng !== null;
+    }
+
+    /**
      * Whether this profile may respond to Tender orders. Only a legal entity
      * (agent) with complete bank requisites qualifies — Tender payouts run
      * exclusively over bank transfer, so an incomplete set would strand the

@@ -141,6 +141,8 @@ class IndividualProfileTest extends TestCase
     {
         [$user, $headers] = $this->user(['phone' => '+99890'.fake()->numerify('#######')]);
         $state(AgentProfile::factory()->for($user));
+        // Ready to work: a service category (the factory sets a map pin).
+        $user->profile()->first()?->categories()->attach(Category::factory()->create());
 
         return [$user, $headers];
     }

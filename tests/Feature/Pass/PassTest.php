@@ -9,6 +9,7 @@ use App\Enums\Role;
 use App\Enums\WalletTransactionType;
 use App\Models\AgentPass;
 use App\Models\AgentProfile;
+use App\Models\Category;
 use App\Models\GatewayPayment;
 use App\Models\Order;
 use App\Models\User;
@@ -39,7 +40,9 @@ class PassTest extends TestCase
     private function agent(): User
     {
         $user = User::factory()->create();
-        AgentProfile::factory()->for($user)->approved()->create();
+        // Ready to work: a service category (the factory sets a map pin).
+        AgentProfile::factory()->for($user)->approved()->create()
+            ->categories()->attach(Category::factory()->create());
 
         return $user;
     }

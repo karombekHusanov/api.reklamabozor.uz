@@ -38,9 +38,8 @@ class TezkorAndTenderAccessTest extends TestCase
     {
         $user = User::factory()->create();
         $profile = AgentProfile::factory()->for($user)->approved()->create();
-        if ($category !== null) {
-            $profile->categories()->attach($category);
-        }
+        // Ready to work: at least one service category (the factory sets a map pin).
+        $profile->categories()->attach($category ?? Category::factory()->create());
 
         return $user;
     }
