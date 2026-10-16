@@ -50,7 +50,10 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Mini app tokens: the app re-authenticates from Telegram initData on every
+    // launch, so a 30-day backstop never logs a real user out mid-session.
+    // Admin tokens get a shorter per-token expiry (AuthService::adminLogin).
+    'expiration' => (int) env('SANCTUM_EXPIRATION_MINUTES', 30 * 24 * 60),
 
     /*
     |--------------------------------------------------------------------------

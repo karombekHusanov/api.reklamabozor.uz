@@ -8,6 +8,10 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// Expired Sanctum tokens (30-day mini app backstop, 12-hour admin) are
+// useless rows once past their date — drop them a day later.
+Schedule::command('sanctum:prune-expired --hours=24')->daily();
+
 // Completion handshake sweep: day-2 reminders + day-3 auto-complete.
 Schedule::command('orders:process-completions')->hourly();
 

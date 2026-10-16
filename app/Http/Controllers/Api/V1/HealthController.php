@@ -12,7 +12,6 @@ class HealthController extends ApiController
         return $this->success([
             'status' => 'ok',
             'service' => config('app.name'),
-            'environment' => config('app.env'),
             'timestamp' => now()->toIso8601String(),
         ]);
     }

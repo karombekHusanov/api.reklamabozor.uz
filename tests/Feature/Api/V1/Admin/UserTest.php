@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1\Admin;
 
 use App\Enums\Role;
 use App\Models\AgentProfile;
+use App\Models\File;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -99,6 +100,27 @@ class UserTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.first_name', 'New')
             ->assertJsonPath('data.phone', '+998901112233');
+    }
+
+    public function test_admin_cannot_assign_someone_elses_upload_as_avatar(): void
+    {
+        $user = User::factory()->create(['role' => Role::Client]);
+        $other = User::factory()->create();
+        $foreign = File::factory()->create(['uploaded_by' => $other->id]);
+        $own = File::factory()->create(['uploaded_by' => $user->id]);
+        $token = $this->adminToken();
+
+        $this->patchJson("/api/v1/admin/users/{$user->id}", [
+            'avatar_file_id' => $foreign->id,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('avatar_file_id');
+
+        $this->patchJson("/api/v1/admin/users/{$user->id}", [
+            'avatar_file_id' => $own->id,
+        ], ['Authorization' => 'Bearer '.$token])
+            ->assertOk()
+            ->assertJsonPath('data.avatar_file_id', $own->id);
     }
 
     public function test_admin_sets_active_role_and_capabilities_accumulate(): void

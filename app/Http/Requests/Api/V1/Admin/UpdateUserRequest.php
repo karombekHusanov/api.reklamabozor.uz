@@ -32,7 +32,8 @@ class UpdateUserRequest extends FormRequest
                 Rule::unique('users', 'email')->ignore($userId),
             ],
             'role' => ['sometimes', Rule::enum(Role::class)],
-            'avatar_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')],
+            // Only a file this user uploaded themselves may become their avatar.
+            'avatar_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')->where('uploaded_by', $userId)],
         ];
     }
 }

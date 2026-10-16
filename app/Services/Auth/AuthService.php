@@ -18,6 +18,9 @@ class AuthService
     /** How long a locked email+IP pair stays locked (seconds). */
     public const ADMIN_LOGIN_LOCKOUT_SECONDS = 15 * 60;
 
+    /** Admin panel token lifetime (12 hours). */
+    public const ADMIN_TOKEN_TTL_MINUTES = 12 * 60;
+
     public function __construct(
         private readonly AgentAccountLinker $agentLinker,
         private readonly TelegramInitDataValidator $initDataValidator,
@@ -146,7 +149,9 @@ class AuthService
 
         return [
             'user' => $user,
-            'token' => $user->createToken('admin')->plainTextToken,
+            // Admin sessions are short-lived (audit §2.2): the panel re-logs in
+            // with the password; the mini app token keeps the global expiry.
+            'token' => $user->createToken('admin', ['*'], now()->addMinutes(self::ADMIN_TOKEN_TTL_MINUTES))->plainTextToken,
         ];
     }
 

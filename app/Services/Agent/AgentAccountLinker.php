@@ -15,6 +15,26 @@ use Illuminate\Support\Facades\DB;
 class AgentAccountLinker
 {
     /**
+     * Columns that may point at a manager-created placeholder agent and are
+     * re-pointed to the adopting account before the placeholder is deleted.
+     *
+     * @var list<array{0: string, 1: string}>
+     */
+    private const USER_REFERENCES = [
+        ['orders', 'target_agent_id'],
+        ['orders', 'claimed_agent_id'],
+        ['offers', 'agent_id'],
+        ['payouts', 'agent_id'],
+        ['chats', 'agent_id'],
+        ['direct_chats', 'agent_id'],
+        ['reviews', 'agent_id'],
+        ['reviews', 'reviewer_id'],
+        ['reviews', 'reviewee_id'],
+        ['user_ratings', 'user_id'],
+        ['wallet_transactions', 'user_id'],
+    ];
+
+    /**
      * Call after $user->phone has been captured/saved.
      */
     public function linkByPhone(User $user): void
@@ -45,6 +65,13 @@ class AgentAccountLinker
             // already hold a token for $user, so the placeholder is the one
             // that must go.
             $placeholder->profile()->update(['user_id' => $user->id]);
+
+            // Anything a manager already attached to the placeholder (a
+            // directed order, a pre-planned payout, a review…) must follow it:
+            // deleting the user would null or cascade those rows away.
+            foreach (self::USER_REFERENCES as [$table, $column]) {
+                DB::table($table)->where($column, $placeholder->id)->update([$column => $user->id]);
+            }
 
             $user->grantRole(Role::Agent);
             $user->role = Role::Agent;

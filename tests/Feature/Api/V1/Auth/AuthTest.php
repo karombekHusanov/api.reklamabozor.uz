@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1\Auth;
 
 use App\Enums\Role;
 use App\Models\AgentProfile;
+use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -144,6 +145,14 @@ class AuthTest extends TestCase
             ->assertJsonPath('data.user.role', 'admin')
             ->assertJsonPath('data.token_type', 'Bearer')
             ->assertJsonStructure(['data' => ['token', 'user' => ['id', 'email', 'role']]]);
+
+        // Admin tokens expire on their own (audit §2.2), mini app tokens only
+        // through the global backstop.
+        $expiresAt = User::where('email', 'admin@example.com')->firstOrFail()
+            ->tokens()->latest('id')->firstOrFail()->expires_at;
+
+        $this->assertNotNull($expiresAt);
+        $this->assertTrue($expiresAt->between(now()->addHours(11), now()->addHours(13)));
     }
 
     public function test_non_admin_user_cannot_use_admin_login(): void
@@ -279,6 +288,38 @@ class AuthTest extends TestCase
             ->assertJsonPath('data.user.role', 'agent');
 
         $this->assertSame($telegramUser->id, $profile->refresh()->user_id);
+        $this->assertDatabaseMissing('users', ['id' => $placeholder->id]);
+    }
+
+    public function test_linking_re_points_rows_attached_to_the_placeholder(): void
+    {
+        $telegramUser = User::factory()->create([
+            'telegram_id' => 424243,
+            'phone' => '+998907771133',
+            'role' => Role::Client,
+        ]);
+
+        $placeholder = User::factory()->create([
+            'telegram_id' => null,
+            'phone' => '+998907771133',
+            'role' => Role::Agent,
+        ]);
+        AgentProfile::factory()->approved()->create(['user_id' => $placeholder->id]);
+
+        // A manager directed an order to the placeholder before the real
+        // person showed up — deleting the user would null that target.
+        $client = User::factory()->create();
+        $directed = Order::factory()->create([
+            'client_id' => $client->id,
+            'target_agent_id' => $placeholder->id,
+        ]);
+
+        $this->postJson('/api/v1/auth/telegram', [
+            'telegram_id' => 424243,
+            'first_name' => 'Akmal',
+        ])->assertOk();
+
+        $this->assertSame($telegramUser->id, $directed->refresh()->target_agent_id);
         $this->assertDatabaseMissing('users', ['id' => $placeholder->id]);
     }
 }

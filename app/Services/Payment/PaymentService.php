@@ -107,11 +107,15 @@ class PaymentService
                 'status' => PaymentStatus::Progress,
             ]);
 
-            try {
-                $this->notifier->offlinePaymentRequested($payment->fresh());
-            } catch (\Throwable $e) {
-                report($e);
-            }
+            // Telegram call only once the intent is committed — never while
+            // the payment rows above are still row-locked.
+            DB::afterCommit(function () use ($payment): void {
+                try {
+                    $this->notifier->offlinePaymentRequested($payment->fresh());
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            });
 
             return $this->attachInvoice($payment, $order);
         });
