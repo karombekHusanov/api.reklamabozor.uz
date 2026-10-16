@@ -115,6 +115,20 @@ class FileService
      * When the bytes are missing on the source disk the row is still flagged
      * (so its URL stops pointing at /storage) and the gap is logged.
      */
+    /**
+     * Files whose bytes were copied to the private disk but whose public copy
+     * could not be removed (file id => "disk:path"), for the caller to report.
+     *
+     * @var array<int, string>
+     */
+    private array $publicCopiesLeft = [];
+
+    /** @return array<int, string> */
+    public function publicCopiesLeft(): array
+    {
+        return $this->publicCopiesLeft;
+    }
+
     public function makePrivate(File $file): File
     {
         $privateDisk = $this->diskFor(true);
@@ -145,7 +159,19 @@ class FileService
                         fclose($stream);
                     }
 
+                    // The public copy must go, or the file is still reachable
+                    // by its old /storage URL. The disk is configured not to
+                    // throw, so check explicitly (prod: a directory owned by
+                    // www-data without group write silently refused the unlink).
                     $source->delete($file->path);
+
+                    if ($source->exists($file->path)) {
+                        $this->publicCopiesLeft[$file->id] = $file->disk.':'.$file->path;
+                        Log::error('files.privatize.public_copy_remains', [
+                            'file_id' => $file->id, 'disk' => $file->disk, 'path' => $file->path,
+                        ]);
+                    }
+
                     $file->path = $path;
                 }
             } else {

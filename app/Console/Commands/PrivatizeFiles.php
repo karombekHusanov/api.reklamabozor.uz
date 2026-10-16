@@ -81,10 +81,19 @@ class PrivatizeFiles extends Command
             ? "{$pending->count()} file(s) would be moved to the '{$privateDisk}' disk."
             : "{$moved} file(s) moved to the '{$privateDisk}' disk.");
 
+        $left = $files->publicCopiesLeft();
+
+        if ($left !== []) {
+            $this->error(count($left).' file(s) are still readable at their old public path — remove these copies by hand (check directory permissions):');
+            foreach ($left as $id => $location) {
+                $this->line("  #{$id}  {$location}");
+            }
+        }
+
         if ($missing > 0) {
             $this->warn("{$missing} file(s) had no bytes on their disk — flagged private anyway, see the log.");
         }
 
-        return self::SUCCESS;
+        return $left === [] ? self::SUCCESS : self::FAILURE;
     }
 }
