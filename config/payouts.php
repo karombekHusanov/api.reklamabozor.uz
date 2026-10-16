@@ -18,20 +18,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Agent self-service card cash-out
-    |--------------------------------------------------------------------------
-    |
-    | A gateway card-credit flow (hosted card form → credit → OTP). Off by
-    | product decision: earnings are paid to the agent's bank account, not to a
-    | card. The endpoints that drove this flow have been removed; this flag is
-    | kept as a display switch (`GET /agent/payouts`) for a future re-build.
-    |
-    */
-
-    'card_withdrawal_enabled' => env('PAYOUT_CARD_WITHDRAWAL_ENABLED', false),
-
-    /*
-    |--------------------------------------------------------------------------
     | Kapitalbank SendPaymentIBK queueing
     |--------------------------------------------------------------------------
     |

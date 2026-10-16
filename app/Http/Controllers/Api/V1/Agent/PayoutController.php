@@ -39,7 +39,6 @@ class PayoutController extends ApiController
             // against these requisites — incomplete ones hold the money up.
             'payout' => [
                 'channel' => (string) config('payouts.channel', 'bank'),
-                'card_withdrawal_enabled' => (bool) config('payouts.card_withdrawal_enabled'),
                 'bank' => [
                     'bank_name' => $profile?->bank_name,
                     'bank_account' => $profile?->bank_account,

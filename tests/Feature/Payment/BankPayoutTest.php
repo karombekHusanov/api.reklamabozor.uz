@@ -44,7 +44,7 @@ class BankPayoutTest extends TestCase
         $this->getJson('/api/v1/agent/payouts', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
             ->assertJsonPath('data.payout.channel', 'bank')
-            ->assertJsonPath('data.payout.card_withdrawal_enabled', false)
+            ->assertJsonMissingPath('data.payout.card_withdrawal_enabled')
             ->assertJsonPath('data.payout.bank.bank_name', 'Ipoteka Bank')
             ->assertJsonPath('data.payout.bank.complete', true);
     }
