@@ -29,8 +29,8 @@ class ProfileController extends ApiController
 
     /**
      * Self-declared legal nature (individual / legal entity). Asked only of
-     * clients; executors derive it from their KYC track and sellers from their role, so the
-     * stored value is ignored for them ({@see User::effectivePersonType()}).
+     * clients; executors derive it from their KYC track, so the stored value is
+     * ignored for them ({@see User::effectivePersonType()}).
      * A self-declared legal entity stays unverified until Phase-2 verification.
      */
     public function setPersonType(SetPersonTypeRequest $request): JsonResponse

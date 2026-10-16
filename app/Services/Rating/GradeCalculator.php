@@ -18,7 +18,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Calculates the Grade (0–100) from platform KPIs, per RATING_SYSTEM.md §4.
- * 90-day rolling window. Seller = stub grade 50 (no sales domain yet).
+ * 90-day rolling window.
  */
 class GradeCalculator
 {
@@ -27,7 +27,6 @@ class GradeCalculator
         return match ($role) {
             Role::Client => $this->clientGrade($userId, $stars),
             Role::Agent => $this->agentGrade($userId, $stars, $agentProfileId),
-            Role::Seller => 50,
             default => 50,
         };
     }

@@ -31,14 +31,6 @@ class RatingCriteria
                 ['code' => 'value_for_money', 'weight' => 0.10],
                 ['code' => 'transparency', 'weight' => 0.10],
             ],
-            Role::Seller => [
-                ['code' => 'product_accuracy', 'weight' => 0.25],
-                ['code' => 'product_quality', 'weight' => 0.25],
-                ['code' => 'shipping_speed', 'weight' => 0.15],
-                ['code' => 'packaging', 'weight' => 0.10],
-                ['code' => 'communication', 'weight' => 0.10],
-                ['code' => 'after_sale', 'weight' => 0.15],
-            ],
             default => [],
         };
     }

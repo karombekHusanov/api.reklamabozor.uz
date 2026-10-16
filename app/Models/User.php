@@ -267,18 +267,17 @@ class User extends Authenticatable
 
     /**
      * Whether the user's legal nature is fixed as a legal entity by their role:
-     * a legal-entity executor (agent role, `provider_type=agent`) or a seller —
-     * they provide KYC / a bank account, so they never self-declare.
+     * a legal-entity executor (agent role, `provider_type=agent`) provides KYC
+     * and a bank account, so they never self-declare.
      */
     public function hasRoleBoundLegalStatus(): bool
     {
-        return $this->hasRole(Role::Seller)
-            || ($this->hasRole(Role::Agent) && ! $this->isIndividualExecutor());
+        return $this->hasRole(Role::Agent) && ! $this->isIndividualExecutor();
     }
 
     /**
      * The legal nature that actually applies: derived from the executor's KYC
-     * track (individual / legal entity) or the seller role, otherwise the
+     * track (individual / legal entity), otherwise the
      * self-declared value (null until asked). Deriving rather than storing keeps
      * it correct across role changes — e.g. an individual client who becomes a
      * legal-entity executor reads as a legal entity, and reverts to their own
@@ -296,8 +295,8 @@ class User extends Authenticatable
     /**
      * Whether the effective legal-entity status is confirmed. A legal-entity
      * executor is verified once their profile is approved (an individual
-     * executor never is); a seller out of the box; a self-declared legal-entity
-     * client when their verification request is approved.
+     * executor never is); a self-declared legal-entity client when their
+     * verification request is approved.
      */
     public function isVerifiedLegalEntity(): bool
     {
@@ -306,11 +305,6 @@ class User extends Authenticatable
         // verified by merely picking the role, with no KYC.
         if ($this->hasRole(Role::Agent)) {
             return $this->hasApprovedLegalEntityProfile();
-        }
-
-        // Seller flow is deferred (PROFILE_ARCHITECTURE.md §8) — unchanged.
-        if ($this->hasRole(Role::Seller)) {
-            return true;
         }
 
         return $this->person_type === PersonType::LegalEntity
@@ -345,11 +339,6 @@ class User extends Authenticatable
             return $this->hasApprovedLegalEntityProfile()
                 ? LegalEntityStatus::Approved
                 : LegalEntityStatus::Pending;
-        }
-
-        // Seller flow is deferred (PROFILE_ARCHITECTURE.md §8) — unchanged.
-        if ($this->hasRole(Role::Seller)) {
-            return LegalEntityStatus::Approved;
         }
 
         return $this->legalEntityVerification?->status;

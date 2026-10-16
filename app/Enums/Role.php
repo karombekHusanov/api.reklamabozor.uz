@@ -7,20 +7,19 @@ enum Role: string
     case Client = 'client';
     case Agent = 'agent';
     case Admin = 'admin';
-    case Seller = 'seller';
 
     /**
      * Roles a user may grant themselves via PATCH /me/role. Client is the
      * baseline. Providers ("ijrochi") hold the single agent role, conferred ONLY
      * through admin-approved KYC (legal-entity or individual track), never
-     * self-selected. (Seller is deferred, see
-     * PROFILE_ARCHITECTURE.md §8; left self-selectable until its flow is decided.)
+     * self-selected. (The `seller` role was removed on 2026-10-17 — it never
+     * had a flow; PROFILE_ARCHITECTURE.md §8.)
      *
      * @return list<self>
      */
     public static function selfSelectable(): array
     {
-        return [self::Client, self::Seller];
+        return [self::Client];
     }
 
     public function isSelfSelectable(): bool

@@ -34,7 +34,7 @@ class UserResource extends JsonResource
             'accepted_terms_version' => $this->accepted_terms_version,
             'terms_version' => User::currentTermsVersion(),
             'needs_terms' => ! $this->hasAcceptedCurrentTerms(),
-            // Legal nature: effective type (derived for agents/sellers) + whether
+            // Legal nature: effective type (derived for executors) + whether
             // it is confirmed. `person_type_declared` is the raw self-choice, so
             // the client onboarding can tell "not asked yet" from a pick.
             'person_type' => $this->effectivePersonType()?->value,

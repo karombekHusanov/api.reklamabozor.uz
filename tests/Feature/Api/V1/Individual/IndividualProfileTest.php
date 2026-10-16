@@ -241,7 +241,8 @@ class IndividualProfileTest extends TestCase
     {
         $this->assertNull(Role::tryFrom('designer'));
         $this->assertNull(ProviderType::tryFrom('designer'));
-        $this->assertSame([Role::Client, Role::Seller], Role::selfSelectable());
+        $this->assertNull(Role::tryFrom('seller'));
+        $this->assertSame([Role::Client], Role::selfSelectable());
     }
 
     // --- legal nature follows the KYC track --------------------------------

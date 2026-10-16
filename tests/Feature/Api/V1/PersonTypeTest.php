@@ -66,14 +66,6 @@ class PersonTypeTest extends TestCase
             ->assertJsonPath('data.legal_entity_status', 'pending');
     }
 
-    public function test_seller_is_a_verified_legal_entity(): void
-    {
-        $user = User::factory()->create(['role' => Role::Seller, 'roles' => [Role::Client, Role::Seller]]);
-
-        $this->assertSame(PersonType::LegalEntity, $user->effectivePersonType());
-        $this->assertTrue($user->isVerifiedLegalEntity());
-    }
-
     public function test_individual_client_who_becomes_agent_reads_as_legal_entity(): void
     {
         $user = User::factory()->create([

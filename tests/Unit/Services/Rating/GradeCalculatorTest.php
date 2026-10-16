@@ -62,14 +62,6 @@ class GradeCalculatorTest extends TestCase
         $this->assertEquals(32, $gradeWithCancel);
     }
 
-    public function test_seller_returns_stub_50(): void
-    {
-        $user = User::factory()->create();
-        $grade = $this->calc->compute($user->id, Role::Seller, 5.0);
-
-        $this->assertEquals(50, $grade);
-    }
-
     public function test_agent_baseline(): void
     {
         $agent = User::factory()->create();

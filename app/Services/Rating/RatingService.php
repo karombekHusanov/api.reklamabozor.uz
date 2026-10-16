@@ -31,8 +31,7 @@ class RatingService
 
         // 1 user = 1 profile (Variant 1): executor reputation is a single rating
         // owned by that one profile — computed once under the agent role, for
-        // either KYC track. Client (and the
-        // deferred seller stub) stay role-keyed with no profile.
+        // either KYC track. Client stays role-keyed with no profile.
         $profile = AgentProfile::where('user_id', $userId)->first();
 
         foreach ($user->allRoles() as $role) {
@@ -46,8 +45,8 @@ class RatingService
                 continue;
             }
 
-            // Client, the deferred seller stub, or a KYC-pending provider with no
-            // profile yet — seed a role-keyed row with no profile.
+            // Client, or a KYC-pending provider with no profile yet — seed a
+            // role-keyed row with no profile.
             $this->recomputeOne($userId, $role, null);
         }
 

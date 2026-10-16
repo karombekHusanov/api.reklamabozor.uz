@@ -128,22 +128,22 @@ class UserTest extends TestCase
         // No coexistence matrix: setting a new active role grants it and keeps
         // the ones already held (one profile serves every capacity).
         $user = User::factory()->create([
-            'role' => Role::Agent,
-            'roles' => [Role::Client, Role::Agent],
+            'role' => Role::Client,
+            'roles' => [Role::Client],
         ]);
 
         $this->patchJson("/api/v1/admin/users/{$user->id}", [
-            'role' => 'seller',
+            'role' => 'agent',
         ], [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])
             ->assertOk()
-            ->assertJsonPath('data.role', 'seller')
-            ->assertJsonPath('data.roles', ['client', 'agent', 'seller']);
+            ->assertJsonPath('data.role', 'agent')
+            ->assertJsonPath('data.roles', ['client', 'agent']);
 
         $fresh = $user->fresh();
-        $this->assertTrue($fresh->hasRole(Role::Seller));
         $this->assertTrue($fresh->hasRole(Role::Agent));
+        $this->assertTrue($fresh->hasRole(Role::Client));
     }
 
     public function test_admin_role_change_keeps_an_approved_profile(): void
@@ -157,7 +157,7 @@ class UserTest extends TestCase
         AgentProfile::factory()->for($user)->approved()->create();
 
         $this->patchJson("/api/v1/admin/users/{$user->id}", [
-            'role' => 'seller',
+            'role' => 'client',
         ], [
             'Authorization' => 'Bearer '.$this->adminToken(),
         ])->assertOk();
@@ -203,7 +203,6 @@ class UserTest extends TestCase
         // Picked the agent role but never submitted a KYC application —
         // must still be visible in the all-users view.
         User::factory()->agent()->create();
-        User::factory()->create(['role' => Role::Seller]);
 
         $response = $this->getJson('/api/v1/admin/users', [
             'Authorization' => 'Bearer '.$this->adminToken(),
@@ -212,8 +211,8 @@ class UserTest extends TestCase
         // The seeded admin from adminToken() is excluded.
         $response
             ->assertOk()
-            ->assertJsonPath('data.meta.total', 4)
-            ->assertJsonCount(4, 'data.items');
+            ->assertJsonPath('data.meta.total', 3)
+            ->assertJsonCount(3, 'data.items');
 
         $agentRow = collect($response->json('data.items'))->firstWhere('role', 'agent');
         $this->assertNotNull($agentRow);

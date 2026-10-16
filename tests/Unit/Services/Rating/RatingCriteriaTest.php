@@ -10,7 +10,7 @@ class RatingCriteriaTest extends TestCase
 {
     public function test_all_roles_have_criteria(): void
     {
-        foreach ([Role::Client, Role::Agent, Role::Seller] as $role) {
+        foreach ([Role::Client, Role::Agent] as $role) {
             $criteria = RatingCriteria::forRole($role);
             $this->assertNotEmpty($criteria, "No criteria for {$role->value}");
         }
@@ -18,7 +18,7 @@ class RatingCriteriaTest extends TestCase
 
     public function test_weights_sum_to_one(): void
     {
-        foreach ([Role::Client, Role::Agent, Role::Seller] as $role) {
+        foreach ([Role::Client, Role::Agent] as $role) {
             $criteria = RatingCriteria::forRole($role);
             $sum = array_sum(array_column($criteria, 'weight'));
             $this->assertEqualsWithDelta(1.0, $sum, 0.001, "Weights for {$role->value} do not sum to 1.0");

@@ -15,8 +15,8 @@ class LegalEntityService
 
     /**
      * Submit (or resubmit) a legal-entity verification request. Only for a
-     * self-declared legal entity; legal-entity executors/sellers are verified by
-     * their role, individual executors are individuals by their KYC track, and
+     * self-declared legal entity; legal-entity executors are verified by their
+     * KYC, individual executors are individuals by their KYC track, and
      * clients must first declare `legal_entity` as their person type.
      *
      * @param  array{inn: string, company_name?: string|null, registration_certificate_file_id?: int|null}  $data

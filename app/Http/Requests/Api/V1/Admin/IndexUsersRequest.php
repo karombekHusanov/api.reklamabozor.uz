@@ -23,7 +23,6 @@ class IndexUsersRequest extends FormRequest
             'role' => ['nullable', Rule::in([
                 Role::Client->value,
                 Role::Agent->value,
-                Role::Seller->value,
             ])],
             'tender_access' => ['nullable', Rule::in(['granted', 'pending', 'revoked', 'none'])],
             'search' => ['nullable', 'string', 'max:100'],

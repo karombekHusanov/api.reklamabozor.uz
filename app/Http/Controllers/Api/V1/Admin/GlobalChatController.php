@@ -15,7 +15,14 @@ use Illuminate\Validation\Rule;
 
 class GlobalChatController extends ApiController
 {
-    private const MODERATABLE_ROLES = [Role::Client, Role::Agent, Role::Seller];
+    private const MODERATABLE_ROLES = [Role::Client, Role::Agent];
+
+    /**
+     * The `seller` role was removed on 2026-10-17, but the admin panel's
+     * cooldown form still posts a (zero) rule for it. Accepted and dropped so
+     * the form keeps saving; remove once GlobalChatPage's ROLES loses it.
+     */
+    private const LEGACY_ROLE_VALUES = ['seller'];
 
     public function __construct(
         private readonly GlobalChatAdminService $chat,
@@ -66,11 +73,17 @@ class GlobalChatController extends ApiController
     {
         $validated = $request->validate([
             'rules' => ['required', 'array'],
-            'rules.*.role' => ['required', Rule::in(array_map(fn (Role $r) => $r->value, self::MODERATABLE_ROLES))],
+            'rules.*.role' => ['required', Rule::in([
+                ...array_map(fn (Role $r) => $r->value, self::MODERATABLE_ROLES),
+                ...self::LEGACY_ROLE_VALUES,
+            ])],
             'rules.*.cooldown_seconds' => ['required', 'integer', 'min:0', 'max:604800'],
         ]);
 
-        $this->chat->setRoleRules($validated['rules']);
+        $this->chat->setRoleRules(array_values(array_filter(
+            $validated['rules'],
+            fn (array $rule): bool => ! in_array($rule['role'], self::LEGACY_ROLE_VALUES, true),
+        )));
 
         return $this->success($this->chat->rules(), 'Rules updated');
     }

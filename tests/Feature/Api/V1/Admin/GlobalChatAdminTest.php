@@ -80,6 +80,26 @@ class GlobalChatAdminTest extends TestCase
         $this->assertNull(GlobalChatRule::query()->firstWhere('role', 'client'));
     }
 
+    /** The admin form still posts a row for the removed seller role; it is accepted and dropped. */
+    public function test_legacy_seller_rule_is_ignored(): void
+    {
+        $headers = $this->adminHeaders();
+
+        $this->putJson('/api/v1/admin/global-chat/rules/roles', [
+            'rules' => [
+                ['role' => 'client', 'cooldown_seconds' => 60],
+                ['role' => 'seller', 'cooldown_seconds' => 3600],
+            ],
+        ], $headers)->assertOk();
+
+        $this->assertSame(1, GlobalChatRule::query()->whereNull('user_id')->count());
+        $this->assertNull(GlobalChatRule::query()->firstWhere('role', 'seller'));
+
+        $this->putJson('/api/v1/admin/global-chat/rules/roles', [
+            'rules' => [['role' => 'bogus', 'cooldown_seconds' => 60]],
+        ], $headers)->assertUnprocessable();
+    }
+
     public function test_admin_can_manage_user_overrides(): void
     {
         $headers = $this->adminHeaders();
