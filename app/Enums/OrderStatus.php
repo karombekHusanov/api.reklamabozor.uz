@@ -32,4 +32,20 @@ enum OrderStatus: string
     {
         return in_array($this, self::openForOffers(), true);
     }
+
+    /**
+     * Statuses on which agent payouts may be released: the deal is running or
+     * done. A cancelled (or never-started) order never pays out.
+     *
+     * @return list<self>
+     */
+    public static function payoutEligible(): array
+    {
+        return [self::InProgress, self::WorkSubmitted, self::Completed];
+    }
+
+    public function isPayoutEligible(): bool
+    {
+        return in_array($this, self::payoutEligible(), true);
+    }
 }

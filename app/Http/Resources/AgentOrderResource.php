@@ -72,7 +72,10 @@ class AgentOrderResource extends JsonResource
                 'is_interest' => $myOffer->isInterest(),
                 'can_accept' => $myOffer->canAccept(),
                 'items' => OfferItemResource::collection($myOffer->relationLoaded('items') ? $myOffer->items : []),
-                'chat_id' => app(DirectChatService::class)->findForOffer($myOffer)?->id,
+                // Batch-attached by OfferService::availableForAgent; looked up otherwise.
+                'chat_id' => $myOffer->relationLoaded('directChat')
+                    ? $myOffer->directChat?->id
+                    : app(DirectChatService::class)->findForOffer($myOffer)?->id,
             ] : null,
             'created_at' => $this->created_at,
         ];

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\DirectChat;
 use App\Models\File;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -80,5 +81,51 @@ class FileUploadTest extends TestCase
         ], ['Authorization' => 'Bearer '.$this->userToken()])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['file']);
+    }
+
+    /**
+     * A real JPEG whose multipart part claims to be a PDF — the client header
+     * must not be what gets stored (AUDIT_2026-10-16 §2.4).
+     */
+    private function jpegDisguisedAsPdf(): UploadedFile
+    {
+        $image = UploadedFile::fake()->image('scan.jpg', 64, 64);
+
+        // The fake image lives in a tmpfile() that vanishes with $image —
+        // copy the bytes somewhere that outlives this helper.
+        $path = tempnam(sys_get_temp_dir(), 'adspace-test-');
+        copy($image->getPathname(), $path);
+
+        return new UploadedFile($path, 'scan.pdf', 'application/pdf', null, true);
+    }
+
+    public function test_stored_mime_type_comes_from_the_file_bytes_not_the_client_header(): void
+    {
+        Storage::fake('public');
+
+        $response = $this->postJson('/api/v1/file-upload', [
+            'file' => $this->jpegDisguisedAsPdf(),
+        ], ['Authorization' => 'Bearer '.$this->userToken()])
+            ->assertCreated()
+            ->assertJsonPath('data.mime_type', 'image/jpeg');
+
+        $this->assertDatabaseHas('files', ['id' => $response->json('data.id'), 'mime_type' => 'image/jpeg']);
+    }
+
+    public function test_agent_cannot_bypass_the_chat_image_ban_with_a_forged_content_type(): void
+    {
+        Storage::fake('public');
+
+        $client = User::factory()->create();
+        $agent = User::factory()->agent()->create();
+        $chat = DirectChat::factory()->between($client, $agent)->create();
+
+        $fileId = $this->actingAs($agent)->postJson('/api/v1/file-upload', [
+            'file' => $this->jpegDisguisedAsPdf(),
+        ])->assertCreated()->json('data.id');
+
+        $this->actingAs($agent)->postJson("/api/v1/direct-chats/{$chat->id}/messages", ['file_ids' => [$fileId]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('file_ids');
     }
 }

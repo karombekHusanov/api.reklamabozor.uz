@@ -209,7 +209,12 @@ class AgentPayoutTest extends TestCase
         $admin = User::factory()->create(['role' => Role::Admin]);
         $token = $admin->createToken('t')->plainTextToken;
 
-        $payout = Payout::factory()->create(['amount' => 372_000_000]);
+        // Releases only happen on a live deal past the cooling-off window.
+        $order = Order::factory()->status(OrderStatus::InProgress)->create([
+            'payment_state' => OrderPaymentState::Paid,
+            'paid_at' => now()->subHours(2),
+        ]);
+        $payout = Payout::factory()->create(['order_id' => $order->id, 'amount' => 372_000_000]);
 
         $this->patchJson("/api/v1/admin/payouts/{$payout->id}/release", [
             'amount' => 350_000_000,

@@ -49,6 +49,7 @@ class AgentContractService
             'application/pdf',
             $profile->user_id,
             'contracts',
+            private: true,
         );
 
         // Drop the previous generated file + any stale signed scan.
@@ -107,6 +108,9 @@ class AgentContractService
             'contract_status' => AgentContractStatus::UnderReview,
             'contract_rejection_reason' => null,
         ])->save();
+
+        // The signed scan was a generic (public) upload — take it private now.
+        $this->files->privatizeAttached($profile);
 
         return $profile->load(AgentProfile::PROFILE_RELATIONS);
     }

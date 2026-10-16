@@ -32,6 +32,7 @@ class DirectChatService
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
             ->when($agentProfileId !== null, fn ($q) => $q->where('agent_profile_id', $agentProfileId))
             ->with(['client.avatarFile', 'agent.avatarFile', 'agentProfile.companyLogoFile', 'agentProfile.cachedRating', 'order.category', 'lastMessage.attachments'])
+            ->withUnreadCountFor($user)
             ->latest('updated_at')
             ->get();
 

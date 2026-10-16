@@ -20,7 +20,11 @@ class OfferResource extends JsonResource
         // The specific profile that placed the offer (not just the user's).
         $profile = $this->agentProfile;
         $rating = $profile?->cachedRating;
-        $chat = app(DirectChatService::class)->findForOffer($this->resource);
+        // The order thread: batch-attached by OrderService::withClientRelations
+        // (one query per order), otherwise looked up per offer.
+        $chat = $this->relationLoaded('directChat')
+            ? $this->directChat
+            : app(DirectChatService::class)->findForOffer($this->resource);
         $viewer = $request->user();
 
         // The agency's location: exact only for this offer's agency once the

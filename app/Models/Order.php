@@ -101,6 +101,8 @@ class Order extends Model
         'offers.agentProfile.companyLogoFile',
         'offers.agentProfile.cachedRating',
         'offers.agent.avatarFile',
+        // Legal nature of the bidder (OfferResource) reads the agent's profile.
+        'offers.agent.profile',
         'offers.items',
         'offers.contractAcceptances',
         'acceptedOffer.agentProfile',
@@ -109,6 +111,24 @@ class Order extends Model
         'latestPayment',
         'contract.pdfFile',
         'documents.pdfFile',
+        // Ledger / cancel / amendment derivations (see LEDGER_RELATIONS).
+        'amendments',
+        'payouts',
+        'payments',
+    ];
+
+    /**
+     * Relations the money/cancel/amendment derivations read ({@see paidTiyin()},
+     * {@see isCancellableByClient()}, {@see amendmentProposalState()}). With
+     * these loaded a list of orders renders without one query per row.
+     *
+     * @var list<string>
+     */
+    public const LEDGER_RELATIONS = [
+        'acceptedOffer',
+        'amendments',
+        'payouts',
+        'payments',
     ];
 
     /** Max files a client may attach to one order. */
@@ -519,6 +539,14 @@ class Order extends Model
      */
     public function paidTiyin(): int
     {
+        // Rendering a list: with `payments` and `amendments` eager-loaded the
+        // ledger is summed from the collections instead of three queries per
+        // order. Writers always work on fresh instances (see the callers of
+        // recalculatePaymentState), so loaded relations are never stale here.
+        if ($this->relationLoaded('payments') && $this->relationLoaded('amendments')) {
+            return $this->paidTiyinFromLoaded();
+        }
+
         $amendmentIds = $this->amendments()->pluck('id');
 
         // Money handed back through a settled addendum refund leaves the ledger
@@ -545,6 +573,31 @@ class Order extends Model
                 }
             })
             ->sum('amount');
+
+        return $settled - (int) round($refunded * 100);
+    }
+
+    private function paidTiyinFromLoaded(): int
+    {
+        $settled = (int) $this->payments
+            ->filter(fn (Payment $p) => $p->status === PaymentStatus::Success && $p->purpose === PaymentPurpose::Order)
+            ->sum('amount');
+
+        $refunded = (float) $this->amendments
+            ->where('refund_state', OrderAmendment::REFUND_REFUNDED)
+            ->sum('refund_amount');
+
+        // Extras charged through an addendum's own payment — rare (addenda
+        // normally add to the order debt), so only queried when there are
+        // addenda at all.
+        if ($this->amendments->isNotEmpty()) {
+            $settled += (int) Payment::query()
+                ->where('status', PaymentStatus::Success)
+                ->where('payable_type', (new OrderAmendment)->getMorphClass())
+                ->whereIn('payable_id', $this->amendments->pluck('id'))
+                ->where('purpose', PaymentPurpose::Amendment)
+                ->sum('amount');
+        }
 
         return $settled - (int) round($refunded * 100);
     }
@@ -625,7 +678,11 @@ class Order extends Model
             return 'not_active';
         }
 
-        if ($this->amendments()->where('status', AmendmentStatus::Pending)->exists()) {
+        $pendingExists = $this->relationLoaded('amendments')
+            ? $this->amendments->contains(fn (OrderAmendment $a) => $a->status === AmendmentStatus::Pending)
+            : $this->amendments()->where('status', AmendmentStatus::Pending)->exists();
+
+        if ($pendingExists) {
             return 'pending_exists';
         }
 
@@ -716,7 +773,11 @@ class Order extends Model
         }
 
         // Money already handed to the agent — support has to sort it out.
-        if ($this->payouts()->where('status', PayoutStatus::Paid)->exists()) {
+        $paidOut = $this->relationLoaded('payouts')
+            ? $this->payouts->contains(fn (Payout $p) => $p->status === PayoutStatus::Paid)
+            : $this->payouts()->where('status', PayoutStatus::Paid)->exists();
+
+        if ($paidOut) {
             return false;
         }
 

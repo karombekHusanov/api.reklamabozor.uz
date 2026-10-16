@@ -38,20 +38,32 @@ class AgentOrderController extends ApiController
     ) {}
 
     /**
-     * Orders the agent can bid on (open, in their categories). Optional `?route=tender|tezkor`.
+     * Orders the agent can bid on (open, in their categories), newest first,
+     * paginated as `{items, meta}`. Optional `?route=tender|tezkor`, `?page`,
+     * `?per_page` (default 20, max 50).
      */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'route' => ['nullable', Rule::enum(OrderRoute::class)],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
         ]);
 
-        $orders = $this->offers->availableForAgent(
+        $paginator = $this->offers->availableForAgent(
             $request->user(),
             route: isset($validated['route']) ? OrderRoute::from($validated['route']) : null,
+            perPage: (int) ($validated['per_page'] ?? OfferService::FEED_PER_PAGE),
         );
 
-        return $this->success(AgentOrderResource::collection($orders));
+        return $this->success([
+            'items' => AgentOrderResource::collection($paginator->items()),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
     }
 
     /**

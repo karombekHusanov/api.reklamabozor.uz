@@ -2,9 +2,20 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\OfferStatus;
+use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentPurpose;
+use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\Payment;
+use App\Models\User;
+use App\Services\Order\OfferService;
+use App\Services\Order\OrderService;
+use App\Services\Payment\PaymentService;
+use App\Services\Payout\PayoutService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class OrderAdminService
@@ -37,6 +48,13 @@ class OrderAdminService
             OrderStatus::WorkSubmitted,
         ],
     ];
+
+    public function __construct(
+        private readonly OrderService $orders,
+        private readonly OfferService $offers,
+        private readonly PaymentService $payments,
+        private readonly PayoutService $payouts,
+    ) {}
 
     /**
      * @param  array{
@@ -98,7 +116,49 @@ class OrderAdminService
         return $order;
     }
 
-    public function updateStatus(Order $order, OrderStatus $target): Order
+    /**
+     * Admin-forced status change. Never a bare column write: each target runs
+     * through the same domain transition the client / agent flows use, so the
+     * money side (payouts, refunds, invoices), the acts and the ratings stay
+     * consistent with the status (audit 2026-10-16 §1.3).
+     *
+     *  - completed → {@see OrderService::complete()} (final payout, acts, rating, notify);
+     *  - cancelled → unpaid: open invoices voided + unpaid payouts cancelled;
+     *    paid: the admin refund path ({@see PaymentService::refundByAdmin()}),
+     *    which refuses when an agent payout was already released;
+     *  - in_progress ← awaiting_payment / client_selected with an accepted
+     *    offer: {@see OfferService::activateDeal()} (deal chat, activated_at);
+     *    ← work_submitted: plain send-back for another round.
+     */
+    public function updateStatus(Order $order, OrderStatus $target, User $admin): Order
+    {
+        $this->assertTransition($order, $target);
+
+        DB::transaction(function () use ($order, $target, $admin): void {
+            // Re-check under a row lock: a concurrent client/agent transition
+            // (accept, submit-work, cancel) must not interleave with ours.
+            /** @var Order $locked */
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            $this->assertTransition($locked, $target);
+
+            match ($target) {
+                OrderStatus::Completed => $this->orders->complete($locked, auto: false),
+                OrderStatus::Cancelled => $this->cancel($locked, $admin),
+                OrderStatus::InProgress => $this->activate($locked),
+                default => throw ValidationException::withMessages([
+                    'status' => ["Admins cannot move an order to {$target->value}."],
+                ]),
+            };
+        });
+
+        $order->refresh()->load(self::RELATIONS);
+        Order::hydrateAttachmentFiles($order);
+
+        return $order;
+    }
+
+    private function assertTransition(Order $order, OrderStatus $target): void
     {
         $allowedSources = self::TRANSITIONS[$target->value] ?? [];
 
@@ -107,12 +167,68 @@ class OrderAdminService
                 'status' => ["Cannot change status from {$order->status->value} to {$target->value}."],
             ]);
         }
+    }
 
-        $order->update(['status' => $target]);
+    private function cancel(Order $order, User $admin): void
+    {
+        if ($order->payment_state === OrderPaymentState::Paid) {
+            $settled = $order->payments()
+                ->where('purpose', PaymentPurpose::Order)
+                ->where('status', PaymentStatus::Success)
+                ->orderBy('id')
+                ->get();
 
-        $order->load(self::RELATIONS);
-        Order::hydrateAttachmentFiles($order);
+            if ($settled->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'status' => ['This order is marked paid but has no settled payment to refund — review it in Payments first.'],
+                ]);
+            }
 
-        return $order;
+            // Refunding is what cancels a paid order: it reverts every settled
+            // payment, voids unpaid payouts and refuses when money already
+            // left the platform (a released payout) — ops must recover that
+            // by hand before the order can be cancelled.
+            $settled->each(fn (Payment $payment) => $this->payments->refundByAdmin($payment, $admin));
+
+            return;
+        }
+
+        $this->payments->voidOpenIntents($order);
+        $this->payouts->cancelUnpaidForOrder($order);
+
+        $order->update(['status' => OrderStatus::Cancelled]);
+    }
+
+    private function activate(Order $order): void
+    {
+        // Dispute resolution: send the delivered work back for another round.
+        if ($order->status === OrderStatus::WorkSubmitted) {
+            $order->update([
+                'status' => OrderStatus::InProgress,
+                'work_submitted_at' => null,
+                'completion_reminder_sent_at' => null,
+            ]);
+
+            return;
+        }
+
+        $offer = $order->offers()->where('status', OfferStatus::Accepted)->first();
+
+        if ($offer !== null) {
+            // Same path the legacy payment callback used: opens the deal chat,
+            // freezes activated_at, notifies both sides, generates the contract.
+            $offer->setRelation('order', $order);
+            $this->offers->activateDeal($offer);
+
+            return;
+        }
+
+        if ($order->status === OrderStatus::AwaitingPayment) {
+            throw ValidationException::withMessages([
+                'status' => ['This order has no accepted offer to activate a deal for.'],
+            ]);
+        }
+
+        $order->update(['status' => OrderStatus::InProgress]);
     }
 }

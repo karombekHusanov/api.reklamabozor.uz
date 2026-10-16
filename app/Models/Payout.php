@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\OrderPaymentState;
 use App\Enums\OrderProblemState;
+use App\Enums\OrderStatus;
 use App\Enums\PayoutStatus;
 use App\Enums\PayoutTranche;
 use Database\Factories\PayoutFactory;
@@ -58,6 +59,9 @@ class Payout extends Model
         return $query
             ->where('status', PayoutStatus::Pending->value)
             ->whereHas('order', fn (Builder $order): Builder => $order
+                // Money only leaves on a live or finished deal — never on a
+                // cancelled one (its payouts are voided by the cancel/refund).
+                ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::payoutEligible()))
                 ->where(
                     fn (Builder $q): Builder => $q
                         ->where('payment_state', '!=', OrderPaymentState::Paid->value)

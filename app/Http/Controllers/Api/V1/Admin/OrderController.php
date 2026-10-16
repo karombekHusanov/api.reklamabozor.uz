@@ -51,6 +51,7 @@ class OrderController extends ApiController
         $updated = $this->orders->updateStatus(
             $order,
             OrderStatus::from($request->validated()['status']),
+            $request->user(),
         );
 
         return $this->success(new AdminOrderResource($updated), 'Order status updated');

@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\TrustProxies;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\TrustProxies as BaseTrustProxies;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -14,9 +16,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Nginx terminates TLS in front of php-fpm; without this, $request->ip()
-        // is 127.0.0.1 and the ATMOS callback IP allowlist rejects real webhooks.
-        $middleware->trustProxies(at: '*');
+        // Nginx terminates TLS in front of php-fpm; without a trusted proxy,
+        // $request->ip() is 127.0.0.1 and the ATMOS callback IP allowlist
+        // rejects real webhooks. Only the local nginx is trusted (config
+        // proxies.trusted / TRUSTED_PROXIES) — trusting every proxy would let
+        // any client forge its IP via X-Forwarded-For.
+        $middleware->replace(BaseTrustProxies::class, TrustProxies::class);
         $middleware->throttleApi();
         $middleware->alias([
             'admin' => EnsureAdmin::class,

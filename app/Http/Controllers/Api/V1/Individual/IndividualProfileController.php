@@ -10,6 +10,7 @@ use App\Http\Requests\Api\V1\Individual\StoreIndividualProfileRequest;
 use App\Http\Resources\AgentProfileResource;
 use App\Models\AgentProfile;
 use App\Models\User;
+use App\Services\File\FileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -20,6 +21,10 @@ use Illuminate\Validation\ValidationException;
  */
 class IndividualProfileController extends ApiController
 {
+    public function __construct(
+        private readonly FileService $files,
+    ) {}
+
     public function store(StoreIndividualProfileRequest $request): JsonResponse
     {
         $user = $request->user();
@@ -39,6 +44,10 @@ class IndividualProfileController extends ApiController
         $user->save();
 
         $profile = AgentProfile::create($this->attributes($request, $user));
+
+        // Passport + selfie came through the generic (public) upload — KYC
+        // scans belong behind the authenticated file endpoint.
+        $this->files->privatizeAttached($profile);
 
         $profile->categories()->sync($request->validated()['category_ids']);
 
@@ -82,6 +91,8 @@ class IndividualProfileController extends ApiController
             ...$this->attributes($request, $user),
             'rejection_reason' => null,
         ]);
+
+        $this->files->privatizeAttached($profile);
 
         $profile->categories()->sync($request->validated()['category_ids']);
 

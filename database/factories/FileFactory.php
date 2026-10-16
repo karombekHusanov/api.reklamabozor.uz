@@ -24,6 +24,7 @@ class FileFactory extends Factory
             'mime_type' => 'image/jpeg',
             'size' => fake()->numberBetween(1024, 500_000),
             'uploaded_by' => null,
+            'is_private' => false,
         ];
     }
 }

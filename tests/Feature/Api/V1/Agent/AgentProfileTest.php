@@ -22,6 +22,7 @@ class AgentProfileTest extends TestCase
 
         // KYC apply/resubmit renders the agreement PDF — keep it off the real disk.
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
     }
 
     /**

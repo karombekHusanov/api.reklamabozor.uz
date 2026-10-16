@@ -6,10 +6,18 @@ use App\Enums\Role;
 use App\Models\User;
 use App\Services\Agent\AgentAccountLinker;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthService
 {
+    /** Failed admin logins per email+IP before the lockout kicks in. */
+    public const ADMIN_LOGIN_MAX_ATTEMPTS = 5;
+
+    /** How long a locked email+IP pair stays locked (seconds). */
+    public const ADMIN_LOGIN_LOCKOUT_SECONDS = 15 * 60;
+
     public function __construct(
         private readonly AgentAccountLinker $agentLinker,
         private readonly TelegramInitDataValidator $initDataValidator,
@@ -90,19 +98,39 @@ class AuthService
     /**
      * Authenticate an admin via email + password.
      *
+     * Brute-force guard: wrong credentials are counted per email+IP; after
+     * ADMIN_LOGIN_MAX_ATTEMPTS the pair is locked for ADMIN_LOGIN_LOCKOUT_SECONDS
+     * (429), even for the right password. A successful login clears the counter.
+     * This sits behind the per-IP route throttle, which a single attacker can
+     * dodge by rotating IPs — the email dimension here does not care.
+     *
      * @return array{user: User, token: string}
      *
      * @throws ValidationException
      */
-    public function adminLogin(string $email, string $password): array
+    public function adminLogin(string $email, string $password, ?string $ip = null): array
     {
+        $throttleKey = $this->adminLoginThrottleKey($email, $ip);
+
+        if (RateLimiter::tooManyAttempts($throttleKey, self::ADMIN_LOGIN_MAX_ATTEMPTS)) {
+            $minutes = max(1, (int) ceil(RateLimiter::availableIn($throttleKey) / 60));
+
+            throw ValidationException::withMessages([
+                'email' => ["Too many login attempts. Try again in {$minutes} minute(s)."],
+            ])->status(429);
+        }
+
         $user = User::where('email', $email)->first();
 
         if ($user === null || $user->password === null || ! Hash::check($password, $user->password)) {
+            RateLimiter::hit($throttleKey, self::ADMIN_LOGIN_LOCKOUT_SECONDS);
+
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
+
+        RateLimiter::clear($throttleKey);
 
         if ($user->role !== Role::Admin) {
             throw ValidationException::withMessages([
@@ -125,5 +153,10 @@ class AuthService
     public function logout(User $user): void
     {
         $user->currentAccessToken()->delete();
+    }
+
+    private function adminLoginThrottleKey(string $email, ?string $ip): string
+    {
+        return 'admin-login:'.sha1(Str::lower(trim($email)).'|'.($ip ?? 'unknown'));
     }
 }

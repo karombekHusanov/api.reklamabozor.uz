@@ -39,6 +39,7 @@ class PaymentFeedTest extends TestCase
         ]);
         Http::fake(['*' => Http::response(['ok' => true, 'result' => []])]);
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
     }
 
     /** @return list<string> texts sent to the payments group */

@@ -47,9 +47,9 @@ class AgentOrderTest extends TestCase
 
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.id', $relevant->id)
-            ->assertJsonPath('data.0.my_offer', null);
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $relevant->id)
+            ->assertJsonPath('data.items.0.my_offer', null);
     }
 
     public function test_agent_can_view_open_order_detail(): void
@@ -100,7 +100,7 @@ class AgentOrderTest extends TestCase
         $response = $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk();
 
-        $clientData = $response->json('data.0.client');
+        $clientData = $response->json('data.items.0.client');
         $this->assertSame($client->id, $clientData['id']);
         $this->assertSame('Aziz', $clientData['first_name']);
         $this->assertArrayHasKey('avatar', $clientData);
@@ -229,7 +229,7 @@ class AgentOrderTest extends TestCase
 
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.0.id', $order->id);
+            ->assertJsonPath('data.items.0.id', $order->id);
 
         $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
             'price' => 1_500_000,
@@ -254,7 +254,7 @@ class AgentOrderTest extends TestCase
 
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.0.id', $order->id);
+            ->assertJsonPath('data.items.0.id', $order->id);
 
         $this->postJson("/api/v1/agent/orders/{$order->id}/offers", [
             'price' => 900_000,

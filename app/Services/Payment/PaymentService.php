@@ -224,20 +224,26 @@ class PaymentService
             ]);
         }
 
-        if ($payment->status === PaymentStatus::Success) {
-            throw ValidationException::withMessages([
-                'payment' => ['A confirmed payment cannot be rejected — refund it instead.'],
+        return DB::transaction(function () use ($payment, $admin, $note): Payment {
+            // Same row lock as confirm: a confirm and a reject fired together
+            // must not leave a settled payment marked as an error.
+            $locked = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status === PaymentStatus::Success) {
+                throw ValidationException::withMessages([
+                    'payment' => ['A confirmed payment cannot be rejected — refund it instead.'],
+                ]);
+            }
+
+            $locked->update([
+                'status' => PaymentStatus::Error,
+                'note' => $note,
+                'confirmed_by' => $admin->id,
+                'confirmed_at' => now(),
             ]);
-        }
 
-        $payment->update([
-            'status' => PaymentStatus::Error,
-            'note' => $note,
-            'confirmed_by' => $admin->id,
-            'confirmed_at' => now(),
-        ]);
-
-        return $payment->refresh();
+            return $locked->refresh();
+        });
     }
 
     /**
@@ -307,40 +313,49 @@ class PaymentService
      */
     public function refundByAdmin(Payment $payment, User $admin): Payment
     {
-        if ($payment->status !== PaymentStatus::Success) {
-            throw ValidationException::withMessages([
-                'payment' => ['Only a successful payment can be refunded.'],
-            ]);
-        }
+        return DB::transaction(function () use ($payment, $admin): Payment {
+            // Row locks on the payment and its order: a refund racing a
+            // confirm (same payment) or a payout release (same order) must
+            // serialise — the loser then sees the new state and is refused.
+            $locked = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
 
-        $order = $payment->payable;
-
-        if ($order instanceof Order) {
-            $paidOut = $order->payouts()->where('status', PayoutStatus::Paid)->exists();
-
-            if ($paidOut) {
+            if ($locked->status !== PaymentStatus::Success) {
                 throw ValidationException::withMessages([
-                    'payment' => ['Cannot refund: an agent payout was already released. Recover funds manually first.'],
+                    'payment' => ['Only a successful payment can be refunded.'],
                 ]);
             }
-        }
 
-        $payment->update([
-            'status' => PaymentStatus::Revert,
-            'refunded_at' => now(),
-            'confirmed_by' => $admin->id,
-            'confirmed_at' => now(),
-            'meta' => array_merge(is_array($payment->meta) ? $payment->meta : [], [
-                'refund_source' => 'admin',
-                'refunded_by' => $admin->id,
-                'refund_requested_at' => now()->toIso8601String(),
-            ]),
-        ]);
+            $order = $locked->payable;
 
-        $this->onOrderRefunded($payment->fresh(), cancelOrder: true);
-        $this->feed->orderRefunded($payment->fresh());
+            if ($order instanceof Order) {
+                $order = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
-        return $payment->refresh();
+                $paidOut = $order->payouts()->where('status', PayoutStatus::Paid)->exists();
+
+                if ($paidOut) {
+                    throw ValidationException::withMessages([
+                        'payment' => ['Cannot refund: an agent payout was already released. Recover funds manually first.'],
+                    ]);
+                }
+            }
+
+            $locked->update([
+                'status' => PaymentStatus::Revert,
+                'refunded_at' => now(),
+                'confirmed_by' => $admin->id,
+                'confirmed_at' => now(),
+                'meta' => array_merge(is_array($locked->meta) ? $locked->meta : [], [
+                    'refund_source' => 'admin',
+                    'refunded_by' => $admin->id,
+                    'refund_requested_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            $this->onOrderRefunded($locked->fresh(), cancelOrder: true);
+            $this->feed->orderRefunded($locked->fresh());
+
+            return $payment->refresh();
+        });
     }
 
     /**

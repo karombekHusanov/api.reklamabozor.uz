@@ -21,6 +21,7 @@ class AgentContractTest extends TestCase
 
         // Keep the generated contract PDFs off the real disk.
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
     }
 
     /**

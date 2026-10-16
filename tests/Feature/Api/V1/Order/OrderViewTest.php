@@ -36,15 +36,19 @@ class OrderViewTest extends TestCase
         ]);
     }
 
-    public function test_listing_available_orders_records_a_distinct_view(): void
+    public function test_opening_an_available_order_records_a_distinct_view(): void
     {
         [, $token, $category] = $this->approvedAgentInCategory();
         $order = $this->orderInCategory($category);
 
-        // First load records the view.
+        // Browsing the feed is read-only — no view is recorded.
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])->assertOk();
-        // Second load must not double-count.
-        $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])->assertOk();
+        $this->assertDatabaseCount('order_views', 0);
+
+        // Opening the order records the view.
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])->assertOk();
+        // A second open must not double-count.
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$token])->assertOk();
 
         $this->assertSame(1, $order->views()->count());
         $this->assertDatabaseCount('order_views', 1);
@@ -60,11 +64,11 @@ class OrderViewTest extends TestCase
         AgentProfile::factory()->for($agentB)->approved()->create()->categories()->attach($category);
         $tokenB = $agentB->createToken('test')->plainTextToken;
 
-        $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$tokenA])->assertOk();
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$tokenA])->assertOk();
         // Reset the memoized guard user so the second Bearer token re-resolves
         // (the guard caches the resolved user across requests within one test).
         $this->app['auth']->forgetGuards();
-        $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$tokenB])->assertOk();
+        $this->getJson("/api/v1/agent/orders/{$order->id}", ['Authorization' => 'Bearer '.$tokenB])->assertOk();
 
         $this->assertSame(2, $order->views()->count());
     }
@@ -101,7 +105,7 @@ class OrderViewTest extends TestCase
 
         $this->getJson('/api/v1/agent/orders', ['Authorization' => 'Bearer '.$token])
             ->assertOk()
-            ->assertJsonPath('data.0.offers_count', 3)
-            ->assertJsonPath('data.0.views_count', 0);
+            ->assertJsonPath('data.items.0.offers_count', 3)
+            ->assertJsonPath('data.items.0.views_count', 0);
     }
 }

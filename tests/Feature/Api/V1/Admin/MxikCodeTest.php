@@ -30,6 +30,7 @@ class MxikCodeTest extends TestCase
         parent::setUp();
         Http::fake();
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
     }
 
     private function admin(): User

@@ -34,6 +34,7 @@ class AuthController extends ApiController
         $result = $this->authService->adminLogin(
             $request->validated('email'),
             $request->validated('password'),
+            $request->ip(),
         );
 
         return $this->success([

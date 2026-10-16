@@ -9,6 +9,7 @@ use App\Enums\ProviderType;
 use App\Models\AgentProfile;
 use App\Models\AgentProfileUpgrade;
 use App\Models\User;
+use App\Services\File\FileService;
 use App\Services\Legal\PublicOfferService;
 use App\Services\Order\OrderNotifier;
 use App\Services\Telegram\AdminNotifier;
@@ -31,6 +32,7 @@ class AgentProfileUpgradeService
         private readonly PublicOfferService $offers,
         private readonly AdminNotifier $admin,
         private readonly OrderNotifier $notifier,
+        private readonly FileService $files,
     ) {}
 
     /**
@@ -67,6 +69,7 @@ class AgentProfileUpgradeService
 
             if ($pending !== null) {
                 $pending->update($attributes);
+                $this->files->privatizeAttached($pending);
 
                 return [$pending, false];
             }
@@ -76,6 +79,9 @@ class AgentProfileUpgradeService
                 'user_id' => $profile->user_id,
                 'status' => AgentProfileUpgradeStatus::Pending,
             ]);
+
+            // KYC scans came through the generic (public) upload.
+            $this->files->privatizeAttached($upgrade);
 
             return [$upgrade, true];
         });

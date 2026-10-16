@@ -72,14 +72,17 @@ class PublicAgentController extends ApiController
             );
         }
 
+        // Ranked and capped in SQL — the completion score is computed by the
+        // database, so the whole marketplace is never loaded to sort in PHP.
         $agents = $query
+            ->withCompletionScore()
             ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'cachedRating'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')
-            ->get()
-            ->sortByDesc(fn (AgentProfile $profile) => $profile->completionPercent())
-            ->take($limit)
-            ->values();
+            ->orderByDesc('completion_score')
+            ->orderBy('agent_profiles.id')
+            ->limit($limit)
+            ->get();
 
         return $this->success(PublicAgentResource::collection($agents));
     }
@@ -104,6 +107,7 @@ class PublicAgentController extends ApiController
             ->approved()
             ->whereNotNull('lat')
             ->whereNotNull('lng')
+            ->withCompletionScore()
             ->with(['companyLogoFile', 'categories', 'user.avatarFile', 'user.legalEntityVerification', 'cachedRating'])
             ->withCount(['completedOrders', 'approvedReviews'])
             ->withAvg('approvedReviews', 'rating')

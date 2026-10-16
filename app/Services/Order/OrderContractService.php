@@ -63,6 +63,7 @@ class OrderContractService
             'application/pdf',
             $order->client_id,
             'contracts',
+            private: true,
         );
 
         return Contract::create([

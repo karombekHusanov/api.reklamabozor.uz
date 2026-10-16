@@ -316,8 +316,49 @@ class AgentProfile extends Model
         return filled($this->bank_name) && filled($this->bank_account) && filled($this->mfo);
     }
 
+    /**
+     * Select the completion percent as `completion_score`, computed in SQL
+     * from the same weights as {@see completionPercent()}, so a listing can
+     * sort by it and render it without a query per profile.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithCompletionScore(Builder $query): Builder
+    {
+        $w = self::COMPLETION_WEIGHTS;
+        $filled = fn (string $column): string => "({$column} IS NOT NULL AND TRIM({$column}) <> '')";
+
+        $terms = [
+            "CASE WHEN agent_profiles.company_logo_file_id IS NOT NULL THEN {$w['logo']} ELSE 0 END",
+            'CASE WHEN agent_profiles.lat IS NOT NULL AND agent_profiles.lng IS NOT NULL AND '
+                .$filled('agent_profiles.location_label')." THEN {$w['location']} ELSE 0 END",
+            'CASE WHEN EXISTS (SELECT 1 FROM agent_categories WHERE agent_categories.agent_profile_id = agent_profiles.id)'
+                ." THEN {$w['categories']} ELSE 0 END",
+            'CASE WHEN '.$filled('agent_profiles.bio')." THEN {$w['bio']} ELSE 0 END",
+            'CASE WHEN '.$filled('agent_profiles.results_text')." THEN {$w['results']} ELSE 0 END",
+            'CASE WHEN '.$filled('agent_profiles.website_url').' OR '.$filled('agent_profiles.linkedin_url')
+                ." THEN {$w['links']} ELSE 0 END",
+            'CASE WHEN EXISTS (SELECT 1 FROM agent_portfolio_items WHERE agent_portfolio_items.agent_profile_id = agent_profiles.id'
+                ." AND agent_portfolio_items.hidden_at IS NULL) THEN {$w['portfolio']} ELSE 0 END",
+            'CASE WHEN EXISTS (SELECT 1 FROM agent_profile_advantage WHERE agent_profile_advantage.agent_profile_id = agent_profiles.id)'
+                ." THEN {$w['advantages']} ELSE 0 END",
+        ];
+
+        if ($query->getQuery()->columns === null) {
+            $query->select('agent_profiles.*');
+        }
+
+        return $query->selectRaw('('.implode(' + ', $terms).') AS completion_score');
+    }
+
     public function completionPercent(): int
     {
+        // Precomputed by {@see scopeWithCompletionScore()} on listings.
+        if (array_key_exists('completion_score', $this->attributes)) {
+            return (int) $this->attributes['completion_score'];
+        }
+
         $w = self::COMPLETION_WEIGHTS;
         $earned = 0;
 

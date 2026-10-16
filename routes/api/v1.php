@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\Chat\ChatController;
 use App\Http\Controllers\Api\V1\Chat\DirectChatController;
 use App\Http\Controllers\Api\V1\Chat\GlobalChatController;
+use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\FileUploadController;
 use App\Http\Controllers\Api\V1\HashtagController;
 use App\Http\Controllers\Api\V1\HealthController;
@@ -113,8 +114,10 @@ Route::get('/hashtags', [HashtagController::class, 'index']);
 Route::get('/stats/live', [StatsController::class, 'live'])->middleware('throttle:120,1');
 
 Route::prefix('auth')->group(function (): void {
-    Route::post('/telegram', [AuthController::class, 'telegramLogin']);
-    Route::post('/admin/login', [AuthController::class, 'adminLogin']);
+    // Login endpoints get their own per-IP budget (the global throttleApi is
+    // 60/min). Admin login additionally locks per email+IP in AuthService.
+    Route::post('/telegram', [AuthController::class, 'telegramLogin'])->middleware('throttle:20,1');
+    Route::post('/admin/login', [AuthController::class, 'adminLogin'])->middleware('throttle:5,1');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
@@ -139,6 +142,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/realtime/token', [RealtimeController::class, 'token'])->middleware('throttle:30,1');
 
     Route::post('/file-upload', [FileUploadController::class, 'store']);
+    // Private files (KYC scans, contracts, invoices, acts) stream through here
+    // with a participant check — File::url() points at this for them.
+    Route::get('/files/{file}', [FileController::class, 'show'])->name('files.show');
     Route::patch('/me', [ProfileController::class, 'update']);
     Route::patch('/me/person-type', [ProfileController::class, 'setPersonType']);
     Route::post('/me/accept-terms', [ProfileController::class, 'acceptTerms']);

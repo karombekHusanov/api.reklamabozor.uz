@@ -7,6 +7,7 @@ use App\Enums\ProviderType;
 use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\User;
+use App\Services\File\FileService;
 use App\Services\Legal\PublicOfferService;
 use Illuminate\Validation\ValidationException;
 
@@ -14,6 +15,7 @@ class AgentProfileService
 {
     public function __construct(
         private readonly PublicOfferService $offers,
+        private readonly FileService $files,
     ) {}
 
     public function findForUser(User $user): ?AgentProfile
@@ -52,6 +54,10 @@ class AgentProfileService
             'provider_type' => ProviderType::Agent,
             'status' => AgentProfileStatus::Pending,
         ]);
+
+        // KYC scans arrive through the generic upload (public disk) — move
+        // them behind the authenticated file endpoint now that they are KYC.
+        $this->files->privatizeAttached($profile);
 
         // Submitting the application is the click-wrap acceptance of the
         // agency partnership offer (the request requires `accept_offer`).
@@ -95,6 +101,8 @@ class AgentProfileService
         $profile->status = AgentProfileStatus::Pending;
         $profile->rejection_reason = null;
         $profile->save();
+
+        $this->files->privatizeAttached($profile);
 
         $this->acceptOffer($profile, $ip);
 

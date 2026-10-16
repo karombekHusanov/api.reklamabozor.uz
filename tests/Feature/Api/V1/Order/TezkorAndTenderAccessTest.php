@@ -245,12 +245,12 @@ class TezkorAndTenderAccessTest extends TestCase
         $this->postJson("/api/v1/agent/orders/{$tezkor->id}/offers", [], $this->auth($first))->assertCreated();
 
         $rows = collect($this->getJson('/api/v1/agent/orders?route=tezkor', $this->auth($second))
-            ->assertOk()->json('data'));
+            ->assertOk()->json('data.items'));
         $this->assertSame([$tezkor->id], $rows->pluck('id')->all());
         $this->assertTrue($rows[0]['can_offer']);
         $this->assertArrayNotHasKey('claimed', $rows[0]);
 
-        $tenders = collect($this->getJson('/api/v1/agent/orders?route=tender', $this->auth($second))->json('data'));
+        $tenders = collect($this->getJson('/api/v1/agent/orders?route=tender', $this->auth($second))->json('data.items'));
         $this->assertSame([$tender->id], $tenders->pluck('id')->all());
 
         $this->getJson("/api/v1/orders/showcase/{$tezkor->id}", $this->auth($second))

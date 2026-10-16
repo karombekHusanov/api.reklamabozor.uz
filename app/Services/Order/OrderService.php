@@ -13,6 +13,7 @@ use App\Enums\TezkorBilling;
 use App\Jobs\RecalculateRating;
 use App\Models\AgentProfile;
 use App\Models\Category;
+use App\Models\DirectChat;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderProblemEvent;
@@ -183,7 +184,17 @@ class OrderService
         // see them in their request list again.
         $orders = $client->orders()
             ->where('status', '!=', OrderStatus::Cancelled)
-            ->with(['category', 'region', 'district', 'targetAgent.profile'])
+            ->with([
+                'category',
+                'region',
+                'district',
+                'targetAgent.profile',
+                // Tezkor "claim" card on the list.
+                'claimedAgent.profile.companyLogoFile',
+                'claimedAgent.profile.cachedRating',
+                // Money / cancel / amendment derivations without a query per row.
+                ...Order::LEDGER_RELATIONS,
+            ])
             ->withCount(['offers', 'views'])
             ->latest()
             ->get();
@@ -198,7 +209,7 @@ class OrderService
         abort_unless($order->client_id === $client->id, 404);
         abort_if($order->status === OrderStatus::Cancelled, 404);
 
-        return $this->withClientRelations($order)->loadCount(['offers', 'views']);
+        return $this->withClientRelations($order, $client)->loadCount(['offers', 'views']);
     }
 
     /**
@@ -625,12 +636,45 @@ class OrderService
         }
     }
 
-    public function withClientRelations(Order $order): Order
+    /**
+     * Load everything the client-facing order resource renders. With a
+     * `$viewer` the offers' negotiation threads (last message + unread count
+     * for that viewer) are fetched in one batch instead of per offer.
+     */
+    public function withClientRelations(Order $order, ?User $viewer = null): Order
     {
         $order->load(Order::CLIENT_RELATIONS);
         Order::hydrateAttachmentFiles($order);
 
+        // OfferResource reads the order back through each offer.
+        $order->offers->each(fn (Offer $offer) => $offer->setRelation('order', $order));
+
+        if ($viewer !== null) {
+            $this->hydrateOfferChats($order, $viewer);
+        }
+
         return $order;
+    }
+
+    /**
+     * Attach each offer's order-scoped DirectChat (with its preview data) as
+     * the `directChat` relation, fetched with a single query for the order.
+     */
+    private function hydrateOfferChats(Order $order, User $viewer): void
+    {
+        if ($order->offers->isEmpty()) {
+            return;
+        }
+
+        $chats = DirectChat::query()
+            ->where('order_id', $order->id)
+            ->where('client_id', $order->client_id)
+            ->with('lastMessage')
+            ->withUnreadCountFor($viewer)
+            ->get()
+            ->keyBy('agent_id');
+
+        $order->offers->each(fn (Offer $offer) => $offer->setRelation('directChat', $chats->get($offer->agent_id)));
     }
 
     /**

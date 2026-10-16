@@ -10,6 +10,7 @@ use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
 use App\Models\Chat;
 use App\Models\ContractAcceptance;
+use App\Models\DirectChat;
 use App\Models\DirectChatMessage;
 use App\Models\Offer;
 use App\Models\Order;
@@ -18,6 +19,8 @@ use App\Models\User;
 use App\Services\Chat\DirectChatService;
 use App\Services\Fiscal\FiscalService;
 use App\Services\Payout\PayoutService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,17 +37,83 @@ class OfferService
         private readonly PassGate $passes,
     ) {}
 
+    /** Feed page size for {@see availableForAgent()}. */
+    public const FEED_PER_PAGE = 20;
+
     /**
      * Orders an approved agent may bid on: open for offers, and either in one
      * of the agent's categories or a broadcast order ("Other" / empty category
-     * with no approved providers). Each order carries the agent's own offer
-     * (if any).
+     * with no approved providers), newest first, paginated. Each order carries
+     * the agent's own offer (if any). Browsing the feed never writes — views
+     * are recorded when the agent opens an order ({@see findAvailableForAgent()}).
      *
-     * @param  int|null  $orderId  When set, return at most that one opportunity.
      * @param  OrderRoute|null  $route  When set, only orders on that route.
-     * @return Collection<int, Order>
+     * @return LengthAwarePaginator<int, Order>
      */
-    public function availableForAgent(User $agent, ?int $orderId = null, ?OrderRoute $route = null): Collection
+    public function availableForAgent(User $agent, ?OrderRoute $route = null, int $perPage = self::FEED_PER_PAGE): LengthAwarePaginator
+    {
+        $query = $this->feedQuery($agent, $route);
+
+        if ($query === null) {
+            return new LengthAwarePaginator([], 0, $perPage);
+        }
+
+        $paginator = $query->latest()->paginate(max(1, min($perPage, 50)));
+
+        Order::hydrateAttachmentFiles($paginator->getCollection());
+        $this->hydrateOwnOfferChats($agent, $paginator->getCollection());
+
+        return $paginator;
+    }
+
+    /**
+     * Attach the agent's order thread to each of their own offers in the feed
+     * (`my_offer.chat_id`) with one query instead of a lookup per offer.
+     *
+     * @param  Collection<int, Order>  $orders
+     */
+    private function hydrateOwnOfferChats(User $agent, Collection $orders): void
+    {
+        $offers = $orders->flatMap(fn (Order $order) => $order->offers->each(
+            fn (Offer $offer) => $offer->setRelation('order', $order),
+        ));
+
+        if ($offers->isEmpty()) {
+            return;
+        }
+
+        $chats = DirectChat::query()
+            ->where('agent_id', $agent->id)
+            ->whereIn('order_id', $offers->pluck('order_id')->unique())
+            ->get()
+            ->keyBy('order_id');
+
+        $offers->each(fn (Offer $offer) => $offer->setRelation('directChat', $chats->get($offer->order_id)));
+    }
+
+    /**
+     * Single open opportunity the agent may bid on (404 if outside their feed).
+     * Opening it counts as a view (distinct per agent).
+     */
+    public function findAvailableForAgent(User $agent, Order $order): Order
+    {
+        $found = $this->feedQuery($agent)?->whereKey($order->id)->first();
+
+        abort_unless($found !== null, 404);
+
+        $this->recordViews($agent, new Collection([$found]));
+        Order::hydrateAttachmentFiles($found);
+
+        return $found;
+    }
+
+    /**
+     * The agent's opportunity feed as a query (null when the agent has no
+     * approved profile): eligibility, route and eager loads, no ordering.
+     *
+     * @return Builder<Order>|null
+     */
+    private function feedQuery(User $agent, ?OrderRoute $route = null): ?Builder
     {
         // Categories served by the agent's approved profile (1 user = 1 profile).
         $profile = $agent->profile()
@@ -53,7 +122,7 @@ class OfferService
             ->first();
 
         if ($profile === null) {
-            return new Collection;
+            return null;
         }
 
         // Tender-ineligible providers (individuals, or legal entities without
@@ -65,7 +134,7 @@ class OfferService
 
         $categoryIds = $profile->categories->pluck('id')->values();
 
-        $orders = Order::query()
+        return Order::query()
             ->where(function ($query) use ($categoryIds): void {
                 $query->whereIn('category_id', $categoryIds)
                     // No category picked → broadcast, open to everyone approved.
@@ -88,7 +157,6 @@ class OfferService
             // ever shows to the single agency it was addressed to.
             ->where(fn ($q) => $q->whereNull('target_agent_id')->orWhere('target_agent_id', $agent->id))
             ->whereIn('status', array_map(fn (OrderStatus $s) => $s->value, OrderStatus::openForOffers()))
-            ->when($orderId !== null, fn ($q) => $q->whereKey($orderId))
             ->when($route !== null, fn ($q) => $q->where('route', $route->value))
             ->withCount(['views', 'offers'])
             ->with([
@@ -98,26 +166,7 @@ class OfferService
                 'hashtags',
                 'client.avatarFile',
                 'offers' => fn ($query) => $query->where('agent_id', $agent->id)->with('items'),
-            ])
-            ->latest()
-            ->get();
-
-        $this->recordViews($agent, $orders);
-        Order::hydrateAttachmentFiles($orders);
-
-        return $orders;
-    }
-
-    /**
-     * Single open opportunity the agent may bid on (404 if outside their feed).
-     */
-    public function findAvailableForAgent(User $agent, Order $order): Order
-    {
-        $found = $this->availableForAgent($agent, $order->id)->first();
-
-        abort_unless($found !== null, 404);
-
-        return $found;
+            ]);
     }
 
     /**
@@ -202,12 +251,6 @@ class OfferService
             ]);
         }
 
-        if (! $order->status->isOpenForOffers()) {
-            throw ValidationException::withMessages([
-                'order' => ['This order is no longer accepting offers.'],
-            ]);
-        }
-
         if ($order->isTezkor() && isset($data['price'])) {
             throw ValidationException::withMessages([
                 'price' => ['Tezkor requests take an interest only — agree the price with the client directly.'],
@@ -217,7 +260,20 @@ class OfferService
         // Any paying agent may respond — Tezkor and Tender alike. There is no
         // exclusive slot: the client reads the otkliks and picks the agency.
         $offer = DB::transaction(function () use ($agent, $order, $profile, $data): Offer {
-            if ($order->offers()->where('agent_id', $agent->id)->exists()) {
+            // The open-for-offers check runs under the order row lock, in the
+            // same transaction as the fee: a request being closed ("Kelishildi",
+            // cancel, accept) at this very moment cannot take the agent's money
+            // for an otklik that lands on a closed order.
+            /** @var Order $locked */
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if (! $locked->status->isOpenForOffers()) {
+                throw ValidationException::withMessages([
+                    'order' => ['This order is no longer accepting offers.'],
+                ]);
+            }
+
+            if ($locked->offers()->where('agent_id', $agent->id)->exists()) {
                 throw ValidationException::withMessages([
                     'order' => ['You have already sent an offer for this order.'],
                 ]);
@@ -225,10 +281,10 @@ class OfferService
 
             // Per-order fee on the otklik (Tender, Tezkor pay_to_respond);
             // free under Tezkor pay_on_pick — the picked agent pays on take.
-            $fee = $this->passes->chargeOtklik($agent, $order);
+            $fee = $this->passes->chargeOtklik($agent, $locked);
 
             /** @var Offer $offer */
-            $offer = $order->offers()->create([
+            $offer = $locked->offers()->create([
                 'agent_id' => $agent->id,
                 'agent_profile_id' => $profile->id,
                 'price' => $data['price'] ?? null,
@@ -238,9 +294,12 @@ class OfferService
                 'fee_paid_at' => $fee > 0 ? now() : null,
             ]);
 
-            if ($order->status === OrderStatus::New) {
-                $order->update(['status' => OrderStatus::OffersSent]);
+            if ($locked->status === OrderStatus::New) {
+                $locked->update(['status' => OrderStatus::OffersSent]);
             }
+
+            // Keep the caller's instance in step with what was committed.
+            $order->setRawAttributes($locked->getAttributes(), true);
 
             return $offer;
         });
@@ -610,15 +669,25 @@ class OfferService
             ]);
         }
 
-        if (! in_array($order->status, [OrderStatus::New, OrderStatus::OffersSent], true)) {
-            throw ValidationException::withMessages([
-                'order' => ['This order is not awaiting a selection.'],
-            ]);
-        }
+        $this->assertAwaitingSelection($order);
 
         $paymentEnabled = (bool) config('payments.enabled');
 
         DB::transaction(function () use ($order, $offer, $paymentEnabled, $client, $document, $request): void {
+            // The whole transition runs under the order row lock: two accepts
+            // fired in parallel (two tabs, two offers) serialise here, and the
+            // second one sees the order already in progress and is refused —
+            // so one deal, one chat, one accepted offer.
+            /** @var Order $locked */
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            $this->assertAwaitingSelection($locked);
+
+            // Work on the locked row from here on; the caller's instance (and
+            // the offer's loaded relation) follow it.
+            $order->setRawAttributes($locked->getAttributes(), true);
+            $offer->setRelation('order', $order);
+
             $order->offers()->whereKeyNot($offer->id)->update(['status' => OfferStatus::Rejected]);
             $offer->update(['status' => OfferStatus::Accepted]);
 
@@ -664,6 +733,15 @@ class OfferService
         $this->generateContract($offer);
 
         return $offer->load(['agent', 'agentProfile.companyLogoFile']);
+    }
+
+    private function assertAwaitingSelection(Order $order): void
+    {
+        if (! in_array($order->status, [OrderStatus::New, OrderStatus::OffersSent], true)) {
+            throw ValidationException::withMessages([
+                'order' => ['This order is not awaiting a selection.'],
+            ]);
+        }
     }
 
     /**

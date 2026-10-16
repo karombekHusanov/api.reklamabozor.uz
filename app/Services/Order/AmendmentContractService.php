@@ -87,6 +87,7 @@ class AmendmentContractService
             'application/pdf',
             $document['client_id'] ?? null,
             'contracts',
+            private: true,
         );
 
         return ['file' => $file, 'hash' => hash('sha256', $contents)];

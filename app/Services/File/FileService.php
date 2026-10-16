@@ -2,20 +2,63 @@
 
 namespace App\Services\File;
 
+use App\Models\AgentProfile;
+use App\Models\AgentProfileUpgrade;
+use App\Models\Contract;
 use App\Models\File;
+use App\Models\LegalEntityVerification;
+use App\Models\OrderAmendment;
+use App\Models\OrderDocument;
+use App\Models\Payment;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
  * Central entry point for persisting and removing uploaded files.
  * Every file in the system is stored through this service so the storage
  * disk, directory layout, and DB registry stay consistent in one place.
+ *
+ * Two tiers: public files (avatars, logos, portfolio, chat images, order
+ * attachments) sit on the web-served disk; private files (KYC scans,
+ * contracts, invoices, acts) sit on a non-served disk and stream through the
+ * authenticated GET /files/{file} endpoint (see FileAccessService).
  */
 class FileService
 {
-    public function store(UploadedFile $file, ?int $uploadedBy = null, ?string $directory = null): File
+    /**
+     * Which `*_file_id` columns hold private documents, per model. The single
+     * source of truth for: moving freshly attached uploads off the public disk
+     * ({@see privatizeAttached()}), the `files:privatize` backfill, and the
+     * participant rules in FileAccessService.
+     *
+     * @var array<class-string<Model>, list<string>>
+     */
+    public const PRIVATE_FILE_COLUMNS = [
+        AgentProfile::class => [
+            'director_passport_file_id',
+            'selfie_file_id',
+            'registration_certificate_file_id',
+            'contract_file_id',
+            'signed_contract_file_id',
+        ],
+        AgentProfileUpgrade::class => [
+            'director_passport_file_id',
+            'registration_certificate_file_id',
+        ],
+        LegalEntityVerification::class => [
+            'registration_certificate_file_id',
+        ],
+        Contract::class => ['pdf_file_id'],
+        OrderAmendment::class => ['pdf_file_id'],
+        OrderDocument::class => ['pdf_file_id'],
+        Payment::class => ['invoice_file_id'],
+    ];
+
+    public function store(UploadedFile $file, ?int $uploadedBy = null, ?string $directory = null, bool $private = false): File
     {
-        $disk = (string) config('files.disk');
+        $disk = $this->diskFor($private);
         $directory ??= (string) config('files.directory');
 
         $path = $file->store($directory, $disk);
@@ -24,9 +67,13 @@ class FileService
             'disk' => $disk,
             'path' => $path,
             'original_name' => $file->getClientOriginalName(),
-            'mime_type' => $file->getClientMimeType(),
+            // Sniffed from the bytes, never the client's Content-Type header:
+            // the stored mime drives render decisions and the agent image ban
+            // in chat (MessageAttachments), so it must not be forgeable.
+            'mime_type' => $file->getMimeType() ?: $file->getClientMimeType(),
             'size' => $file->getSize(),
             'uploaded_by' => $uploadedBy,
+            'is_private' => $private,
         ]);
     }
 
@@ -40,8 +87,9 @@ class FileService
         string $mimeType,
         ?int $uploadedBy = null,
         ?string $directory = null,
+        bool $private = false,
     ): File {
-        $disk = (string) config('files.disk');
+        $disk = $this->diskFor($private);
         $directory ??= (string) config('files.directory');
 
         $path = rtrim($directory, '/').'/'.date('Y/m').'/'.uniqid('', true).'-'.$filename;
@@ -55,7 +103,91 @@ class FileService
             'mime_type' => $mimeType,
             'size' => strlen($contents),
             'uploaded_by' => $uploadedBy,
+            'is_private' => $private,
         ]);
+    }
+
+    /**
+     * Move a file onto the private disk and flag it. Idempotent: a file that is
+     * already private on the private disk is returned untouched. Used when a
+     * generic upload (which lands public) gets attached to a KYC/document field.
+     *
+     * When the bytes are missing on the source disk the row is still flagged
+     * (so its URL stops pointing at /storage) and the gap is logged.
+     */
+    public function makePrivate(File $file): File
+    {
+        $privateDisk = $this->diskFor(true);
+
+        if ($file->is_private && $file->disk === $privateDisk) {
+            return $file;
+        }
+
+        if ($file->disk !== $privateDisk) {
+            $source = Storage::disk($file->disk);
+            $target = Storage::disk($privateDisk);
+
+            if ($source->exists($file->path)) {
+                $path = $file->path;
+
+                if ($target->exists($path)) {
+                    $path = $this->deduplicatedPath($path);
+                }
+
+                $stream = $source->readStream($file->path);
+
+                if ($stream === null) {
+                    Log::warning('files.privatize.unreadable', ['file_id' => $file->id, 'disk' => $file->disk, 'path' => $file->path]);
+                } else {
+                    $target->writeStream($path, $stream);
+
+                    if (is_resource($stream)) {
+                        fclose($stream);
+                    }
+
+                    $source->delete($file->path);
+                    $file->path = $path;
+                }
+            } else {
+                Log::warning('files.privatize.missing', ['file_id' => $file->id, 'disk' => $file->disk, 'path' => $file->path]);
+            }
+
+            $file->disk = $privateDisk;
+        }
+
+        $file->is_private = true;
+        $file->save();
+
+        return $file;
+    }
+
+    /**
+     * Privatize every file referenced by the model's private `*_file_id`
+     * columns ({@see PRIVATE_FILE_COLUMNS}). Call right after the ids are saved.
+     */
+    public function privatizeAttached(Model $model): void
+    {
+        $columns = self::PRIVATE_FILE_COLUMNS[$model::class] ?? [];
+
+        $ids = collect($columns)
+            ->map(fn (string $column): mixed => $model->getAttribute($column))
+            ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        File::query()
+            ->whereIn('id', $ids)
+            ->where(function ($query) {
+                $query->where('is_private', false)
+                    ->orWhere('disk', '!=', $this->diskFor(true));
+            })
+            ->get()
+            ->each(fn (File $file) => $this->makePrivate($file));
     }
 
     public function delete(File $file): void
@@ -63,5 +195,18 @@ class FileService
         Storage::disk($file->disk)->delete($file->path);
 
         $file->delete();
+    }
+
+    public function diskFor(bool $private): string
+    {
+        return (string) config($private ? 'files.private_disk' : 'files.disk');
+    }
+
+    private function deduplicatedPath(string $path): string
+    {
+        $dir = pathinfo($path, PATHINFO_DIRNAME);
+        $base = pathinfo($path, PATHINFO_BASENAME);
+
+        return ($dir === '.' ? '' : $dir.'/').uniqid('', true).'-'.$base;
     }
 }

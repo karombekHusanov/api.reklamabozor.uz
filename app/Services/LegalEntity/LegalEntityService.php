@@ -6,10 +6,13 @@ use App\Enums\LegalEntityStatus;
 use App\Enums\PersonType;
 use App\Models\LegalEntityVerification;
 use App\Models\User;
+use App\Services\File\FileService;
 use Illuminate\Validation\ValidationException;
 
 class LegalEntityService
 {
+    public function __construct(private readonly FileService $files) {}
+
     /**
      * Submit (or resubmit) a legal-entity verification request. Only for a
      * self-declared legal entity; legal-entity executors/sellers are verified by
@@ -48,6 +51,9 @@ class LegalEntityService
             'rejection_reason' => null,
             'verified_at' => null,
         ]);
+
+        // The certificate scan was a generic (public) upload — KYC goes private.
+        $this->files->privatizeAttached($verification);
 
         return $verification;
     }

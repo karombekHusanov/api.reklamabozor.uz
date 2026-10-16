@@ -50,6 +50,7 @@ class OrderPaymentTest extends TestCase
     public function test_client_requests_a_cash_invoice_and_admin_confirms_it(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -91,6 +92,7 @@ class OrderPaymentTest extends TestCase
     public function test_offline_invoice_defaults_to_100_percent_of_outstanding(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -109,6 +111,7 @@ class OrderPaymentTest extends TestCase
     public function test_client_can_request_half_of_the_outstanding_amount(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -127,6 +130,7 @@ class OrderPaymentTest extends TestCase
     public function test_second_offline_invoice_after_a_half_payment_bills_only_the_remainder(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -172,6 +176,7 @@ class OrderPaymentTest extends TestCase
     public function test_changing_percent_voids_the_stale_pending_offline_intent(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -197,6 +202,7 @@ class OrderPaymentTest extends TestCase
     public function test_offline_invoice_rejects_a_different_method_while_one_is_pending(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -216,6 +222,7 @@ class OrderPaymentTest extends TestCase
     public function test_offline_invoice_rejects_an_unsupported_percent(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -232,6 +239,7 @@ class OrderPaymentTest extends TestCase
     public function test_offline_payment_can_be_rejected_by_admin(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
 
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
 
@@ -385,6 +393,7 @@ class OrderPaymentTest extends TestCase
     public function test_confirming_twice_settles_once(): void
     {
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
         [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
         $this->postJson("/api/v1/orders/{$order->id}/pay/offline", ['method' => 'bank_transfer'], [
             'Authorization' => 'Bearer '.$token,

@@ -27,6 +27,7 @@ class IndividualProfileTest extends TestCase
         parent::setUp();
 
         Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
         Storage::fake('local');
     }
 

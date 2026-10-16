@@ -13,6 +13,7 @@ use App\Models\Payout;
 use App\Models\User;
 use App\Services\Order\OrderNotifier;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -148,32 +149,53 @@ class PayoutService
      */
     public function release(Payout $payout, User $manager, array $data = []): Payout
     {
-        $this->assertReleasable($payout);
-
         $method = $data['method'] ?? (string) config('payouts.channel', 'bank');
         $reference = isset($data['reference']) ? trim((string) $data['reference']) : '';
 
-        if ($method === 'bank') {
-            $this->assertBankRequisites($payout);
+        $released = DB::transaction(function () use ($payout, $manager, $data, $method, $reference): Payout {
+            // Re-read under row locks (payout, then its order): two managers
+            // releasing the same payout — or a release racing an admin refund
+            // on the order — must serialise, so money is recorded as sent once.
+            /** @var Payout $locked */
+            $locked = Payout::query()->whereKey($payout->id)->lockForUpdate()->firstOrFail();
 
-            // A bank transfer is only auditable through its payment order.
-            if ($reference === '') {
+            if ($locked->status !== PayoutStatus::Pending) {
                 throw ValidationException::withMessages([
-                    'reference' => ['Enter the payment-order number of the bank transfer.'],
+                    'payout' => ['Only a pending payout can be released.'],
                 ]);
             }
-        }
 
-        if (array_key_exists('amount', $data) && $data['amount'] !== null) {
-            $payout->amount = max(0, (int) $data['amount']);
-        }
+            /** @var Order|null $order */
+            $order = Order::query()->whereKey($locked->order_id)->lockForUpdate()->first();
 
-        $payout->method = $method;
-        $payout->reference = $reference !== '' ? $reference : $payout->reference;
-        $payout->released_by = $manager->id;
-        $payout->status = PayoutStatus::Paid;
-        $payout->paid_at = now();
-        $payout->save();
+            $this->assertReleasable($order);
+
+            if ($method === 'bank') {
+                $this->assertBankRequisites($locked);
+
+                // A bank transfer is only auditable through its payment order.
+                if ($reference === '') {
+                    throw ValidationException::withMessages([
+                        'reference' => ['Enter the payment-order number of the bank transfer.'],
+                    ]);
+                }
+            }
+
+            if (array_key_exists('amount', $data) && $data['amount'] !== null) {
+                $amount = max(0, (int) $data['amount']);
+                $this->assertWithinAgentNet($locked, $order, $amount);
+                $locked->amount = $amount;
+            }
+
+            $locked->method = $method;
+            $locked->reference = $reference !== '' ? $reference : $locked->reference;
+            $locked->released_by = $manager->id;
+            $locked->status = PayoutStatus::Paid;
+            $locked->paid_at = now();
+            $locked->save();
+
+            return $locked;
+        });
 
         $payout->refresh();
 
@@ -185,6 +207,39 @@ class PayoutService
     }
 
     /**
+     * A manager may override the amount, but never above what the agent is
+     * owed on the deal: net after commission, minus what was already paid
+     * out on the order's other tranches.
+     */
+    private function assertWithinAgentNet(Payout $payout, ?Order $order, int $amount): void
+    {
+        if ($order === null) {
+            return;
+        }
+
+        $offer = $this->acceptedOffer($order);
+
+        if ($offer === null) {
+            return; // nothing to measure the deal against
+        }
+
+        $alreadyPaid = (int) $order->payouts()
+            ->whereKeyNot($payout->id)
+            ->where('status', PayoutStatus::Paid->value)
+            ->sum('amount');
+
+        $cap = max(0, $this->agentNet($this->dealAmount($offer)) - $alreadyPaid);
+
+        if ($amount > $cap) {
+            $capSom = number_format($cap / 100, 0, '.', ' ');
+
+            throw ValidationException::withMessages([
+                'amount' => ["The amount exceeds what the agent is owed on this deal (max {$capSom} so'm)."],
+            ]);
+        }
+    }
+
+    /**
      * Money may only leave the platform once the client's cooling-off window has
      * closed — until then they can still cancel the deal and get the payment
      * back, and a released payout would have nothing to reverse. It is also
@@ -193,12 +248,18 @@ class PayoutService
      * resolve that report first, so money never leaves while a complaint is
      * still under review.
      */
-    private function assertReleasable(Payout $payout): void
+    private function assertReleasable(?Order $order): void
     {
-        $order = $payout->order()->first();
-
         if ($order === null) {
             return;
+        }
+
+        // A cancelled (or never-started) order owes the agent nothing — its
+        // payouts were voided by the cancel/refund and must never be released.
+        if (! $order->status->isPayoutEligible()) {
+            throw ValidationException::withMessages([
+                'payout' => ["This order is {$order->status->value} — payouts can only be released on an active or completed deal."],
+            ]);
         }
 
         if ($order->problem_state === OrderProblemState::Flagged) {

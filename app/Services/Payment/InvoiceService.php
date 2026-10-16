@@ -49,6 +49,7 @@ class InvoiceService
             'application/pdf',
             $order->client_id,
             'invoices',
+            private: true,
         );
     }
 

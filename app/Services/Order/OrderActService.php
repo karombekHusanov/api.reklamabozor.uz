@@ -92,6 +92,7 @@ class OrderActService
             'application/pdf',
             $order->client_id,
             'acts',
+            private: true,
         );
 
         return OrderDocument::create([

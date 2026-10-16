@@ -30,6 +30,7 @@ class ChatService
             ->where(fn ($q) => $q->where('client_id', $user->id)->orWhere('agent_id', $user->id))
             ->when($agentProfileId !== null, fn ($q) => $q->where('agent_profile_id', $agentProfileId))
             ->with(['order.category', 'client', 'agent', 'agentProfile', 'lastMessage.attachments'])
+            ->withUnreadCountFor($user)
             ->latest('updated_at')
             ->get();
 

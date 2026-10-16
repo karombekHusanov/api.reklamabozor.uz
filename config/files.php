@@ -11,6 +11,13 @@ return [
     'disk' => env('FILES_DISK', 'public'),
 
     /*
+    | Disk for private files (KYC scans, contracts, invoices, acts). Must NOT be
+    | web-served: they are streamed through the authenticated GET /files/{file}
+    | endpoint, which checks who may see each file (FileAccessService).
+    */
+    'private_disk' => env('FILES_PRIVATE_DISK', 'local'),
+
+    /*
     | Sub-directory within the disk where uploads are stored.
     */
     'directory' => env('FILES_DIRECTORY', 'uploads'),
