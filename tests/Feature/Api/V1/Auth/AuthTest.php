@@ -5,7 +5,9 @@ namespace Tests\Feature\Api\V1\Auth;
 use App\Enums\Role;
 use App\Models\AgentProfile;
 use App\Models\Order;
+use App\Models\PersonalAccessToken;
 use App\Models\User;
+use App\Services\Auth\AuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -97,6 +99,57 @@ class AuthTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.user.first_name', 'Karombek')
             ->assertJsonPath('data.user.last_name', 'Husanov');
+    }
+
+    public function test_telegram_login_keeps_the_newest_mini_app_tokens_and_leaves_other_tokens_alone(): void
+    {
+        $user = User::factory()->create(['telegram_id' => 555666777]);
+
+        // Three earlier mini app logins (devices), an admin session and a dev token.
+        $oldest = $user->createToken(AuthService::MINI_APP_TOKEN_NAME)->accessToken;
+        $middle = $user->createToken(AuthService::MINI_APP_TOKEN_NAME)->accessToken;
+        $newest = $user->createToken(AuthService::MINI_APP_TOKEN_NAME)->accessToken;
+        $admin = $user->createToken('admin')->accessToken;
+        $dev = $user->createToken('dev-agent')->accessToken;
+
+        $response = $this->postJson('/api/v1/auth/telegram', ['telegram_id' => 555666777])->assertOk();
+        $fresh = $response->json('data.token');
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => 'Bearer '.$fresh])
+            ->assertOk()
+            ->assertJsonPath('data.id', $user->id);
+
+        // The new token plus the two most recent earlier ones survive; the
+        // oldest mini app token is revoked. (Checked in the database: the test
+        // request guard caches the resolved user across requests in one test.)
+        $this->assertSame(
+            AuthService::MINI_APP_MAX_TOKENS,
+            $user->tokens()->where('name', AuthService::MINI_APP_TOKEN_NAME)->count(),
+        );
+        $this->assertDatabaseMissing('personal_access_tokens', ['id' => $oldest->id]);
+        $this->assertDatabaseHas('personal_access_tokens', ['id' => $middle->id]);
+        $this->assertDatabaseHas('personal_access_tokens', ['id' => $newest->id]);
+        $this->assertNotNull(PersonalAccessToken::findToken($fresh));
+
+        // Tokens issued under other names are untouched.
+        $this->assertDatabaseHas('personal_access_tokens', ['id' => $admin->id]);
+        $this->assertDatabaseHas('personal_access_tokens', ['id' => $dev->id]);
+    }
+
+    public function test_second_device_login_keeps_the_first_device_signed_in(): void
+    {
+        $first = $this->postJson('/api/v1/auth/telegram', ['telegram_id' => 123123123])
+            ->assertCreated()
+            ->json('data.token');
+
+        $second = $this->postJson('/api/v1/auth/telegram', ['telegram_id' => 123123123])
+            ->assertOk()
+            ->json('data.token');
+
+        $this->assertNotSame($first, $second);
+        $this->assertNotNull(PersonalAccessToken::findToken($first));
+        $this->assertNotNull(PersonalAccessToken::findToken($second));
+        $this->assertSame(2, User::where('telegram_id', 123123123)->firstOrFail()->tokens()->count());
     }
 
     public function test_telegram_login_requires_an_identity(): void

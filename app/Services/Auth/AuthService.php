@@ -21,6 +21,16 @@ class AuthService
     /** Admin panel token lifetime (12 hours). */
     public const ADMIN_TOKEN_TTL_MINUTES = 12 * 60;
 
+    /** Name of the tokens the mini app login issues. */
+    public const MINI_APP_TOKEN_NAME = 'auth';
+
+    /**
+     * How many mini app tokens a user keeps after a login (the new one
+     * included): one per device the person actually uses — phone, desktop
+     * Telegram, a browser — without personal_access_tokens growing per launch.
+     */
+    public const MINI_APP_MAX_TOKENS = 3;
+
     public function __construct(
         private readonly AgentAccountLinker $agentLinker,
         private readonly TelegramInitDataValidator $initDataValidator,
@@ -87,15 +97,35 @@ class AuthService
         // ordering — the webhook contact handler covers the opposite order.
         $this->agentLinker->linkByPhone($user);
 
-        // The mini app authenticates from Telegram initData on every launch, so keep a single
-        // active token per user — otherwise personal_access_tokens would grow without bound.
-        $user->tokens()->delete();
+        // The mini app authenticates from Telegram initData on every launch. Keep
+        // the newest few mini app tokens (so a second device stays signed in)
+        // and drop the rest; admin and other named tokens are not touched.
+        $token = $user->createToken(self::MINI_APP_TOKEN_NAME)->plainTextToken;
+
+        $this->pruneMiniAppTokens($user);
 
         return [
             'user' => $user,
-            'token' => $user->createToken('auth')->plainTextToken,
+            'token' => $token,
             'created' => $isNew,
         ];
+    }
+
+    /**
+     * Revoke every mini app token beyond the MINI_APP_MAX_TOKENS newest ones.
+     */
+    private function pruneMiniAppTokens(User $user): void
+    {
+        $keep = $user->tokens()
+            ->where('name', self::MINI_APP_TOKEN_NAME)
+            ->orderByDesc('id')
+            ->limit(self::MINI_APP_MAX_TOKENS)
+            ->pluck('id');
+
+        $user->tokens()
+            ->where('name', self::MINI_APP_TOKEN_NAME)
+            ->whereNotIn('id', $keep)
+            ->delete();
     }
 
     /**
