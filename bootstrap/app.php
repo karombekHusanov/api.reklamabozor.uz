@@ -23,6 +23,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // any client forge its IP via X-Forwarded-For.
         $middleware->replace(BaseTrustProxies::class, TrustProxies::class);
         $middleware->throttleApi();
+        // Pure API, no web login page: a guest must get a 401, never a
+        // redirect to a `login` route that does not exist (which surfaced as a
+        // 500 whenever a client omitted `Accept: application/json`).
+        $middleware->redirectGuestsTo(fn () => null);
         $middleware->alias([
             'admin' => EnsureAdmin::class,
         ]);
