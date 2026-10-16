@@ -7,7 +7,6 @@ use App\Contracts\RefundableGateway;
 use App\Enums\GatewayPaymentPurpose;
 use App\Enums\GatewayPaymentStatus;
 use App\Enums\WalletTransactionType;
-use App\Models\AgentPass;
 use App\Models\GatewayPayment;
 use App\Models\User;
 use App\Services\Payment\Gateway\CardPaymentException;
@@ -130,10 +129,11 @@ class GatewayPaymentService
     }
 
     /**
-     * Admin full refund of a successful card payment: take back what it bought
-     * (the wallet credit, or the pass an older payment activated), then reverse the debit at the
-     * provider — all in one transaction, so a refused reversal changes nothing.
-     * A top-up the agent has already spent cannot be refunded (422).
+     * Admin full refund of a successful card payment: take back the wallet
+     * credit it bought, then reverse the debit at the provider — all in one
+     * transaction, so a refused reversal changes nothing. A top-up the agent
+     * has already spent cannot be refunded (422). (Card payments only ever
+     * credit the balance now; the daily Propusk they used to buy is retired.)
      */
     public function refund(GatewayPayment $payment, User $admin, string $reason): GatewayPayment
     {
@@ -150,17 +150,9 @@ class GatewayPaymentService
                 throw ValidationException::withMessages(['payment' => ['This payment cannot be refunded through the gateway.']]);
             }
 
-            // Older payments bought a (now retired) Propusk — void that pass;
-            // everything else was credited to the balance.
-            $passes = AgentPass::query()->where('gateway_payment_id', $payment->id);
-
-            if ($passes->exists()) {
-                $passes->update(['status' => 'refunded', 'note' => $reason]);
-            } else {
-                $this->wallet->debit(
-                    $payment->user, WalletTransactionType::Refund, $payment->amount_tiyin, 'gp-refund:'.$payment->id, $reason, $admin,
-                );
-            }
+            $this->wallet->debit(
+                $payment->user, WalletTransactionType::Refund, $payment->amount_tiyin, 'gp-refund:'.$payment->id, $reason, $admin,
+            );
 
             try {
                 $gateway->reverseCardPayment($payment->gateway_ref, $reason);
