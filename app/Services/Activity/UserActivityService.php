@@ -208,9 +208,9 @@ class UserActivityService
         return [
             'orders_total' => array_sum($byStatus),
             'orders_open' => $byStatus[OrderStatus::New->value] + $byStatus[OrderStatus::OffersSent->value],
-            'orders_awaiting_payment' => $byStatus[OrderStatus::AwaitingPayment->value],
-            'orders_in_progress' => $byStatus[OrderStatus::InProgress->value]
-                + $byStatus[OrderStatus::ClientSelected->value],
+            // Retired status (2026-10-17); the key stays for the mini app contract.
+            'orders_awaiting_payment' => 0,
+            'orders_in_progress' => $byStatus[OrderStatus::InProgress->value],
             'orders_awaiting_confirmation' => $byStatus[OrderStatus::WorkSubmitted->value],
             'orders_completed' => $byStatus[OrderStatus::Completed->value],
             'orders_cancelled' => $byStatus[OrderStatus::Cancelled->value],
@@ -284,9 +284,9 @@ class UserActivityService
             'offers_pending' => $offerCounts[OfferStatus::Pending->value],
             'offers_accepted' => $offerCounts[OfferStatus::Accepted->value],
             'offers_rejected' => $offerCounts[OfferStatus::Rejected->value],
-            'deals_awaiting_payment' => $dealByStatus[OrderStatus::AwaitingPayment->value],
-            'deals_in_progress' => $dealByStatus[OrderStatus::InProgress->value]
-                + $dealByStatus[OrderStatus::ClientSelected->value],
+            // Retired status (2026-10-17); the key stays for the mini app contract.
+            'deals_awaiting_payment' => 0,
+            'deals_in_progress' => $dealByStatus[OrderStatus::InProgress->value],
             'deals_work_submitted' => $dealByStatus[OrderStatus::WorkSubmitted->value],
             'deals_completed' => $dealByStatus[OrderStatus::Completed->value],
             'reviews_pending' => $reviewsPending,
@@ -358,9 +358,7 @@ class UserActivityService
         $total = $unreadThreads;
 
         if ($role === Role::Client && $client !== null) {
-            // awaiting_payment is time-critical (72h auto-cancel).
-            $total += (int) $client['orders_awaiting_payment']
-                + (int) $client['orders_awaiting_confirmation']
+            $total += (int) $client['orders_awaiting_confirmation']
                 + (int) $client['offers_received_pending']
                 + (int) $client['reviews_pending'];
         }

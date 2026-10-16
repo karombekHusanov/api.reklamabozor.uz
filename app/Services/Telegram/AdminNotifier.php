@@ -322,30 +322,6 @@ class AdminNotifier
         $this->send('payment_refunded', implode("\n", $lines));
     }
 
-    public function paymentAwaitingTimedOut(Order $order): void
-    {
-        $order->loadMissing('client', 'category');
-
-        $this->send('payment_timeout', implode("\n", [
-            "⏰ <b>To'lov muddati o'tdi — buyurtma #{$order->id}</b>",
-            '👤 Klient: '.$this->userLabel($order->client),
-            '📁 '.e($order->category?->name_uz ?? $order->title),
-            'Buyurtma bekor qilindi (awaiting_payment timeout).',
-        ]));
-    }
-
-    public function paymentAwaitingCancelledByClient(Order $order): void
-    {
-        $order->loadMissing('client', 'category');
-
-        $this->send('payment_awaiting_cancelled', implode("\n", [
-            "🚫 <b>To'lov bekor — buyurtma #{$order->id}</b>",
-            '👤 Klient: '.$this->userLabel($order->client),
-            '📁 '.e($order->category?->name_uz ?? $order->title),
-            'Klient awaiting_payment holatida buyurtmani bekor qildi.',
-        ]));
-    }
-
     /** An individual executor asked to be raised to the legal-entity track. */
     public function profileUpgradeRequested(AgentProfileUpgrade $upgrade): void
     {

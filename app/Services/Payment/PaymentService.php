@@ -9,11 +9,9 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
-use App\Jobs\RecalculateRating;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
-use App\Services\Order\OfferService;
 use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
 use App\Services\Telegram\PaymentFeedNotifier;
@@ -25,7 +23,6 @@ use RuntimeException;
 class PaymentService
 {
     public function __construct(
-        private readonly OfferService $offers,
         private readonly PayoutService $payouts,
         private readonly AdminNotifier $notifier,
         private readonly PaymentFeedNotifier $feed,
@@ -289,14 +286,13 @@ class PaymentService
 
     /**
      * An order may be paid while the deal is active and the money is still
-     * owed. Legacy orders parked in `awaiting_payment` stay payable too.
+     * owed.
      */
     private function assertPayable(Order $order): void
     {
         $order->assertTender();
 
         $payableStatus = in_array($order->status, [
-            OrderStatus::AwaitingPayment,
             OrderStatus::InProgress,
             OrderStatus::WorkSubmitted,
         ], true);
@@ -422,49 +418,10 @@ class PaymentService
     }
 
     /**
-     * Client cancels a legacy order still parked in `awaiting_payment`. Marks
-     * any open payment intents dead, then cancels the order.
-     */
-    public function cancelAwaitingPayment(Order $order): void
-    {
-        $order->refresh();
-
-        if ($order->status !== OrderStatus::AwaitingPayment) {
-            throw ValidationException::withMessages([
-                'order' => ['This order can no longer be cancelled.'],
-            ]);
-        }
-
-        $paid = $order->payments()
-            ->where('purpose', PaymentPurpose::Order)
-            ->where('status', PaymentStatus::Success)
-            ->exists();
-
-        if ($paid) {
-            throw ValidationException::withMessages([
-                'order' => ['Payment already completed — this order can no longer be cancelled.'],
-            ]);
-        }
-
-        $this->voidOpenIntents($order);
-
-        $order->update(['status' => OrderStatus::Cancelled]);
-
-        RecalculateRating::dispatch($order->client_id);
-
-        try {
-            $this->notifier->paymentAwaitingCancelledByClient($order);
-        } catch (\Throwable $e) {
-            report($e);
-        }
-    }
-
-    /**
      * Settle the money side once an order payment succeeds: mark the order
      * paid, plan the agent's advance payout and cancel the sibling intents the
      * client abandoned (e.g. a cash invoice they ended up paying by bank
-     * transfer). Legacy orders still parked in `awaiting_payment` are
-     * activated here.
+     * transfer).
      */
     private function onOrderPaid(Payment $payment): void
     {
@@ -480,16 +437,6 @@ class PaymentService
 
         if ($order->payment_state === OrderPaymentState::Paid && $order->outstandingTiyin() <= 0) {
             return; // already settled — idempotent retry
-        }
-
-        // Legacy flow: the deal was waiting for the money before starting.
-        if ($order->status === OrderStatus::AwaitingPayment) {
-            $offer = $order->offers()->where('status', OfferStatus::Accepted)->first();
-
-            if ($offer !== null) {
-                $this->offers->activateDeal($offer);
-                $order->refresh();
-            }
         }
 
         $order->update(['paid_at' => $order->paid_at ?? $payment->paid_at ?? now()]);
@@ -560,7 +507,6 @@ class PaymentService
             $order->update(['payment_state' => OrderPaymentState::Refunded]);
 
             if ($cancelOrder && in_array($order->status, [
-                OrderStatus::AwaitingPayment,
                 OrderStatus::InProgress,
                 OrderStatus::WorkSubmitted,
             ], true)) {

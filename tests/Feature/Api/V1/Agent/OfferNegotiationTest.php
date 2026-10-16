@@ -57,14 +57,14 @@ class OfferNegotiationTest extends TestCase
         ]);
     }
 
-    public function test_agent_can_open_chat_while_awaiting_payment(): void
+    public function test_agent_cannot_open_a_negotiation_chat_from_an_accepted_offer(): void
     {
         [$agent, $token, $profile, $category] = $this->approvedAgent();
         $client = User::factory()->create();
         $order = Order::factory()
             ->for($category)
             ->for($client, 'client')
-            ->status(OrderStatus::AwaitingPayment)
+            ->status(OrderStatus::InProgress)
             ->create();
         $offer = Offer::factory()->for($order)->for($agent, 'agent')->create([
             'agent_profile_id' => $profile->id,
@@ -72,19 +72,13 @@ class OfferNegotiationTest extends TestCase
             'price' => 5_000_000,
         ]);
 
+        // The deal chat (chats) serves an active deal; the negotiation thread is
+        // only opened from a pending offer on an order still open for offers.
         $this->postJson("/api/v1/agent/offers/{$offer->id}/chat", [], [
             'Authorization' => 'Bearer '.$token,
         ])
-            ->assertOk()
-            ->assertJsonPath('data.type', 'direct')
-            ->assertJsonPath('data.can_write', true);
-
-        $this->getJson("/api/v1/agent/offers/{$offer->id}", [
-            'Authorization' => 'Bearer '.$token,
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.can_edit_price', false)
-            ->assertJsonStructure(['data' => ['chat' => ['id', 'blocked']]]);
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('offer');
 
         $this->patchJson("/api/v1/agent/offers/{$offer->id}", [
             'price' => 4_000_000,

@@ -752,7 +752,7 @@ class Order extends Model
     /**
      * May the client still cancel this order themselves?
      *
-     * - open for offers / legacy awaiting_payment → yes;
+     * - open for offers → yes;
      * - active but unpaid → yes (no money moved);
      * - active and paid → only inside the cooling-off window, and only while no
      *   agent payout has actually been released;
@@ -760,7 +760,7 @@ class Order extends Model
      */
     public function isCancellableByClient(): bool
     {
-        if ($this->status->isOpenForOffers() || $this->status === OrderStatus::AwaitingPayment) {
+        if ($this->status->isOpenForOffers()) {
             return true;
         }
 

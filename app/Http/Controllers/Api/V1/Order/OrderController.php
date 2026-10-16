@@ -65,8 +65,8 @@ class OrderController extends ApiController
     }
 
     /**
-     * Client cancels their own order — while open for offers, or while
-     * awaiting unpaid checkout (awaiting_payment).
+     * Client cancels their own order — while open for offers, or on an active
+     * deal within the rules of {@see Order::isCancellableByClient()}.
      */
     public function cancel(Request $request, Order $order): JsonResponse
     {

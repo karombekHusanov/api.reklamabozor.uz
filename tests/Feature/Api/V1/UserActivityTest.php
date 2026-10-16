@@ -255,16 +255,14 @@ class UserActivityTest extends TestCase
         // completed without client→provider review
         Order::factory()->for($client, 'client')->create(['status' => OrderStatus::Completed]);
 
-        // awaiting_payment is time-critical (72h auto-cancel) — must count.
-        Order::factory()->for($client, 'client')->create(['status' => OrderStatus::AwaitingPayment]);
-
         $this->getJson('/api/v1/me/activity?role=client', $this->auth($client))
             ->assertOk()
-            ->assertJsonPath('data.client.orders_awaiting_payment', 1)
+            // Retired status — always 0, the key is kept for the mini app.
+            ->assertJsonPath('data.client.orders_awaiting_payment', 0)
             ->assertJsonPath('data.client.orders_awaiting_confirmation', 1)
             ->assertJsonPath('data.client.offers_received_pending', 1)
             ->assertJsonPath('data.client.reviews_pending', 1)
-            ->assertJsonPath('data.action_required', 4);
+            ->assertJsonPath('data.action_required', 3);
     }
 
     public function test_agent_without_profile_gets_provider_stub(): void
@@ -325,8 +323,7 @@ class UserActivityTest extends TestCase
         foreach (
             [
                 OrderStatus::InProgress,
-                OrderStatus::ClientSelected,
-                OrderStatus::AwaitingPayment,
+                OrderStatus::InProgress,
                 OrderStatus::WorkSubmitted,
                 OrderStatus::Completed,
             ] as $status
@@ -344,10 +341,10 @@ class UserActivityTest extends TestCase
 
         $this->getJson('/api/v1/me/activity', $this->auth($agent))
             ->assertOk()
-            ->assertJsonPath('data.provider.offers_total', 6)
+            ->assertJsonPath('data.provider.offers_total', 5)
             ->assertJsonPath('data.provider.offers_pending', 1)
-            ->assertJsonPath('data.provider.offers_accepted', 5)
-            ->assertJsonPath('data.provider.deals_awaiting_payment', 1)
+            ->assertJsonPath('data.provider.offers_accepted', 4)
+            ->assertJsonPath('data.provider.deals_awaiting_payment', 0)
             ->assertJsonPath('data.provider.deals_in_progress', 2)
             ->assertJsonPath('data.provider.deals_work_submitted', 1)
             ->assertJsonPath('data.provider.deals_completed', 1);

@@ -370,26 +370,6 @@ class OrderPaymentTest extends TestCase
         $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
     }
 
-    public function test_client_cannot_cancel_awaiting_payment_after_success(): void
-    {
-        $client = User::factory()->create();
-        $token = $client->createToken('test')->plainTextToken;
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::AwaitingPayment)->create();
-        Offer::factory()->for($order)->create(['status' => OfferStatus::Accepted]);
-        Payment::factory()->create([
-            'payable_type' => Order::class,
-            'payable_id' => $order->id,
-            'purpose' => PaymentPurpose::Order,
-            'status' => PaymentStatus::Success,
-        ]);
-
-        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('order');
-
-        $this->assertSame(OrderStatus::AwaitingPayment, $order->fresh()->status);
-    }
-
     public function test_confirming_twice_settles_once(): void
     {
         Storage::fake((string) config('files.disk'));

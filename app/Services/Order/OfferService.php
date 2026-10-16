@@ -747,8 +747,7 @@ class OfferService
     /**
      * Activate the deal for an already-accepted offer: move the order to
      * in_progress and open the client ↔ agent conversation. Used by
-     * {@see acceptOffer()} and, for legacy orders parked in `awaiting_payment`,
-     * by the payment webhook. Idempotent — a repeat call is a no-op once
+     * {@see acceptOffer()}. Idempotent — a repeat call is a no-op once
      * in_progress.
      */
     public function activateDeal(Offer $offer): void

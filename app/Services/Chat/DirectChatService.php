@@ -405,14 +405,11 @@ class DirectChatService
         $negotiating = $offer->status === OfferStatus::Pending
             && $order->status->isOpenForOffers();
 
-        $awaitingPayment = $offer->status === OfferStatus::Accepted
-            && $order->status === OrderStatus::AwaitingPayment;
-
-        if (! $negotiating && ! $awaitingPayment) {
+        if (! $negotiating) {
             throw ValidationException::withMessages([
                 'offer' => $offer->status === OfferStatus::Pending
                     ? ['This order is no longer open for negotiation.']
-                    : ['You can only start a chat from a pending or awaiting-payment offer.'],
+                    : ['You can only start a chat from a pending offer.'],
             ]);
         }
     }

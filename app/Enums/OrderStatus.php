@@ -6,11 +6,9 @@ enum OrderStatus: string
 {
     case New = 'new';
     case OffersSent = 'offers_sent';
-    case ClientSelected = 'client_selected';
-    // Legacy: client picked an offer but payment was not yet confirmed. No
-    // longer entered by new orders — acceptance now always activates the
-    // deal immediately (in_progress). Kept for old rows and their cancel path.
-    case AwaitingPayment = 'awaiting_payment';
+    // Accepting a priced offer activates the deal immediately (in_progress);
+    // the money side lives in orders.payment_state, not in the status. The
+    // old `client_selected` / `awaiting_payment` steps were retired 2026-10-17.
     case InProgress = 'in_progress';
     // Agent delivered the work; waiting for the client to confirm (or the
     // 3-day auto-complete to kick in).

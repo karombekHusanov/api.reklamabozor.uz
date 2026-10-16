@@ -1,7 +1,6 @@
 <?php
 
 use App\Enums\OrderPaymentState;
-use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -45,7 +44,9 @@ return new class extends Migration
         }
 
         DB::table('orders')
-            ->where('status', OrderStatus::AwaitingPayment->value)
+            // Literal: the awaiting_payment status was retired on 2026-10-17 and
+            // the enum case is gone; this backfill is already historical.
+            ->where('status', 'awaiting_payment')
             ->whereNotIn('id', $paidOrderIds ?: [0])
             ->update(['payment_state' => OrderPaymentState::Unpaid->value]);
     }

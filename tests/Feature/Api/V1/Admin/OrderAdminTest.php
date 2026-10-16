@@ -53,10 +53,10 @@ class OrderAdminTest extends TestCase
     public function test_admin_can_filter_orders_by_status(): void
     {
         [, $token] = $this->admin();
-        Order::factory()->status(OrderStatus::ClientSelected)->create();
+        Order::factory()->status(OrderStatus::OffersSent)->create();
         Order::factory()->status(OrderStatus::New)->count(2)->create();
 
-        $this->getJson('/api/v1/admin/orders?status=client_selected', $this->auth($token))
+        $this->getJson('/api/v1/admin/orders?status=offers_sent', $this->auth($token))
             ->assertOk()
             ->assertJsonCount(1, 'data.items');
     }
@@ -110,7 +110,7 @@ class OrderAdminTest extends TestCase
     public function test_admin_can_view_an_order_with_offers_and_client(): void
     {
         [, $token] = $this->admin();
-        $order = Order::factory()->status(OrderStatus::ClientSelected)->create();
+        $order = Order::factory()->status(OrderStatus::InProgress)->create();
         Offer::factory()->for($order)->accepted()->create();
         Offer::factory()->for($order)->count(2)->create();
 
@@ -121,18 +121,20 @@ class OrderAdminTest extends TestCase
             ->assertJsonPath('data.client.id', $order->client_id);
     }
 
-    public function test_admin_can_activate_a_selected_order(): void
+    public function test_admin_cannot_activate_an_order_that_is_still_open_for_offers(): void
     {
         [, $token] = $this->admin();
-        $order = Order::factory()->status(OrderStatus::ClientSelected)->create();
+        $order = Order::factory()->status(OrderStatus::OffersSent)->create();
 
+        // Only the client's acceptance (with the contract click-wrap) opens a
+        // deal; the admin can send delivered work back, not start a deal.
         $this->patchJson("/api/v1/admin/orders/{$order->id}/status", [
             'status' => 'in_progress',
         ], $this->auth($token))
-            ->assertOk()
-            ->assertJsonPath('data.status', 'in_progress');
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
 
-        $this->assertSame(OrderStatus::InProgress, $order->fresh()->status);
+        $this->assertSame(OrderStatus::OffersSent, $order->fresh()->status);
     }
 
     public function test_admin_can_complete_an_in_progress_order(): void
@@ -175,7 +177,7 @@ class OrderAdminTest extends TestCase
     public function test_status_value_is_validated(): void
     {
         [, $token] = $this->admin();
-        $order = Order::factory()->status(OrderStatus::ClientSelected)->create();
+        $order = Order::factory()->status(OrderStatus::OffersSent)->create();
 
         // "new" is not an admin-settable target.
         $this->patchJson("/api/v1/admin/orders/{$order->id}/status", [

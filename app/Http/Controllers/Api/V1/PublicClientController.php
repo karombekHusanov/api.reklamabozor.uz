@@ -20,7 +20,6 @@ class PublicClientController extends ApiController
 
         $inProgress = [
             OrderStatus::OffersSent,
-            OrderStatus::ClientSelected,
             OrderStatus::InProgress,
             OrderStatus::WorkSubmitted,
         ];

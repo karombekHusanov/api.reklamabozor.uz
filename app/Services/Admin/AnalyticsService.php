@@ -32,7 +32,6 @@ class AnalyticsService
     private const OPEN_STATUSES = [
         OrderStatus::New,
         OrderStatus::OffersSent,
-        OrderStatus::ClientSelected,
         OrderStatus::InProgress,
         OrderStatus::WorkSubmitted,
     ];

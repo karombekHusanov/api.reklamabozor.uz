@@ -180,21 +180,6 @@ class AdminOrderStatusTest extends TestCase
         $this->assertSame(2, $fresh->documents()->count());
     }
 
-    public function test_activating_a_legacy_awaiting_payment_order_opens_the_deal(): void
-    {
-        [$order] = $this->deal(OrderStatus::AwaitingPayment, OrderPaymentState::Unpaid);
-        $order->update(['activated_at' => null]);
-
-        $this->setStatus($order, 'in_progress')
-            ->assertOk()
-            ->assertJsonPath('data.status', 'in_progress');
-
-        $fresh = $order->fresh();
-        $this->assertSame(OrderStatus::InProgress, $fresh->status);
-        $this->assertNotNull($fresh->activated_at);
-        $this->assertDatabaseHas('chats', ['order_id' => $order->id]);
-    }
-
     public function test_sending_submitted_work_back_keeps_the_deal_running(): void
     {
         [$order] = $this->deal(OrderStatus::WorkSubmitted, OrderPaymentState::Paid);

@@ -711,20 +711,6 @@ class OrderTest extends TestCase
         $this->assertSame(OrderStatus::WorkSubmitted, $order->fresh()->status);
     }
 
-    public function test_client_can_cancel_while_awaiting_payment(): void
-    {
-        [$client, $token] = $this->authedUser();
-        $order = Order::factory()->for($client, 'client')->status(OrderStatus::AwaitingPayment)->create();
-        Offer::factory()->for($order)->create(['status' => OfferStatus::Accepted]);
-
-        $this->postJson("/api/v1/orders/{$order->id}/cancel", [], ['Authorization' => 'Bearer '.$token])
-            ->assertOk()
-            ->assertJsonPath('data.status', OrderStatus::Cancelled->value);
-
-        $this->assertSame(OrderStatus::Cancelled, $order->fresh()->status);
-        $this->assertSame(OfferStatus::Accepted, $order->offers()->first()->status);
-    }
-
     public function test_client_cannot_cancel_another_clients_order(): void
     {
         [, $token] = $this->authedUser();

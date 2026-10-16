@@ -2,7 +2,6 @@
 
 namespace App\Services\Admin;
 
-use App\Enums\OfferStatus;
 use App\Enums\OrderPaymentState;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
@@ -10,7 +9,6 @@ use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
-use App\Services\Order\OfferService;
 use App\Services\Order\OrderService;
 use App\Services\Payment\PaymentService;
 use App\Services\Payout\PayoutService;
@@ -34,16 +32,12 @@ class OrderAdminService
      */
     private const TRANSITIONS = [
         // work_submitted → in_progress lets the admin resolve a dispute by
-        // sending the work back for another round. awaiting_payment → in_progress
-        // lets the admin force-activate a deal (e.g. paid offline) without waiting
-        // on the gateway callback.
-        OrderStatus::InProgress->value => [OrderStatus::ClientSelected, OrderStatus::AwaitingPayment, OrderStatus::WorkSubmitted],
+        // sending the work back for another round.
+        OrderStatus::InProgress->value => [OrderStatus::WorkSubmitted],
         OrderStatus::Completed->value => [OrderStatus::InProgress, OrderStatus::WorkSubmitted],
         OrderStatus::Cancelled->value => [
             OrderStatus::New,
             OrderStatus::OffersSent,
-            OrderStatus::ClientSelected,
-            OrderStatus::AwaitingPayment,
             OrderStatus::InProgress,
             OrderStatus::WorkSubmitted,
         ],
@@ -51,7 +45,6 @@ class OrderAdminService
 
     public function __construct(
         private readonly OrderService $orders,
-        private readonly OfferService $offers,
         private readonly PaymentService $payments,
         private readonly PayoutService $payouts,
     ) {}
@@ -126,9 +119,7 @@ class OrderAdminService
      *  - cancelled → unpaid: open invoices voided + unpaid payouts cancelled;
      *    paid: the admin refund path ({@see PaymentService::refundByAdmin()}),
      *    which refuses when an agent payout was already released;
-     *  - in_progress ← awaiting_payment / client_selected with an accepted
-     *    offer: {@see OfferService::activateDeal()} (deal chat, activated_at);
-     *    ← work_submitted: plain send-back for another round.
+     *  - in_progress ← work_submitted: plain send-back for another round.
      */
     public function updateStatus(Order $order, OrderStatus $target, User $admin): Order
     {
@@ -202,33 +193,11 @@ class OrderAdminService
     private function activate(Order $order): void
     {
         // Dispute resolution: send the delivered work back for another round.
-        if ($order->status === OrderStatus::WorkSubmitted) {
-            $order->update([
-                'status' => OrderStatus::InProgress,
-                'work_submitted_at' => null,
-                'completion_reminder_sent_at' => null,
-            ]);
-
-            return;
-        }
-
-        $offer = $order->offers()->where('status', OfferStatus::Accepted)->first();
-
-        if ($offer !== null) {
-            // Same path the legacy payment callback used: opens the deal chat,
-            // freezes activated_at, notifies both sides, generates the contract.
-            $offer->setRelation('order', $order);
-            $this->offers->activateDeal($offer);
-
-            return;
-        }
-
-        if ($order->status === OrderStatus::AwaitingPayment) {
-            throw ValidationException::withMessages([
-                'status' => ['This order has no accepted offer to activate a deal for.'],
-            ]);
-        }
-
-        $order->update(['status' => OrderStatus::InProgress]);
+        // (assertTransition() only lets work_submitted in here.)
+        $order->update([
+            'status' => OrderStatus::InProgress,
+            'work_submitted_at' => null,
+            'completion_reminder_sent_at' => null,
+        ]);
     }
 }

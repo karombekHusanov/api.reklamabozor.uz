@@ -357,7 +357,6 @@ class OrderService
     /**
      * The client cancels their own order:
      *  - while still open for offers (`new` / `offers_sent`);
-     *  - while awaiting an unpaid checkout (legacy `awaiting_payment`);
      *  - on an **active but unpaid** deal — no money has moved;
      *  - on an **active paid** deal only inside the cooling-off window
      *    ({@see Order::clientCancelDeadline()}), which refunds the payment.
@@ -371,24 +370,6 @@ class OrderService
 
         if ($order->status === OrderStatus::InProgress) {
             return $this->cancelActiveDeal($client, $order);
-        }
-
-        if ($order->status === OrderStatus::AwaitingPayment) {
-            $acceptedAgent = $order->offers()
-                ->where('status', OfferStatus::Accepted)
-                ->with('agent')
-                ->first()
-                ?->agent;
-
-            $this->payments->cancelAwaitingPayment($order);
-
-            try {
-                $this->notifier->notifyAwaitingPaymentCancelled($order->fresh(), $acceptedAgent);
-            } catch (\Throwable $e) {
-                report($e);
-            }
-
-            return $this->withClientRelations($order->fresh());
         }
 
         if (! $order->status->isOpenForOffers()) {
