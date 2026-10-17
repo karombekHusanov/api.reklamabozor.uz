@@ -14,6 +14,8 @@ use App\Models\AgentProfile;
 use App\Models\GatewayPayment;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderAmendment;
+use App\Models\OrderProblemResolution;
 use App\Models\Payment;
 use App\Models\Payout;
 use App\Models\User;
@@ -90,13 +92,17 @@ class FinanceReportTest extends TestCase
         $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())
             ->assertOk();
 
-        $this->assertEquals(1_000_000, $response->json('data.collected.som'));
-        $this->assertEquals(0, $response->json('data.refunded.som'));
-        // 7% of the completed deal.
-        $this->assertEquals(70_000, $response->json('data.commission.som'));
-        $this->assertEquals(372_000, $response->json('data.paid_to_agents.som'));
-        $this->assertSame('bank_transfer', $response->json('data.collected_by_method.0.method'));
-        $this->assertSame(1, $response->json('data.counts.orders_completed'));
+        $this->assertEquals(1_000_000, $response->json('data.orders.collected.som'));
+        $this->assertSame(1, $response->json('data.orders.collected.count'));
+        $this->assertEquals(0, $response->json('data.orders.refunded.som'));
+        $this->assertEquals(1_000_000, $response->json('data.orders.net_collected.som'));
+        // 7% of the completed, paid deal.
+        $this->assertEquals(70_000, $response->json('data.orders.commission.som'));
+        $this->assertSame(1, $response->json('data.orders.commission.deals'));
+        $this->assertEquals(372_000, $response->json('data.orders.paid_to_agents.som'));
+        $this->assertSame(1, $response->json('data.orders.paid_to_agents.count'));
+        $this->assertSame('bank_transfer', $response->json('data.orders.collected_by_method.0.method'));
+        $this->assertSame(1, $response->json('data.orders.deals_completed'));
     }
 
     public function test_summary_respects_the_period(): void
@@ -109,8 +115,37 @@ class FinanceReportTest extends TestCase
             $this->adminHeaders(),
         )->assertOk();
 
-        $this->assertEquals(0, $response->json('data.collected.som'));
-        $this->assertEquals(0, $response->json('data.paid_to_agents.som'));
+        $this->assertEquals(0, $response->json('data.orders.collected.som'));
+        $this->assertEquals(0, $response->json('data.orders.paid_to_agents.som'));
+        $this->assertEquals(0, $response->json('data.orders.commission.som'));
+    }
+
+    public function test_commission_is_only_earned_on_paid_deals(): void
+    {
+        config(['payments.commission_percent' => 7]);
+
+        // Closed with the gateway off: nothing was collected, nothing earned.
+        $free = Order::factory()->status(OrderStatus::Completed)->create([
+            'payment_state' => OrderPaymentState::NotRequired,
+            'completed_at' => now(),
+        ]);
+        Offer::factory()->for($free)->accepted()->create(['price' => 900_000]);
+
+        // Closed before the client settled: the final payout is held, no commission yet.
+        $owed = Order::factory()->status(OrderStatus::Completed)->create([
+            'payment_state' => OrderPaymentState::Unpaid,
+            'completed_at' => now(),
+        ]);
+        Offer::factory()->for($owed)->accepted()->create(['price' => 300_000]);
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        $this->assertEquals(0, $response->json('data.orders.commission.som'));
+        $this->assertSame(0, $response->json('data.orders.commission.deals'));
+        $this->assertSame(2, $response->json('data.orders.deals_completed'));
+        // ...but the unpaid one is a receivable.
+        $this->assertEquals(300_000, $response->json('data.positions.receivables.som'));
+        $this->assertSame(1, $response->json('data.positions.receivables.orders'));
     }
 
     public function test_unpaid_active_orders_show_up_as_receivables(): void
@@ -122,7 +157,34 @@ class FinanceReportTest extends TestCase
 
         $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
 
-        $this->assertEquals(500_000, $response->json('data.receivables.som'));
+        $this->assertEquals(500_000, $response->json('data.positions.receivables.som'));
+        $this->assertSame(1, $response->json('data.positions.receivables.orders'));
+    }
+
+    public function test_pending_payouts_are_split_into_releasable_and_locked(): void
+    {
+        config(['orders.paid_cancel_window_minutes' => 60]);
+
+        // Paid two hours ago — the cooling-off window is closed, money may leave.
+        $settled = Order::factory()->status(OrderStatus::InProgress)->create([
+            'payment_state' => OrderPaymentState::Paid,
+            'paid_at' => now()->subHours(2),
+        ]);
+        Payout::factory()->create(['order_id' => $settled->id, 'amount' => 40_000_000]);
+
+        // Paid just now — the client can still cancel, the payout is locked.
+        $fresh = Order::factory()->status(OrderStatus::InProgress)->create([
+            'payment_state' => OrderPaymentState::Paid,
+            'paid_at' => now(),
+        ]);
+        Payout::factory()->create(['order_id' => $fresh->id, 'amount' => 10_000_000]);
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        $this->assertEquals(500_000, $response->json('data.positions.pending_payouts.som'));
+        $this->assertSame(2, $response->json('data.positions.pending_payouts.count'));
+        $this->assertEquals(400_000, $response->json('data.positions.releasable_payouts.som'));
+        $this->assertSame(1, $response->json('data.positions.releasable_payouts.count'));
     }
 
     public function test_a_refund_is_subtracted_once_from_the_net(): void
@@ -141,10 +203,49 @@ class FinanceReportTest extends TestCase
 
         $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
 
-        $this->assertEquals(1_400_000, $response->json('data.collected.som'));
-        $this->assertEquals(400_000, $response->json('data.refunded.som'));
-        $this->assertEquals(1_000_000, $response->json('data.net_collected.som'));
-        $this->assertSame(2, $response->json('data.counts.payments'));
+        $this->assertEquals(1_400_000, $response->json('data.orders.collected.som'));
+        $this->assertEquals(400_000, $response->json('data.orders.refunded.som'));
+        $this->assertEquals(1_000_000, $response->json('data.orders.net_collected.som'));
+        $this->assertSame(2, $response->json('data.orders.collected.count'));
+    }
+
+    public function test_hand_refunds_through_addenda_and_problem_orders_count_as_refunded(): void
+    {
+        $order = $this->settledDeal();
+
+        // An applied addendum cut the price by 150k and a manager returned it.
+        OrderAmendment::create([
+            'order_id' => $order->id,
+            'offer_id' => $order->acceptedOffer()->firstOrFail()->id,
+            'initiator_id' => $order->client_id,
+            'initiator_role' => 'client',
+            'before_snapshot' => ['items' => [], 'total' => 1_000_000],
+            'after_snapshot' => ['items' => [], 'total' => 850_000],
+            'extra_amount' => -150_000,
+            'status' => 'applied',
+            'refund_amount' => 150_000,
+            'refund_state' => OrderAmendment::REFUND_REFUNDED,
+            'refunded_at' => now(),
+        ]);
+
+        // A problem-order settlement handed 50k back by hand.
+        OrderProblemResolution::create([
+            'order_id' => $order->id,
+            'resolution' => OrderProblemResolution::REFUNDED,
+            'refund_amount' => 5_000_000,
+            'refund_method' => 'cash',
+            'resolved_by' => User::factory()->create(['role' => Role::Admin])->id,
+            'resolved_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        $this->assertEquals(200_000, $response->json('data.orders.refunded.som'));
+        $this->assertSame(2, $response->json('data.orders.refunded.count'));
+        $this->assertEquals(0, $response->json('data.orders.refunded_by_source.payments.som'));
+        $this->assertEquals(150_000, $response->json('data.orders.refunded_by_source.amendments.som'));
+        $this->assertEquals(50_000, $response->json('data.orders.refunded_by_source.problems.som'));
+        $this->assertEquals(800_000, $response->json('data.orders.net_collected.som'));
     }
 
     public function test_the_period_is_a_tashkent_calendar_day(): void
@@ -161,8 +262,8 @@ class FinanceReportTest extends TestCase
         $sep5 = $this->getJson('/api/v1/admin/finance/summary?from=2026-09-05&to=2026-09-05', $this->adminHeaders());
         $sep4 = $this->getJson('/api/v1/admin/finance/summary?from=2026-09-04&to=2026-09-04', $this->adminHeaders());
 
-        $this->assertEquals(100_000, $sep5->json('data.collected.som'));
-        $this->assertEquals(0, $sep4->json('data.collected.som'));
+        $this->assertEquals(100_000, $sep5->json('data.orders.collected.som'));
+        $this->assertEquals(0, $sep4->json('data.orders.collected.som'));
     }
 
     /**
@@ -210,29 +311,58 @@ class FinanceReportTest extends TestCase
         return $agent;
     }
 
-    public function test_summary_reports_propusk_revenue_apart_from_orders(): void
+    public function test_summary_reports_agent_fees_apart_from_orders(): void
     {
         $this->propuskActivity();
 
         $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
 
         // Revenue: two sold passes + three responses; the free grant is not money.
-        $this->assertEquals(23_000, $response->json('data.passes.revenue.som'));
-        $this->assertEquals(20_000, $response->json('data.passes.pass_sales.som'));
-        $this->assertSame(2, $response->json('data.passes.pass_sales.count'));
-        $this->assertEquals(3_000, $response->json('data.passes.response_fees.som'));
-        $this->assertSame(3, $response->json('data.passes.response_fees.count'));
+        $this->assertEquals(23_000, $response->json('data.fees.revenue.som'));
+        $this->assertEquals(20_000, $response->json('data.fees.pass_sales.som'));
+        $this->assertSame(2, $response->json('data.fees.pass_sales.count'));
+        $this->assertEquals(3_000, $response->json('data.fees.response_fees.som'));
+        $this->assertSame(3, $response->json('data.fees.response_fees.count'));
+        $this->assertEquals(0, $response->json('data.fees.take_fees.som'));
         // Cash that came in by card; the failed top-up is not counted.
-        $this->assertEquals(60_000, $response->json('data.passes.card_collected.som'));
-        $this->assertEquals(10_000, $response->json('data.passes.card_collected_by_purpose.pass.som'));
-        $this->assertEquals(50_000, $response->json('data.passes.card_collected_by_purpose.topup.som'));
-        // Prepaid and not yet spent.
-        $this->assertEquals(37_000, $response->json('data.passes.wallet_balance.som'));
+        $this->assertEquals(60_000, $response->json('data.fees.card_collected.som'));
+        $this->assertSame(2, $response->json('data.fees.card_collected.count'));
+        $this->assertEquals(0, $response->json('data.fees.card_refunds.som'));
+        // Prepaid and not yet spent — a balance, under positions.
+        $this->assertEquals(37_000, $response->json('data.positions.agent_balances.som'));
+        $this->assertSame(1, $response->json('data.positions.agent_balances.agents'));
         // Order money is untouched.
-        $this->assertEquals(0, $response->json('data.collected.som'));
+        $this->assertEquals(0, $response->json('data.orders.collected.som'));
     }
 
-    public function test_propusk_revenue_respects_the_period(): void
+    public function test_take_fees_and_card_refunds_are_reported_separately(): void
+    {
+        $agent = $this->propuskActivity();
+
+        WalletTransaction::create(['user_id' => $agent->id, 'type' => 'take_fee', 'amount_tiyin' => -500_000]);
+        // A 50k top-up reversed to the card: the wallet gives the money back.
+        WalletTransaction::create(['user_id' => $agent->id, 'type' => 'refund', 'amount_tiyin' => -5_000_000]);
+        GatewayPayment::create([
+            'reference' => (string) Str::uuid(), 'user_id' => $agent->id,
+            'purpose' => 'topup', 'amount_tiyin' => 5_000_000, 'status' => 'refunded',
+            'gateway' => 'atmos', 'paid_at' => now(),
+        ]);
+        WalletTransaction::create(['user_id' => $agent->id, 'type' => 'adjustment', 'amount_tiyin' => 200_000]);
+
+        $response = $this->getJson('/api/v1/admin/finance/summary', $this->adminHeaders())->assertOk();
+
+        $this->assertEquals(5_000, $response->json('data.fees.take_fees.som'));
+        $this->assertSame(1, $response->json('data.fees.take_fees.count'));
+        $this->assertEquals(28_000, $response->json('data.fees.revenue.som'));
+        // Gross card money still includes the reversed top-up; the refund is its own line.
+        $this->assertEquals(110_000, $response->json('data.fees.card_collected.som'));
+        $this->assertEquals(50_000, $response->json('data.fees.card_refunds.som'));
+        $this->assertEquals(2_000, $response->json('data.fees.adjustments.som'));
+        $this->assertSame(1, $response->json('data.fees.adjustments.count'));
+        $this->assertEquals(-16_000, $response->json('data.positions.agent_balances.som'));
+    }
+
+    public function test_agent_fees_respect_the_period(): void
     {
         $this->propuskActivity();
 
@@ -242,10 +372,10 @@ class FinanceReportTest extends TestCase
             $this->adminHeaders(),
         )->assertOk();
 
-        $this->assertEquals(0, $response->json('data.passes.revenue.som'));
-        $this->assertEquals(0, $response->json('data.passes.card_collected.som'));
+        $this->assertEquals(0, $response->json('data.fees.revenue.som'));
+        $this->assertEquals(0, $response->json('data.fees.card_collected.som'));
         // A balance is a position as of now, not a period flow.
-        $this->assertEquals(37_000, $response->json('data.passes.wallet_balance.som'));
+        $this->assertEquals(37_000, $response->json('data.positions.agent_balances.som'));
     }
 
     public function test_gateway_payments_register_lists_card_money(): void
@@ -280,16 +410,31 @@ class FinanceReportTest extends TestCase
         $this->assertStringContainsString('PO-77', $csv);
     }
 
-    public function test_payments_register_lists_settled_money(): void
+    public function test_payments_register_lists_settled_money_only_by_default(): void
     {
         $this->settledDeal();
 
-        $csv = $this->get('/api/v1/admin/finance/payments.csv?status=success', $this->adminHeaders())
+        // An invoice the client never paid — not money.
+        Payment::factory()->create([
+            'purpose' => PaymentPurpose::Order,
+            'status' => PaymentStatus::Draft,
+            'method' => PaymentMethod::Cash,
+            'amount' => 77_700_000,
+        ]);
+
+        $csv = $this->get('/api/v1/admin/finance/payments.csv', $this->adminHeaders())
             ->assertOk()
             ->streamedContent();
 
         $this->assertStringContainsString('1000000.00', $csv);
         $this->assertStringContainsString('bank_transfer', $csv);
+        $this->assertStringNotContainsString('777000.00', $csv);
+
+        $all = $this->get('/api/v1/admin/finance/payments.csv?status=all', $this->adminHeaders())
+            ->assertOk()
+            ->streamedContent();
+
+        $this->assertStringContainsString('777000.00', $all);
     }
 
     public function test_registers_print_tashkent_time(): void

@@ -12,17 +12,31 @@ use App\Enums\WalletTransactionType;
 use App\Models\AgentPass;
 use App\Models\GatewayPayment;
 use App\Models\Order;
+use App\Models\OrderAmendment;
+use App\Models\OrderProblemResolution;
 use App\Models\Payment;
 use App\Models\Payout;
 use App\Models\WalletTransaction;
+use App\Services\Payout\PayoutService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The numbers and registers the finance team works from: what came in, what
- * went out to agents, what the platform earned, and what is still owed. All
- * money is kept in tiyin internally and reported in som.
+ * The numbers and registers the finance team works from. The overview is
+ * three separate ledgers, so a reader never adds apples to oranges:
+ *
+ *  - `orders`    — client money for deals (escrow): what came in, what went
+ *                  back, what went out to agents and what the platform kept.
+ *                  Every figure is a flow inside the selected period.
+ *  - `positions` — what is owed right now (receivables, payouts due, agent
+ *                  balances). These are balances as of today and ignore the
+ *                  period on purpose.
+ *  - `fees`      — the platform's own sales to agents (per-order fees paid
+ *                  from the prepaid balance) and the card money that feeds it.
+ *                  Period flows again.
+ *
+ * All money is kept in tiyin internally and reported alongside in som.
  */
 class FinanceService
 {
@@ -34,6 +48,10 @@ class FinanceService
 
     /** Payments whose money actually arrived (a later refund keeps `paid_at`). */
     private const COLLECTED_STATUSES = [PaymentStatus::Success->value, PaymentStatus::Revert->value];
+
+    public function __construct(
+        private readonly PayoutService $payouts,
+    ) {}
 
     /**
      * Period boundaries for the given local calendar dates (default: this
@@ -61,6 +79,24 @@ class FinanceService
      */
     public function summary(Carbon $from, Carbon $to): array
     {
+        return [
+            'period' => [
+                'from' => $from->copy()->setTimezone(self::TIMEZONE)->toIso8601String(),
+                'to' => $to->copy()->setTimezone(self::TIMEZONE)->toIso8601String(),
+            ],
+            'orders' => $this->orders($from, $to),
+            'positions' => $this->positions(),
+            'fees' => $this->fees($from, $to),
+        ];
+    }
+
+    /**
+     * Client money for deals, as period flows.
+     *
+     * @return array<string, mixed>
+     */
+    private function orders(Carbon $from, Carbon $to): array
+    {
         // Query builder, not Eloquent: the grouped rows are aggregates, and a
         // cast enum column would blow up on the way out. A refunded payment
         // still came in: it is reported gross here and subtracted once under
@@ -71,6 +107,7 @@ class FinanceService
             ->whereBetween('paid_at', [$from, $to])
             ->selectRaw('method, COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
             ->groupBy('method')
+            ->orderByDesc('total')
             ->get()
             ->map(fn ($row): array => [
                 'method' => (string) $row->method,
@@ -81,102 +118,197 @@ class FinanceService
             ->values()
             ->all();
 
-        $collected = array_sum(array_column($collectedByMethod, 'total'));
+        $collected = $this->counted(
+            array_sum(array_column($collectedByMethod, 'total')),
+            array_sum(array_column($collectedByMethod, 'count')),
+        );
 
-        $refunded = (int) Payment::query()
-            ->whereNotNull('refunded_at')
-            ->whereBetween('refunded_at', [$from, $to])
-            ->sum('amount');
+        $refunds = $this->refunds($from, $to);
+        $refunded = $this->counted(
+            array_sum(array_column($refunds, 'tiyin')),
+            array_sum(array_column($refunds, 'count')),
+        );
 
-        $paidOut = (int) Payout::query()
+        $paidOut = Payout::query()
             ->where('status', PayoutStatus::Paid)
-            ->whereBetween('paid_at', [$from, $to])
-            ->sum('amount');
+            ->whereBetween('paid_at', [$from, $to]);
 
-        $pendingPayouts = (int) Payout::query()
-            ->where('status', PayoutStatus::Pending)
-            ->sum('amount');
+        $commission = $this->commission($from, $to);
 
         return [
-            'period' => [
-                'from' => $from->copy()->setTimezone(self::TIMEZONE)->toIso8601String(),
-                'to' => $to->copy()->setTimezone(self::TIMEZONE)->toIso8601String(),
-            ],
-            'collected' => $this->money($collected),
+            'collected' => $collected,
             'collected_by_method' => $collectedByMethod,
-            'refunded' => $this->money($refunded),
-            'net_collected' => $this->money($collected - $refunded),
-            'commission' => $this->money($this->commissionAccrued($from, $to)),
-            'paid_to_agents' => $this->money($paidOut),
-            'pending_payouts' => $this->money($pendingPayouts),
-            'receivables' => $this->money($this->receivables()),
-            'passes' => $this->passes($from, $to),
-            'counts' => [
-                'payments' => Payment::query()
-                    ->whereIn('status', self::COLLECTED_STATUSES)
-                    ->whereNotNull('paid_at')
-                    ->whereBetween('paid_at', [$from, $to])
-                    ->count(),
-                'payouts' => Payout::query()
-                    ->where('status', PayoutStatus::Paid)
-                    ->whereBetween('paid_at', [$from, $to])
-                    ->count(),
-                'orders_completed' => Order::query()
-                    ->where('status', OrderStatus::Completed)
-                    ->whereBetween('completed_at', [$from, $to])
-                    ->count(),
-            ],
+            'refunded' => $refunded,
+            'refunded_by_source' => $refunds,
+            'net_collected' => $this->money($collected['tiyin'] - $refunded['tiyin']),
+            'paid_to_agents' => $this->counted((int) (clone $paidOut)->sum('amount'), (clone $paidOut)->count()),
+            'commission' => $commission,
+            'deals_completed' => Order::query()
+                ->where('status', OrderStatus::Completed)
+                ->whereBetween('completed_at', [$from, $to])
+                ->count(),
         ];
     }
 
     /**
-     * Propusk money — the platform's own sales to agents, apart from the order
-     * escrow above. Revenue is earned when a pass is sold (from the card or the
-     * balance) or a per-response fee is charged; a top-up is only prepaid and
-     * sits on the agents' balances until it is spent.
+     * Every way client money goes back, by the date it was handed back. A
+     * reverted order payment is the common case; an applied addendum that cut
+     * the price and a problem-order settlement are returned by hand and live
+     * on their own tables, so they would otherwise never show up here.
+     *
+     * @return array<string, array{tiyin: int, som: float, count: int}>
+     */
+    private function refunds(Carbon $from, Carbon $to): array
+    {
+        $payments = Payment::query()
+            ->where('status', PaymentStatus::Revert)
+            ->whereNotNull('refunded_at')
+            ->whereBetween('refunded_at', [$from, $to]);
+
+        $amendments = OrderAmendment::query()
+            ->where('refund_state', OrderAmendment::REFUND_REFUNDED)
+            ->whereNotNull('refunded_at')
+            ->whereBetween('refunded_at', [$from, $to]);
+
+        $problems = OrderProblemResolution::query()
+            ->where('resolution', OrderProblemResolution::REFUNDED)
+            ->whereBetween('resolved_at', [$from, $to]);
+
+        return [
+            'payments' => $this->counted((int) (clone $payments)->sum('amount'), (clone $payments)->count()),
+            // Addendum refunds are stored in som.
+            'amendments' => $this->counted(
+                (int) round(((float) (clone $amendments)->sum('refund_amount')) * 100),
+                (clone $amendments)->count(),
+            ),
+            'problems' => $this->counted((int) (clone $problems)->sum('refund_amount'), (clone $problems)->count()),
+        ];
+    }
+
+    /**
+     * Commission the platform earned on deals that closed in the period. It is
+     * withheld from the agent's final payout rather than invoiced, so it is
+     * accrued from the deal price at the same rate the payout ledger uses —
+     * and only on deals the client actually paid for: a deal closed with no
+     * money collected (gateway off, or still owed) earns nothing.
+     *
+     * @return array{tiyin: int, som: float, deals: int}
+     */
+    private function commission(Carbon $from, Carbon $to): array
+    {
+        $orders = Order::query()
+            ->where('status', OrderStatus::Completed)
+            ->where('payment_state', OrderPaymentState::Paid)
+            ->whereBetween('completed_at', [$from, $to])
+            ->with('acceptedOffer')
+            ->get();
+
+        $total = 0;
+        $deals = 0;
+
+        foreach ($orders as $order) {
+            $due = $order->dueTiyin();
+
+            if ($due <= 0) {
+                continue; // Tezkor deals carry no price and no money
+            }
+
+            $total += $due - $this->payouts->agentNet($due);
+            $deals++;
+        }
+
+        return $this->money($total) + ['deals' => $deals];
+    }
+
+    /**
+     * What is owed right now. Balances, not flows: the period does not apply.
      *
      * @return array<string, mixed>
      */
-    private function passes(Carbon $from, Carbon $to): array
+    private function positions(): array
     {
-        // Admin grants are free (price 0) and carry no money.
-        $sales = AgentPass::query()
-            ->where('price_tiyin', '>', 0)
-            ->whereBetween('created_at', [$from, $to]);
-
-        // Per-order fees (on otklik, or on take under Tezkor pay_on_pick) are
-        // stored as wallet debits (negative amounts).
-        $fees = WalletTransaction::query()
-            ->whereIn('type', [WalletTransactionType::ResponseFee, WalletTransactionType::TakeFee])
-            ->whereBetween('created_at', [$from, $to]);
-
-        $passSales = (int) (clone $sales)->sum('price_tiyin');
-        $responseFees = -(int) (clone $fees)->sum('amount_tiyin');
-
-        $collectedByPurpose = DB::table('gateway_payments')
-            ->where('status', GatewayPaymentStatus::Success->value)
-            ->whereNotNull('paid_at')
-            ->whereBetween('paid_at', [$from, $to])
-            ->selectRaw('purpose, COALESCE(SUM(amount_tiyin), 0) as total, COUNT(*) as count')
-            ->groupBy('purpose')
+        // A deal may close before the client settles (the final payout is then
+        // held), so completed orders are receivables too — not just active ones.
+        $unpaid = Order::query()
+            ->where('payment_state', OrderPaymentState::Unpaid)
+            ->whereIn('status', [OrderStatus::InProgress, OrderStatus::WorkSubmitted, OrderStatus::Completed])
+            ->with(['acceptedOffer', 'payments', 'amendments'])
             ->get()
-            ->keyBy('purpose');
+            ->map(fn (Order $order): int => $order->outstandingTiyin())
+            ->filter(fn (int $tiyin): bool => $tiyin > 0);
 
-        $collected = fn (string $purpose): array => $this->money((int) ($collectedByPurpose[$purpose]->total ?? 0))
-            + ['count' => (int) ($collectedByPurpose[$purpose]->count ?? 0)];
+        $pending = Payout::query()->where('status', PayoutStatus::Pending);
+        $releasable = Payout::query()->releasable();
+
+        $balances = WalletTransaction::query()
+            ->selectRaw('user_id, COALESCE(SUM(amount_tiyin), 0) as balance')
+            ->groupBy('user_id')
+            ->havingRaw('COALESCE(SUM(amount_tiyin), 0) <> 0')
+            ->get();
 
         return [
-            'revenue' => $this->money($passSales + $responseFees),
-            'pass_sales' => $this->money($passSales) + ['count' => (clone $sales)->count()],
-            'response_fees' => $this->money($responseFees) + ['count' => (clone $fees)->count()],
-            'card_collected' => $this->money((int) $collectedByPurpose->sum('total'))
-                + ['count' => (int) $collectedByPurpose->sum('count')],
-            'card_collected_by_purpose' => [
-                'pass' => $collected('pass'),
-                'topup' => $collected('topup'),
-            ],
-            // Owed back to agents in service, as of now (includes admin adjustments).
-            'wallet_balance' => $this->money((int) WalletTransaction::query()->sum('amount_tiyin')),
+            'as_of' => now(self::TIMEZONE)->toIso8601String(),
+            'receivables' => $this->money((int) $unpaid->sum()) + ['orders' => $unpaid->count()],
+            'pending_payouts' => $this->counted((int) (clone $pending)->sum('amount'), (clone $pending)->count()),
+            // The slice of pending a manager can transfer today: cooling-off
+            // window closed, client paid, no open problem report.
+            'releasable_payouts' => $this->counted((int) (clone $releasable)->sum('amount'), (clone $releasable)->count()),
+            'agent_balances' => $this->money((int) $balances->sum('balance')) + ['agents' => $balances->count()],
+        ];
+    }
+
+    /**
+     * The platform's own sales to agents, apart from the order escrow above:
+     * per-order fees (on otklik, or on taking a Tezkor job) charged from the
+     * prepaid balance. A card top-up is only prepaid — it sits on the agent's
+     * balance until a fee spends it — so it is reported as cash in, not revenue.
+     *
+     * @return array<string, mixed>
+     */
+    private function fees(Carbon $from, Carbon $to): array
+    {
+        // Fees are stored as wallet debits (negative amounts).
+        $ledger = fn (WalletTransactionType $type) => WalletTransaction::query()
+            ->where('type', $type)
+            ->whereBetween('created_at', [$from, $to]);
+
+        $debit = fn (WalletTransactionType $type): array => $this->counted(
+            -(int) $ledger($type)->sum('amount_tiyin'),
+            $ledger($type)->count(),
+        );
+
+        $responseFees = $debit(WalletTransactionType::ResponseFee);
+        $takeFees = $debit(WalletTransactionType::TakeFee);
+
+        // The daily Propusk is retired (2026-10-14); old paid passes still count
+        // as revenue of their day. Admin grants are free (price 0) and carry no money.
+        $passes = AgentPass::query()
+            ->where('price_tiyin', '>', 0)
+            ->whereBetween('created_at', [$from, $to]);
+        $passSales = $this->counted((int) (clone $passes)->sum('price_tiyin'), (clone $passes)->count());
+
+        // Cash that arrived by card, gross: a payment reversed later still came
+        // in on its day and is subtracted once under `card_refunds`.
+        $cardIn = GatewayPayment::query()
+            ->whereIn('status', [GatewayPaymentStatus::Success, GatewayPaymentStatus::Refunded])
+            ->whereNotNull('paid_at')
+            ->whereBetween('paid_at', [$from, $to]);
+
+        // A card reversal takes the money back out of the wallet on the day it
+        // happens — that debit is the refund's only dated record.
+        $cardRefunds = $debit(WalletTransactionType::Refund);
+
+        $adjustments = $ledger(WalletTransactionType::Adjustment);
+
+        return [
+            'revenue' => $this->money($responseFees['tiyin'] + $takeFees['tiyin'] + $passSales['tiyin']),
+            'response_fees' => $responseFees,
+            'take_fees' => $takeFees,
+            'pass_sales' => $passSales,
+            'card_collected' => $this->counted((int) (clone $cardIn)->sum('amount_tiyin'), (clone $cardIn)->count()),
+            'card_refunds' => $cardRefunds,
+            // Manual balance corrections, signed (a grant is +, a write-off is −).
+            'adjustments' => $this->counted((int) (clone $adjustments)->sum('amount_tiyin'), (clone $adjustments)->count()),
         ];
     }
 
@@ -191,7 +323,7 @@ class FinanceService
     {
         $query = GatewayPayment::query()
             ->with('user.profile')
-            ->where('status', GatewayPaymentStatus::Success)
+            ->whereIn('status', [GatewayPaymentStatus::Success, GatewayPaymentStatus::Refunded])
             ->whereNotNull('paid_at')
             ->orderBy('paid_at');
 
@@ -208,11 +340,17 @@ class FinanceService
             'amount_som' => $this->som($payment->amount_tiyin),
             'card' => (string) (is_array($payment->meta) ? ($payment->meta['card_mask'] ?? '') : ''),
             'reference' => (string) ($payment->gateway_ref ?? $payment->reference),
+            'status' => $payment->status->value,
+            'refunded_at' => (string) (is_array($payment->meta) && isset($payment->meta['refund']['at'])
+                ? $this->local(Carbon::parse($payment->meta['refund']['at']), 'd.m.Y H:i')
+                : ''),
         ])->values()->all();
     }
 
     /**
-     * Rows of the incoming-payments register.
+     * Rows of the incoming-payments register. By default only money that
+     * actually arrived (settled, and later reverted) — the bookkeeping has no
+     * use for abandoned invoices; `status=all` lists every attempt.
      *
      * @param  array<string, mixed>  $filters
      * @return list<array<string, string>>
@@ -224,15 +362,22 @@ class FinanceService
             ->where('purpose', PaymentPurpose::Order)
             ->orderBy('id');
 
-        if (! empty($filters['status'])) {
-            $query->where('status', $filters['status']);
+        $status = (string) ($filters['status'] ?? '');
+
+        if ($status === '') {
+            $query->whereIn('status', self::COLLECTED_STATUSES);
+        } elseif ($status !== 'all') {
+            $query->where('status', $status);
         }
 
         if (! empty($filters['method'])) {
             $query->where('method', $filters['method']);
         }
 
-        $this->applyPeriod($query, $filters, 'created_at');
+        // Settled money is dated by when it arrived; anything else only has a
+        // creation date.
+        $settledOnly = $status === '' || in_array($status, self::COLLECTED_STATUSES, true);
+        $this->applyPeriod($query, $filters, $settledOnly ? 'paid_at' : 'created_at');
 
         return $query->get()->map(fn (Payment $payment): array => [
             'id' => (string) $payment->id,
@@ -244,6 +389,7 @@ class FinanceService
             'payer_phone' => (string) ($payment->payer?->phone ?? ''),
             'method' => (string) $payment->method?->value,
             'status' => $payment->status->value,
+            'percent' => $payment->percent !== null ? (string) $payment->percent : '',
             'amount_som' => $this->som($payment->amount),
             'reference' => (string) ($payment->reference ?? ''),
             'refunded_at' => $this->local($payment->refunded_at, 'd.m.Y H:i'),
@@ -295,36 +441,6 @@ class FinanceService
     }
 
     /**
-     * Commission the platform earned on deals that closed in the period. It is
-     * withheld from the payout rather than invoiced, so it is accrued here from
-     * the deal price and the configured rate.
-     */
-    private function commissionAccrued(Carbon $from, Carbon $to): int
-    {
-        $percent = (float) config('payments.commission_percent', 0);
-
-        $dealTotalSom = (float) Order::query()
-            ->where('orders.status', OrderStatus::Completed)
-            ->whereBetween('orders.completed_at', [$from, $to])
-            ->join('offers', function ($join): void {
-                $join->on('offers.order_id', '=', 'orders.id')->where('offers.status', '=', 'accepted');
-            })
-            ->sum('offers.price');
-
-        return (int) round($dealTotalSom * 100 * $percent / 100);
-    }
-
-    /** Money clients still owe on active deals, as of now. */
-    private function receivables(): int
-    {
-        return Order::query()
-            ->whereIn('payment_state', [OrderPaymentState::Unpaid])
-            ->whereIn('status', [OrderStatus::InProgress, OrderStatus::WorkSubmitted])
-            ->get()
-            ->sum(fn (Order $order): int => $order->outstandingTiyin());
-    }
-
-    /**
      * @param  Builder<covariant \Illuminate\Database\Eloquent\Model>  $query
      * @param  array<string, mixed>  $filters
      */
@@ -350,6 +466,14 @@ class FinanceService
     private function money(int $tiyin): array
     {
         return ['tiyin' => $tiyin, 'som' => $tiyin / 100];
+    }
+
+    /**
+     * @return array{tiyin: int, som: float, count: int}
+     */
+    private function counted(int $tiyin, int $count): array
+    {
+        return $this->money($tiyin) + ['count' => $count];
     }
 
     private function som(int $tiyin): string

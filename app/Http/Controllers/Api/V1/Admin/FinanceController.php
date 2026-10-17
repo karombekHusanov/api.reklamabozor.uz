@@ -43,6 +43,7 @@ class FinanceController extends ApiController
             'payer_phone' => 'Telefon',
             'method' => 'Usul',
             'status' => 'Holat',
+            'percent' => 'Ulush, %',
             'amount_som' => "Summa, so'm",
             'reference' => 'Hujjat/UUID',
             'refunded_at' => 'Qaytarilgan',
@@ -84,6 +85,8 @@ class FinanceController extends ApiController
             'amount_som' => "Summa, so'm",
             'card' => 'Karta',
             'reference' => 'Tranzaksiya',
+            'status' => 'Holat',
+            'refunded_at' => 'Qaytarilgan',
         ], $rows);
     }
 
