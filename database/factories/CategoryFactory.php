@@ -35,6 +35,15 @@ class CategoryFactory extends Factory
         ]);
     }
 
+    /** A sub-category of the given parent (type and depth follow the parent). */
+    public function childOf(Category $parent): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'parent_id' => $parent->id,
+            'type' => $parent->type,
+        ]);
+    }
+
     public function inactive(): static
     {
         return $this->state(fn (array $attributes) => [

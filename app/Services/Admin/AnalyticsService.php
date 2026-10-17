@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\ReviewStatus;
 use App\Enums\Role;
 use App\Models\AgentProfile;
+use App\Models\Category;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Review;
@@ -346,7 +347,7 @@ class AnalyticsService
      */
     private function categories(CarbonImmutable $from): array
     {
-        return Order::query()
+        $rows = Order::query()
             ->where('orders.created_at', '>=', $from)
             ->join('categories', 'categories.id', '=', 'orders.category_id')
             ->leftJoin('offers', function ($join): void {
@@ -362,10 +363,15 @@ class AnalyticsService
             ->groupBy('categories.id', 'categories.name_uz')
             ->orderByDesc('orders_count')
             ->limit(8)
-            ->get()
+            ->get();
+
+        // Sub-categories are shown with their full path ("Dizayn › Logotip").
+        $categories = Category::query()->without('imageFile')->whereKey($rows->pluck('id'))->get()->keyBy('id');
+
+        return $rows
             ->map(fn ($row) => [
                 'id' => (int) $row->id,
-                'name' => $row->name_uz,
+                'name' => $categories->get((int) $row->id)?->fullName('uz') ?? $row->name_uz,
                 'orders' => (int) $row->orders_count,
                 'gmv' => (float) $row->gmv,
             ])

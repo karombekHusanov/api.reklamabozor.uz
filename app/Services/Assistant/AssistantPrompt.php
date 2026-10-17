@@ -25,15 +25,17 @@ class AssistantPrompt
     public function categories(): array
     {
         return Cache::remember('assistant:categories', self::CACHE_TTL, function (): array {
-            return Category::query()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->get(['id', 'name_uz', 'type'])
+            // Tree order with the full path as the name ("Dizayn › Logotip")
+            // so the model can pick the most specific node.
+            $roots = Category::assembleTree(Category::query()->where('is_active', true)->get());
+
+            return Category::flattenTree($roots)
                 ->map(fn (Category $category): array => [
                     'id' => $category->id,
-                    'name' => $category->name_uz,
+                    'name' => $category->fullName('uz'),
                     'type' => $category->type->value,
                 ])
+                ->values()
                 ->all();
         });
     }

@@ -304,7 +304,7 @@ class OrderContractService
 
         return [
             ['label' => 'Буюртма рақами', 'value' => '№ '.($order?->id ?? '—').'  /  сана: '.($order?->created_at?->format('d.m.Y') ?? now()->format('d.m.Y'))],
-            ['label' => 'Хизмат тури', 'value' => ($order?->category?->name_uz ?: $order?->title) ?: '—'],
+            ['label' => 'Хизмат тури', 'value' => ($order?->category?->fullName('uz') ?: $order?->title) ?: '—'],
             ['label' => 'Тавсиф / кўлам', 'value' => $order?->description ?: '—'],
             ['label' => 'Жой (манзил)', 'value' => $place ?: '—'],
             ['label' => 'Бажарилиш муддати', 'value' => $term],

@@ -50,9 +50,11 @@ class OrderNotifier
 
                 // Directed order → only the chosen agency (filtered by id below).
                 // Broadcast ("Other" or empty category) → every approved provider.
-                // Otherwise → only providers who listed this category.
+                // Otherwise → only providers who listed this category or one
+                // of its ancestors (subtree match).
                 if ($order->target_agent_id === null && ! $broadcast) {
-                    $query->whereHas('categories', fn ($c) => $c->where('categories.id', $order->category_id));
+                    $lineage = $order->category->ancestorIdsWithSelf();
+                    $query->whereHas('categories', fn ($c) => $c->whereIn('categories.id', $lineage));
                 }
             })
             ->when($order->target_agent_id !== null, fn ($q) => $q->whereKey($order->target_agent_id))
@@ -884,7 +886,7 @@ class OrderNotifier
 
     private function buildMessage(Order $order): string
     {
-        $category = e($order->category?->name_uz ?? '');
+        $category = e($order->category?->fullName('uz') ?? '');
         $description = e(Str::limit($order->description, 300));
 
         $lines = [

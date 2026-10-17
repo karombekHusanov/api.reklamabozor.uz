@@ -22,6 +22,7 @@ class IndexCategoriesRequest extends FormRequest
             'type' => ['nullable', Rule::enum(CategoryType::class)],
             'search' => ['nullable', 'string', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
+            'parent_id' => ['nullable', 'integer'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'sort' => ['nullable', 'string', Rule::in(['sort_order', 'created_at', 'name_uz', 'name_ru'])],

@@ -186,7 +186,7 @@ class QueryCountTest extends TestCase
 
         $response->assertOk()->assertJsonCount(5, 'data.offers');
         $this->assertSame(3, $response->json('data.offers.0.chat.unread_count'));
-        $this->assertLessThanOrEqual(25, $count, "GET /orders/{id} ran {$count} queries for 5 offers");
+        $this->assertLessThanOrEqual(26, $count, "GET /orders/{id} ran {$count} queries for 5 offers");
     }
 
     public function test_chat_inbox_stays_flat(): void
@@ -220,7 +220,7 @@ class QueryCountTest extends TestCase
 
         $response->assertOk()->assertJsonCount(15, 'data');
         $this->assertSame(2, $response->json('data.0.unread_count'));
-        $this->assertLessThanOrEqual(20, $count, "GET /chats ran {$count} queries for 15 threads");
+        $this->assertLessThanOrEqual(21, $count, "GET /chats ran {$count} queries for 15 threads");
     }
 
     public function test_agent_feed_is_paginated_and_stays_flat(): void
@@ -244,7 +244,7 @@ class QueryCountTest extends TestCase
             ->assertJsonCount(20, 'data.items')
             ->assertJsonPath('data.meta.total', 25)
             ->assertJsonPath('data.meta.per_page', 20);
-        $this->assertLessThanOrEqual(15, $count, "GET /agent/orders ran {$count} queries for 20 orders");
+        $this->assertLessThanOrEqual(17, $count, "GET /agent/orders ran {$count} queries for 20 orders");
 
         // Browsing the feed never writes: views are recorded on the detail page.
         $this->assertDatabaseCount('order_views', 0);

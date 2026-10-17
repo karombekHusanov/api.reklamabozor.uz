@@ -8,6 +8,7 @@ use App\Enums\OrderPaymentState;
 use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Enums\ReviewDirection;
+use App\Models\Category;
 use App\Models\Chat;
 use App\Models\ContractAcceptance;
 use App\Models\DirectChat;
@@ -132,7 +133,12 @@ class OfferService
             $route = OrderRoute::Tezkor;
         }
 
-        $categoryIds = $profile->categories->pluck('id')->values();
+        // Served by subtree: every listed category plus all its descendants,
+        // plus categories nobody approved serves yet (broadcast to everyone).
+        $categoryIds = array_values(array_unique(array_merge(
+            Category::descendantIdsOf($profile->categories->pluck('id')->all()),
+            Category::unservedIds(),
+        )));
 
         return Order::query()
             ->where(function ($query) use ($categoryIds): void {
@@ -142,15 +148,6 @@ class OfferService
                     ->orWhereHas('category', function ($categoryQuery): void {
                         // Catch-all "Boshqa" always open to every approved provider.
                         $categoryQuery->where('is_other', true);
-                    })
-                    ->orWhereHas('category', function ($categoryQuery): void {
-                        // Normal category with nobody approved to serve it yet.
-                        $categoryQuery
-                            ->where('is_other', false)
-                            ->whereDoesntHave(
-                                'agentProfiles',
-                                fn ($profileQuery) => $profileQuery->where('status', AgentProfileStatus::Approved),
-                            );
                     });
             })
             // Broadcast orders (no target) are open to all; a directed order only

@@ -154,7 +154,8 @@ class OrderService
         $profile = AgentProfile::where('status', AgentProfileStatus::Approved)->findOrFail($agentProfileId);
 
         // Without a category there is nothing to check the agency against.
-        if ($category !== null && ! $profile->categories()->where('categories.id', $category->id)->exists()) {
+        // Serving is by subtree: the category itself or any ancestor.
+        if ($category !== null && ! $profile->categories()->whereIn('categories.id', $category->ancestorIdsWithSelf())->exists()) {
             throw ValidationException::withMessages([
                 'agent_profile_id' => ['This agency does not serve the selected category.'],
             ]);

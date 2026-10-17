@@ -28,6 +28,7 @@ class CategoryController extends ApiController
             'is_active' => array_key_exists('is_active', $validated)
                 ? (bool) $validated['is_active']
                 : null,
+            'parent_id' => isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
             'per_page' => $validated['per_page'] ?? 15,
             'sort' => $validated['sort'] ?? 'sort_order',
             'direction' => $validated['direction'] ?? 'asc',
@@ -42,6 +43,17 @@ class CategoryController extends ApiController
                 'total' => $paginator->total(),
             ],
         ]);
+    }
+
+    /**
+     * The whole catalogue (active + inactive) as a nested tree; `?type=` limits
+     * it to one root type.
+     */
+    public function tree(IndexCategoriesRequest $request): JsonResponse
+    {
+        $roots = $this->categoryAdminService->tree($request->validated('type'));
+
+        return $this->success(CategoryResource::collection($roots));
     }
 
     public function store(StoreCategoryRequest $request): JsonResponse

@@ -8,6 +8,7 @@ use App\Enums\ProviderType;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicAgentResource;
 use App\Models\AgentProfile;
+use App\Models\Category;
 use App\Services\Location\LocationPrivacy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,9 +67,16 @@ class PublicAgentController extends ApiController
 
         $categoryIds = $this->parseCsvIds($validated['category_ids'] ?? null);
         if ($categoryIds !== []) {
+            // A provider matches when it serves the picked category (lists it
+            // or an ancestor of it) or any sub-category of it.
+            $lineage = Category::query()->without('imageFile')->whereKey($categoryIds)->get()
+                ->flatMap(fn (Category $category) => $category->ancestorIdsWithSelf())
+                ->all();
+            $matchIds = array_values(array_unique(array_merge($lineage, Category::descendantIdsOf($categoryIds))));
+
             $query->whereHas(
                 'categories',
-                fn ($categoryQuery) => $categoryQuery->whereIn('categories.id', $categoryIds),
+                fn ($categoryQuery) => $categoryQuery->whereIn('categories.id', $matchIds),
             );
         }
 

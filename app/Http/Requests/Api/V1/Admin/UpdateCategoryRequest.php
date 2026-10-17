@@ -21,6 +21,9 @@ class UpdateCategoryRequest extends FormRequest
         return [
             'name_uz' => ['sometimes', 'required', 'string', 'max:100'],
             'name_ru' => ['sometimes', 'required', 'string', 'max:100'],
+            // null = move to the root level. Cycle / catch-all rules live in
+            // CategoryAdminService.
+            'parent_id' => ['sometimes', 'nullable', 'integer', Rule::exists('categories', 'id')],
             'type' => ['sometimes', Rule::enum(CategoryType::class)],
             'image_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')],
             'sort_order' => ['nullable', 'integer', 'min:0'],

@@ -103,8 +103,10 @@ class User extends Authenticatable
 
     /**
      * The approved profile if it serves the given category — the profile that
-     * bids on an order in that category. Null when not approved or the profile
-     * does not list the category. (1 user = 1 profile.)
+     * bids on an order in that category. Serving is by subtree: listing the
+     * category itself or any of its ancestors ("Dizayn" covers
+     * "Dizayn → Logotip"). Null when not approved or the profile does not
+     * serve the category. (1 user = 1 profile.)
      */
     public function providerProfileForCategory(?int $categoryId): ?AgentProfile
     {
@@ -118,9 +120,17 @@ class User extends Authenticatable
             return null;
         }
 
+        $category = Category::query()->without('imageFile')->find($categoryId);
+
+        if ($category === null) {
+            return null;
+        }
+
+        $lineage = $category->ancestorIdsWithSelf();
+
         $serves = $profile->relationLoaded('categories')
-            ? $profile->categories->contains('id', $categoryId)
-            : $profile->categories()->whereKey($categoryId)->exists();
+            ? $profile->categories->whereIn('id', $lineage)->isNotEmpty()
+            : $profile->categories()->whereIn('categories.id', $lineage)->exists();
 
         return $serves ? $profile : null;
     }

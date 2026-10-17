@@ -338,6 +338,7 @@ Route::prefix('admin')
         Route::put('/passes/settings', [AdminPassController::class, 'updateSettings']);
 
         Route::get('/categories', [AdminCategoryController::class, 'index']);
+        Route::get('/categories/tree', [AdminCategoryController::class, 'tree']);
         Route::post('/categories', [AdminCategoryController::class, 'store']);
         Route::get('/categories/{category}', [AdminCategoryController::class, 'show']);
         Route::patch('/categories/{category}', [AdminCategoryController::class, 'update']);

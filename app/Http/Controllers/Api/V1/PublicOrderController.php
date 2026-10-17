@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Http\Controllers\ApiController;
 use App\Http\Resources\PublicOrderDetailResource;
 use App\Http\Resources\PublicOrderResource;
+use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderView;
 use Illuminate\Http\JsonResponse;
@@ -77,7 +78,8 @@ class PublicOrderController extends ApiController
 
         $categoryIds = $this->parseCsvIds($validated['category_ids'] ?? null);
         if ($categoryIds !== []) {
-            $query->whereIn('category_id', $categoryIds);
+            // Picking "Dizayn" also lists "Dizayn → Logotip" orders.
+            $query->whereIn('category_id', Category::descendantIdsOf($categoryIds));
         }
 
         if (! empty($validated['district_id'])) {

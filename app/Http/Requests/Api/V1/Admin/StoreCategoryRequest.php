@@ -21,7 +21,10 @@ class StoreCategoryRequest extends FormRequest
         return [
             'name_uz' => ['required', 'string', 'max:100'],
             'name_ru' => ['required', 'string', 'max:100'],
-            'type' => ['required', Rule::enum(CategoryType::class)],
+            // Sub-category: the parent decides the type, so `type` is only
+            // required for a root.
+            'parent_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
+            'type' => ['required_without:parent_id', 'nullable', Rule::enum(CategoryType::class)],
             'image_file_id' => ['nullable', 'integer', Rule::exists('files', 'id')],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],

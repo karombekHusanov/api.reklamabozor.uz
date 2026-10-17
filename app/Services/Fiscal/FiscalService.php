@@ -17,8 +17,8 @@ use App\Models\Order;
 class FiscalService
 {
     /**
-     * The catalogue entry a category's rows default to (null when the operator
-     * has not mapped that category yet).
+     * The catalogue entry a category's rows default to: its own mapping, or
+     * the nearest ancestor's (null when nothing up the tree is mapped yet).
      */
     public function defaultFor(?Category $category): ?MxikCode
     {
@@ -26,7 +26,7 @@ class FiscalService
             return null;
         }
 
-        return $category->defaultMxikCode()->where('is_active', true)->first();
+        return $category->effectiveMxikCode();
     }
 
     /**
@@ -54,18 +54,30 @@ class FiscalService
      */
     public function coverage(): array
     {
-        $categories = Category::query()
-            ->where('is_active', true)
-            ->with('defaultMxikCode')
-            ->orderBy('sort_order')
-            ->get();
+        $categories = Category::flattenTree(Category::assembleTree(
+            Category::query()->where('is_active', true)->with('defaultMxikCode')->get(),
+        ));
+
+        // A category is covered by its own code or an ancestor's.
+        $mapped = $categories
+            ->filter(fn (Category $category) => $category->defaultMxikCode->isNotEmpty())
+            ->pluck('id')
+            ->flip();
 
         $missing = $categories
-            ->filter(fn (Category $category) => $category->defaultMxikCode->isEmpty())
+            ->filter(function (Category $category) use ($mapped): bool {
+                foreach ($category->ancestorIdsWithSelf() as $id) {
+                    if ($mapped->has($id)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
             ->map(fn (Category $category) => [
                 'id' => $category->id,
-                'name_uz' => $category->name_uz,
-                'name_ru' => $category->name_ru,
+                'name_uz' => $category->fullName('uz'),
+                'name_ru' => $category->fullName('ru'),
                 'type' => $category->type?->value,
             ])
             ->values()
