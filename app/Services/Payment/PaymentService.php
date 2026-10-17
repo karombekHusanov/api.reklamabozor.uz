@@ -462,6 +462,14 @@ class PaymentService
         // Money is fully in — now the agent's advance can be planned.
         $this->payouts->planAdvance($order->fresh());
 
+        // Paid late — after the work was already accepted (OrderService::complete()
+        // found the deal still owing and held the final tranche). Nothing else
+        // will revisit this order, so queue the remainder here. planFinal() is
+        // idempotent and nets off the advance just planned above.
+        if ($order->status === OrderStatus::Completed) {
+            $this->payouts->planFinal($order->fresh());
+        }
+
         try {
             $this->notifier->paymentSucceeded($payment);
         } catch (\Throwable $e) {

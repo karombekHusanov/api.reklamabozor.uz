@@ -8,6 +8,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\PayoutStatus;
+use App\Enums\PayoutTranche;
 use App\Models\AgentProfile;
 use App\Models\Contract;
 use App\Models\Offer;
@@ -16,6 +17,7 @@ use App\Models\Payment;
 use App\Models\Payout;
 use App\Models\User;
 use App\Services\Payment\PaymentService;
+use App\Services\Payout\PayoutService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -389,6 +391,72 @@ class OrderPaymentTest extends TestCase
 
         $this->assertSame(1, $order->fresh()->payouts()->count());
         $this->assertSame('R1', $payment->fresh()->reference);
+    }
+
+    public function test_late_payment_on_a_completed_order_plans_both_payout_tranches(): void
+    {
+        Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
+        config([
+            'payments.enabled' => true,
+            'payments.commission_percent' => 7,
+            'payments.advance_percent' => 40,
+        ]);
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+
+        // The client asks for a bank invoice while the deal is active...
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", ['method' => 'bank_transfer'], [
+            'Authorization' => 'Bearer '.$token,
+        ])->assertOk();
+        $payment = Payment::firstOrFail();
+
+        // ...but the work gets accepted (3-day auto-complete) before the money
+        // arrives. OrderService::complete() finds the order still owing, so no
+        // final tranche is planned and ops gets a `finalPayoutHeld` signal.
+        $order->update(['status' => OrderStatus::Completed, 'completed_at' => now()]);
+        $this->assertSame(0, $order->payouts()->count());
+
+        // The transfer lands later and a manager confirms it.
+        $admin = User::factory()->admin()->create();
+        app(PaymentService::class)->confirmOfflinePayment($payment, $admin, 'PP-77');
+
+        $fresh = $order->fresh();
+        $this->assertSame(OrderStatus::Completed, $fresh->status);
+        $this->assertSame(OrderPaymentState::Paid, $fresh->payment_state);
+
+        // Nothing else revisits a completed order, so the late payment itself
+        // must queue the agent's whole net: advance + final.
+        $tranches = $fresh->payouts()->pluck('amount', 'tranche');
+        $this->assertCount(2, $tranches);
+        $this->assertArrayHasKey(PayoutTranche::Advance->value, $tranches);
+        $this->assertArrayHasKey(PayoutTranche::Final->value, $tranches);
+
+        $due = 2_000_000 * 100;
+        $this->assertSame(app(PayoutService::class)->agentNet($due), (int) $tranches->sum());
+        $this->assertSame(80_000_000, $tranches[PayoutTranche::Advance->value]); // 40% of gross
+        $this->assertSame(106_000_000, $tranches[PayoutTranche::Final->value]); // net − advance
+        $this->assertTrue($fresh->payouts()->where('status', '!=', PayoutStatus::Pending->value)->doesntExist());
+    }
+
+    public function test_late_payment_on_an_active_order_plans_only_the_advance(): void
+    {
+        Storage::fake((string) config('files.disk'));
+        Storage::fake((string) config('files.private_disk'));
+        config(['payments.enabled' => true]);
+
+        [$client, $token, $order] = $this->activeUnpaidOrder(2_000_000);
+        $this->postJson("/api/v1/orders/{$order->id}/pay/offline", ['method' => 'cash'], [
+            'Authorization' => 'Bearer '.$token,
+        ])->assertOk();
+
+        app(PaymentService::class)->confirmOfflinePayment(Payment::firstOrFail(), User::factory()->admin()->create(), 'K-1');
+
+        // The deal is still running — the final tranche waits for complete().
+        $this->assertSame(
+            [PayoutTranche::Advance->value],
+            $order->fresh()->payouts()->pluck('tranche')->map(fn ($t) => $t instanceof PayoutTranche ? $t->value : $t)->all(),
+        );
     }
 
     public function test_admin_finds_a_payment_by_contract_number_or_order_id(): void
