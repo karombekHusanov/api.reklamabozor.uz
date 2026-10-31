@@ -98,6 +98,41 @@ class TelegramBotService
     }
 
     /**
+     * Inline buttons that post `callback_data` back to the webhook.
+     *
+     * @param  array<int, array{0: string, 1: string}>  $buttons  [text, callback_data] pairs, one row
+     * @return array<string, mixed>
+     */
+    public function callbackInlineKeyboard(array $buttons): array
+    {
+        return [
+            'inline_keyboard' => [array_map(
+                fn (array $b): array => ['text' => $b[0], 'callback_data' => $b[1]],
+                $buttons,
+            )],
+        ];
+    }
+
+    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null): Response
+    {
+        return Http::asJson()->post($this->endpoint('answerCallbackQuery'), array_filter([
+            'callback_query_id' => $callbackQueryId,
+            'text' => $text,
+        ], fn ($v) => $v !== null));
+    }
+
+    /** Replace a message's text and drop its inline keyboard. */
+    public function editMessageText(int|string $chatId, int $messageId, string $text): Response
+    {
+        return Http::asJson()->post($this->endpoint('editMessageText'), [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => $text,
+            'parse_mode' => 'HTML',
+        ]);
+    }
+
+    /**
      * Show the mini app launcher next to the message input (the "menu button").
      */
     public function setMenuButtonWebApp(int|string $chatId, string $buttonText, string $miniAppUrl): Response

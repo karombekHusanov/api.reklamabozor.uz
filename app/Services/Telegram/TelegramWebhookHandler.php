@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Enums\Role;
 use App\Models\User;
 use App\Services\Agent\AgentAccountLinker;
+use App\Services\Auth\TelegramNativeLoginService;
 use Illuminate\Support\Facades\Log;
 
 class TelegramWebhookHandler
@@ -13,9 +14,16 @@ class TelegramWebhookHandler
 
     private const OPEN_APP_BUTTON = '🚀 PRB’ni ochish';
 
+    private const LOGIN_PREFIX = 'login_';
+
+    private const LOGIN_OK = 'login_ok:';
+
+    private const LOGIN_NO = 'login_no:';
+
     public function __construct(
         private readonly TelegramBotService $bot,
         private readonly AgentAccountLinker $agentLinker,
+        private readonly TelegramNativeLoginService $nativeLogin,
     ) {}
 
     /**
@@ -24,6 +32,12 @@ class TelegramWebhookHandler
     public function handle(array $update): void
     {
         $this->logGroupMembership($update);
+
+        if (is_array($update['callback_query'] ?? null)) {
+            $this->handleCallback($update['callback_query']);
+
+            return;
+        }
 
         $message = $update['message'] ?? null;
 
@@ -89,6 +103,14 @@ class TelegramWebhookHandler
             ? User::query()->where('telegram_id', $fromId)->first()
             : null;
 
+        // Deep link from the mobile app: /start login_<code>.
+        $payload = trim(substr((string) ($message['text'] ?? ''), strlen('/start')));
+        if (str_starts_with($payload, self::LOGIN_PREFIX) && $fromId !== null) {
+            $this->handleLoginStart($chatId, $fromId, $user, substr($payload, strlen(self::LOGIN_PREFIX)));
+
+            return;
+        }
+
         // Returning user who already shared a phone → straight to the app.
         if ($user?->phone) {
             $this->presentApp($chatId, 'Qaytganingizdan xursandmiz! Davom etish uchun PRB’ni oching.');
@@ -152,6 +174,21 @@ class TelegramWebhookHandler
             return;
         }
 
+        // They came from the mobile app's login link: sharing the phone is the
+        // confirmation — sign the app in instead of offering the mini app.
+        $loginCode = $this->nativeLogin->pullAwaitingContact($fromId);
+        if ($loginCode !== null) {
+            $user = User::query()->where('telegram_id', $fromId)->first() ?? $user;
+            $confirmed = $this->nativeLogin->confirm($loginCode, $user);
+            $this->bot->sendMessage(
+                $chatId,
+                $confirmed ? self::loginDoneText() : self::loginExpiredText(),
+                $this->bot->removeKeyboard(),
+            );
+
+            return;
+        }
+
         // Clear the phone-request keyboard, then reveal the mini app.
         $this->bot->sendMessage(
             $chatId,
@@ -160,6 +197,90 @@ class TelegramWebhookHandler
         );
 
         $this->presentApp($chatId, 'Endi PRB’dan to‘liq foydalanishingiz mumkin.');
+    }
+
+    /**
+     * Mobile app login link opened. Known user with a phone → ask to confirm
+     * (an inline button, so a link someone else sent can't sign their phone in
+     * silently). No phone yet → collect it first; sharing it confirms.
+     */
+    private function handleLoginStart(int|string $chatId, int $fromId, ?User $user, string $code): void
+    {
+        if ($code === '' || ! $this->nativeLogin->isPending($code)) {
+            $this->bot->sendMessage($chatId, self::loginExpiredText());
+
+            return;
+        }
+
+        if ($user !== null && ! $user->is_active) {
+            $this->bot->sendMessage($chatId, 'Hisobingiz faol emas. Yordam uchun qo‘llab-quvvatlash xizmatiga yozing.');
+
+            return;
+        }
+
+        if ($user?->phone) {
+            $this->bot->sendMessage(
+                $chatId,
+                "<b>PRB mobil ilovasiga kirish</b>\n\nHozir telefoningizda PRB ilovasiga kirmoqchimisiz? Agar bu siz bo‘lmasangiz, «Bekor qilish»ni bosing.",
+                $this->bot->callbackInlineKeyboard([
+                    ['✅ Ha, kirish', self::LOGIN_OK.$code],
+                    ['Bekor qilish', self::LOGIN_NO.$code],
+                ]),
+            );
+
+            return;
+        }
+
+        $this->nativeLogin->awaitContact($fromId, $code);
+        $this->bot->sendMessage(
+            $chatId,
+            'PRB ilovasiga kirish uchun telefon raqamingizni ulashing.',
+            $this->bot->contactRequestKeyboard(self::SHARE_PHONE_BUTTON),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $query
+     */
+    private function handleCallback(array $query): void
+    {
+        $data = (string) ($query['data'] ?? '');
+        $id = (string) ($query['id'] ?? '');
+        $fromId = isset($query['from']['id']) ? (int) $query['from']['id'] : null;
+        $chatId = $query['message']['chat']['id'] ?? null;
+        $messageId = isset($query['message']['message_id']) ? (int) $query['message']['message_id'] : null;
+
+        $ok = str_starts_with($data, self::LOGIN_OK);
+        if (! $ok && ! str_starts_with($data, self::LOGIN_NO)) {
+            return;
+        }
+        $code = substr($data, strlen($ok ? self::LOGIN_OK : self::LOGIN_NO));
+
+        if ($ok) {
+            $user = $fromId !== null ? User::query()->where('telegram_id', $fromId)->first() : null;
+            $done = $user !== null && $user->phone && $this->nativeLogin->confirm($code, $user);
+            $text = $done ? self::loginDoneText() : self::loginExpiredText();
+        } else {
+            $this->nativeLogin->cancel($code);
+            $text = 'Kirish bekor qilindi.';
+        }
+
+        if ($id !== '') {
+            $this->bot->answerCallbackQuery($id);
+        }
+        if ($chatId !== null && $messageId !== null) {
+            $this->bot->editMessageText($chatId, $messageId, $text);
+        }
+    }
+
+    private static function loginDoneText(): string
+    {
+        return '✅ Kirish tasdiqlandi. PRB ilovasiga qayting.';
+    }
+
+    private static function loginExpiredText(): string
+    {
+        return 'Kirish havolasi eskirgan. Ilovada «Telegram orqali kirish»ni qaytadan bosing.';
     }
 
     /**

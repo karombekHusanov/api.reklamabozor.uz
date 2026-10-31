@@ -118,6 +118,9 @@ Route::prefix('auth')->group(function (): void {
     // 60/min). Admin login additionally locks per email+IP in AuthService.
     Route::post('/telegram', [AuthController::class, 'telegramLogin'])->middleware('throttle:20,1');
     Route::post('/admin/login', [AuthController::class, 'adminLogin'])->middleware('throttle:5,1');
+    // Native mobile app: Telegram bot deep-link login (start → confirm in bot → poll).
+    Route::post('/telegram/native/start', [AuthController::class, 'telegramNativeStart'])->middleware('throttle:10,1');
+    Route::post('/telegram/native/poll', [AuthController::class, 'telegramNativePoll'])->middleware('throttle:90,1');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);

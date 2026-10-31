@@ -44,6 +44,8 @@ return [
         'api_url' => env('TELEGRAM_API_URL', 'https://api.telegram.org'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'mini_app_url' => env('TELEGRAM_MINI_APP_URL'),
+        // Bot @username for deep links (native app login: t.me/<bot>?start=login_<code>).
+        'bot_username' => env('TELEGRAM_BOT_USERNAME', 'prb_official_bot'),
         // Private ops group where the bot reports marketplace events. Empty = disabled.
         'admin_chat_id' => env('TELEGRAM_ADMIN_CHAT_ID'),
         // Separate group that gets every payment / refund (PaymentFeedNotifier). Empty = off.
