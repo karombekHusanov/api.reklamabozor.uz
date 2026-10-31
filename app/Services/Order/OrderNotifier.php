@@ -903,6 +903,18 @@ class OrderNotifier
 
         $lines[] = "📝 Izoh: {$description}";
 
+        // Placement order: the screens the client picked on the map.
+        $placements = $order->relationLoaded('placements') ? $order->placements : $order->placements()->get();
+        if ($placements->isNotEmpty()) {
+            $lines[] = "📍 Tanlangan ekranlar: <b>{$placements->count()} ta</b>";
+            foreach ($placements->take(5) as $placement) {
+                $lines[] = '   • '.e(Str::limit($placement->address_snapshot, 70));
+            }
+            if ($placements->count() > 5) {
+                $lines[] = '   … va yana '.($placements->count() - 5).' ta';
+            }
+        }
+
         $fileCount = $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles->count() : count($order->allAttachmentFileIds());
         if ($fileCount > 0) {
             $lines[] = $fileCount === 1

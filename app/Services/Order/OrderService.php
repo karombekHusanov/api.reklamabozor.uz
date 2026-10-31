@@ -11,6 +11,7 @@ use App\Enums\OrderRoute;
 use App\Enums\OrderStatus;
 use App\Enums\TezkorBilling;
 use App\Jobs\RecalculateRating;
+use App\Models\AdPlacement;
 use App\Models\AgentProfile;
 use App\Models\Category;
 use App\Models\DirectChat;
@@ -27,6 +28,7 @@ use App\Services\Payout\PayoutService;
 use App\Services\Telegram\AdminNotifier;
 use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -55,14 +57,32 @@ class OrderService
      */
     public function create(User $client, array $data): Order
     {
+        // Screens picked on the map. Bookable-only is validated by the request;
+        // re-read here so the snapshot and routing use fresh rows.
+        /** @var EloquentCollection<int, AdPlacement> $placements */
+        $placements = ! empty($data['placements'])
+            ? AdPlacement::query()->bookable()->with('owner')->whereKey($data['placements'])->get()
+                ->sortBy(fn (AdPlacement $p) => array_search($p->id, $data['placements'], true))->values()
+            : new EloquentCollection;
+
+        if (! empty($data['placements']) && $placements->count() !== count($data['placements'])) {
+            throw ValidationException::withMessages([
+                'placements' => ['One of the selected placements is no longer available.'],
+            ]);
+        }
+
         // Route is fixed at creation. Permitted accounts default to Tender,
         // everyone else to Tezkor; asking for Tender without access is a 403
         // (also enforced in StoreOrderRequest — this is the second layer).
-        $route = isset($data['route'])
-            ? OrderRoute::from($data['route'])
-            : ($client->canCreateTender() ? OrderRoute::Tender : OrderRoute::Tezkor);
+        // A placement order is priced (rate card / agency quotes), so it always
+        // runs on the Tender machinery and skips the per-account gate.
+        $route = $placements->isNotEmpty()
+            ? OrderRoute::Tender
+            : (isset($data['route'])
+                ? OrderRoute::from($data['route'])
+                : ($client->canCreateTender() ? OrderRoute::Tender : OrderRoute::Tezkor));
 
-        if ($route === OrderRoute::Tender && ! $client->canCreateTender()) {
+        if ($route === OrderRoute::Tender && $placements->isEmpty() && ! $client->canCreateTender()) {
             throw new HttpResponseException(
                 ApiResponse::error('Tender access is required to create a tender request.', 403),
             );
@@ -72,6 +92,12 @@ class OrderService
             ? Category::find($data['category_id'])
             : null;
 
+        // Placement order without an explicit category → "LED ekran" (created
+        // on first use when the catalogue lacks it).
+        if ($category === null && $placements->isNotEmpty()) {
+            $category = AdPlacement::defaultCategory(true);
+        }
+
         // No category picked and not a directed order: let the assistant infer it
         // from the description so the order is not broadcast to every provider.
         // Null (disabled / timeout / unsure) keeps the broadcast behaviour.
@@ -80,7 +106,25 @@ class OrderService
             $category = $classifiedId !== null ? Category::find($classifiedId) : null;
         }
 
-        $targetAgentId = $this->resolveTargetAgent($data['agent_profile_id'] ?? null, $category);
+        // Every chosen screen belongs to one agency on the platform → the order
+        // goes straight to them (the only truly "direct" case). Mixed or
+        // unclaimed owners → broadcast to agencies serving the category.
+        $agentProfileId = $data['agent_profile_id'] ?? null;
+        if ($agentProfileId === null && $placements->isNotEmpty()) {
+            $ownerIds = $placements->map(fn (AdPlacement $p) => $p->hasPlatformOwner() ? $p->owner_agent_profile_id : null)->unique();
+            if ($ownerIds->count() === 1 && $ownerIds->first() !== null) {
+                $agentProfileId = (int) $ownerIds->first();
+            }
+        }
+
+        $targetAgentId = $this->resolveTargetAgent($agentProfileId, $category);
+
+        // No pin sent with a placement order → centre it on the chosen screens.
+        if ($placements->isNotEmpty() && (! isset($data['lat']) || ! isset($data['lng']))) {
+            $data['lat'] = round($placements->avg(fn (AdPlacement $p) => (float) $p->lat), 7);
+            $data['lng'] = round($placements->avg(fn (AdPlacement $p) => (float) $p->lng), 7);
+            $data['location_label'] ??= $placements->first()->address;
+        }
 
         $title = trim((string) ($data['title'] ?? ''));
         if ($title === '') {
@@ -129,6 +173,22 @@ class OrderService
         ]);
 
         $this->hashtags->syncForOrder($order, $data['hashtags'] ?? []);
+
+        if ($placements->isNotEmpty()) {
+            $order->placements()->createMany(
+                $placements->values()->map(fn (AdPlacement $placement, int $index) => [
+                    'ad_placement_id' => $placement->id,
+                    'address_snapshot' => $placement->address,
+                    'owner_name_snapshot' => $placement->relationLoaded('owner') && $placement->owner
+                        ? ($placement->owner->company_name ?: $placement->owner_name_raw)
+                        : $placement->owner_name_raw,
+                    'date_from' => $data['deadline_from'] ?? null,
+                    'date_to' => $data['deadline_to'] ?? null,
+                    'sort_order' => $index,
+                ])->all(),
+            );
+            $order->load('placements.placement');
+        }
 
         try {
             $this->notifier->notifyNewOrder($order);
@@ -195,6 +255,8 @@ class OrderService
                 'claimedAgent.profile.cachedRating',
                 // Money / cancel / amendment derivations without a query per row.
                 ...Order::LEDGER_RELATIONS,
+                // Screens picked on the map (placement orders).
+                'placements.placement',
             ])
             ->withCount(['offers', 'views'])
             ->latest()

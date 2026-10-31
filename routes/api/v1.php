@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\V1\Order\OrderController;
 use App\Http\Controllers\Api\V1\Order\OrderDocumentController;
 use App\Http\Controllers\Api\V1\Payment\GatewayCallbackController;
 use App\Http\Controllers\Api\V1\Payment\PaymentController;
+use App\Http\Controllers\Api\V1\Placement\PublicPlacementController;
 use App\Http\Controllers\Api\V1\PlatformContactController;
 use App\Http\Controllers\Api\V1\Profile\ActivityController;
 use App\Http\Controllers\Api\V1\ProfileController;
@@ -94,6 +95,10 @@ Route::get('/agents', [PublicAgentController::class, 'index']);
 // "nearby" is not captured as a model-bound id.
 Route::get('/agents/nearby', [PublicAgentController::class, 'nearby']);
 Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
+
+// Advertising placements (LED screens) on the public map — guests included.
+Route::get('/placements', [PublicPlacementController::class, 'index']);
+Route::get('/placements/{adPlacement}', [PublicPlacementController::class, 'show'])->whereNumber('adPlacement');
 
 // Public banners for the mini app home slider.
 Route::get('/banners', [PublicBannerController::class, 'index']);

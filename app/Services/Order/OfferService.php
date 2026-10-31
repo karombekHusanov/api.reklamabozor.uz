@@ -162,6 +162,7 @@ class OfferService
                 'district',
                 'hashtags',
                 'client.avatarFile',
+                'placements.placement',
                 'offers' => fn ($query) => $query->where('agent_id', $agent->id)->with('items'),
             ]);
     }
@@ -335,6 +336,7 @@ class OfferService
                 'order.district',
                 'order.hashtags',
                 'order.client.avatarFile',
+                'order.placements.placement',
                 'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)
                     ->where('reviewer_id', $agent->id),
             ])
@@ -357,6 +359,7 @@ class OfferService
             'order.district',
             'order.hashtags',
             'order.client.avatarFile',
+            'order.placements.placement',
             'order.contract.pdfFile',
             'order.documents.pdfFile',
             'order.reviews' => fn ($q) => $q->where('direction', ReviewDirection::ProviderToClient)

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Order;
 
+use App\Enums\AdPlacementStatus;
 use App\Enums\AgentProfileStatus;
 use App\Enums\OrderDeadline;
 use App\Enums\OrderRoute;
@@ -19,11 +20,25 @@ class StoreOrderRequest extends FormRequest
     public function authorize(): bool
     {
         // Tender is manager-gated per account (OrderService::create re-checks).
-        if ($this->input('route') === OrderRoute::Tender->value) {
+        // A placement order (screens picked on the map) is priced by rate card /
+        // agency quotes, so it runs on Tender for everyone — no gate.
+        if ($this->input('route') === OrderRoute::Tender->value && ! $this->hasPlacements()) {
             return (bool) $this->user()?->canCreateTender();
         }
 
         return true;
+    }
+
+    /** True only while map ordering is switched on (`placements.ordering_enabled`). */
+    public function hasPlacements(): bool
+    {
+        if (! config('placements.ordering_enabled')) {
+            return false;
+        }
+
+        $placements = $this->input('placements');
+
+        return is_array($placements) && $placements !== [];
     }
 
     /**
@@ -49,9 +64,22 @@ class StoreOrderRequest extends FormRequest
             'hashtags' => ['sometimes', 'array', 'max:'.Order::MAX_HASHTAGS],
             'hashtags.*' => ['string', 'max:40'],
             // Map pin — required: agencies see the request as a 1 km circle on
-            // the map, the exact point only once work starts.
-            'lat' => ['required', 'numeric', 'between:-90,90'],
-            'lng' => ['required', 'numeric', 'between:-180,180'],
+            // the map, the exact point only once work starts. A placement order
+            // may omit it: the service centres it on the chosen screens.
+            'lat' => ['required_without:placements', 'nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['required_without:placements', 'nullable', 'numeric', 'between:-180,180'],
+            // Screens picked on the map (ad_placements ids). Only bookable ones;
+            // the service snapshots address/owner and forces the Tender route.
+            'placements' => config('placements.ordering_enabled')
+                ? ['nullable', 'array', 'max:'.(int) config('placements.max_per_order', 20)]
+                : ['prohibited'],
+            'placements.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('ad_placements', 'id')
+                    ->whereNull('deleted_at')
+                    ->whereIn('status', array_map(fn ($s) => $s->value, AdPlacementStatus::bookable())),
+            ],
             'location_label' => ['nullable', 'string', 'max:200'],
             // Optional admin region (null = all Uzbekistan). District must be a child of region.
             'region_id' => [

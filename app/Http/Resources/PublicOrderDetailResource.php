@@ -47,6 +47,7 @@ class PublicOrderDetailResource extends JsonResource
             'region' => new RegionResource($this->whenLoaded('region')),
             'district' => new RegionResource($this->whenLoaded('district')),
             'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
+            'placements' => OrderPlacementResource::collection($this->whenLoaded('placements')),
             'attachment_files' => FileResource::collection($attachmentFiles),
             'status' => $this->status->value,
             'route' => $this->route->value,

@@ -115,6 +115,8 @@ class Order extends Model
         'amendments',
         'payouts',
         'payments',
+        // Screens picked on the map (placement orders).
+        'placements.placement',
     ];
 
     /**
@@ -149,6 +151,23 @@ class Order extends Model
     public function targetAgent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'target_agent_id');
+    }
+
+    /** Screens the client picked on the map (empty for an ordinary request). */
+    public function placements(): HasMany
+    {
+        return $this->hasMany(OrderPlacement::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Built from map placements: priced by rate card / agency quotes, so it
+     * always runs on the Tender machinery without the per-account Tender gate.
+     */
+    public function isPlacementOrder(): bool
+    {
+        return $this->relationLoaded('placements')
+            ? $this->placements->isNotEmpty()
+            : $this->placements()->exists();
     }
 
     /**

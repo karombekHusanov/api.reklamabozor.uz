@@ -38,6 +38,25 @@ class CategorySeeder extends Seeder
             );
         }
 
+        // Map inventory lands here: "Tashqi reklama › LED ekran" (also ensured
+        // by the ad_placements migration for databases seeded before it).
+        $outdoor = Category::query()
+            ->whereNull('parent_id')
+            ->where('name_uz', 'Tashqi reklama')
+            ->where('type', CategoryType::Agent)
+            ->first();
+
+        if ($outdoor !== null && ! Category::query()->where('parent_id', $outdoor->id)->where('name_uz', 'LED ekran')->exists()) {
+            Category::query()->create([
+                'parent_id' => $outdoor->id,
+                'name_uz' => 'LED ekran',
+                'name_ru' => 'LED-экран',
+                'is_active' => true,
+                'is_other' => false,
+                'sort_order' => 0,
+            ]);
+        }
+
         $designerCategories = [
             ['name_uz' => 'Logotip dizayni', 'name_ru' => 'Дизайн логотипа'],
             ['name_uz' => 'Brending', 'name_ru' => 'Брендинг'],

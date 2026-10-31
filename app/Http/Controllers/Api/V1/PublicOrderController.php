@@ -117,7 +117,7 @@ class PublicOrderController extends ApiController
 
         $user = $request->user();
 
-        $order->loadMissing(['category', 'region', 'district', 'hashtags', 'client.avatarFile']);
+        $order->loadMissing(['category', 'region', 'district', 'hashtags', 'client.avatarFile', 'placements.placement']);
         $order->loadCount(['views', 'offers']);
 
         $order->load([

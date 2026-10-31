@@ -89,6 +89,10 @@ class AgentOfferDetailResource extends JsonResource
                 'hashtags' => HashtagResource::collection(
                     $order->relationLoaded('hashtags') ? $order->hashtags : [],
                 ),
+                // Screens picked on the map — the pricelist builder pre-fills one row each.
+                'placements' => OrderPlacementResource::collection(
+                    $order->relationLoaded('placements') ? $order->placements : [],
+                ),
                 'attachment_files' => FileResource::collection(
                     $order->relationLoaded('attachmentFiles') ? $order->attachmentFiles : [],
                 ),

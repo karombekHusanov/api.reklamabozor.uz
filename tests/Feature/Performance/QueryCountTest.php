@@ -33,7 +33,8 @@ use Tests\TestCase;
 /**
  * Guards the list endpoints against N+1 regressions (audit 2026-10-16 §2.6):
  * the query count must stay flat as rows are added, so every number here is
- * a ceiling well under "one query per row".
+ * a ceiling well under "one query per row". (2026-10-31: order lists/detail
+ * +2 for the `placements.placement` eager load of map-placement orders.)
  */
 class QueryCountTest extends TestCase
 {
@@ -158,7 +159,7 @@ class QueryCountTest extends TestCase
         );
 
         $response->assertOk()->assertJsonCount(6, 'data');
-        $this->assertLessThanOrEqual(15, $count, "GET /orders ran {$count} queries for 6 orders");
+        $this->assertLessThanOrEqual(17, $count, "GET /orders ran {$count} queries for 6 orders");
     }
 
     public function test_client_order_detail_with_offers_stays_flat(): void
@@ -186,7 +187,7 @@ class QueryCountTest extends TestCase
 
         $response->assertOk()->assertJsonCount(5, 'data.offers');
         $this->assertSame(3, $response->json('data.offers.0.chat.unread_count'));
-        $this->assertLessThanOrEqual(26, $count, "GET /orders/{id} ran {$count} queries for 5 offers");
+        $this->assertLessThanOrEqual(28, $count, "GET /orders/{id} ran {$count} queries for 5 offers");
     }
 
     public function test_chat_inbox_stays_flat(): void
@@ -244,7 +245,7 @@ class QueryCountTest extends TestCase
             ->assertJsonCount(20, 'data.items')
             ->assertJsonPath('data.meta.total', 25)
             ->assertJsonPath('data.meta.per_page', 20);
-        $this->assertLessThanOrEqual(17, $count, "GET /agent/orders ran {$count} queries for 20 orders");
+        $this->assertLessThanOrEqual(19, $count, "GET /agent/orders ran {$count} queries for 20 orders");
 
         // Browsing the feed never writes: views are recorded on the detail page.
         $this->assertDatabaseCount('order_views', 0);

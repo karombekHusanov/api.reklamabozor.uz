@@ -116,6 +116,8 @@ class OrderResource extends JsonResource
                     OrderDocumentType::WorkAct,
                 )->values()),
             ),
+            // Screens picked on the map (placement orders) — empty otherwise.
+            'placements' => OrderPlacementResource::collection($this->whenLoaded('placements')),
             'offers' => OfferResource::collection($this->whenLoaded('offers')),
             'offers_count' => $this->whenCounted('offers'),
             'views_count' => $this->whenCounted('views'),

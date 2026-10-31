@@ -35,6 +35,8 @@ class AgentOrderResource extends JsonResource
             'region' => new RegionResource($this->whenLoaded('region')),
             'district' => new RegionResource($this->whenLoaded('district')),
             'hashtags' => HashtagResource::collection($this->whenLoaded('hashtags')),
+            // Screens picked on the map (placement orders) — exact, public structures.
+            'placements' => OrderPlacementResource::collection($this->whenLoaded('placements')),
             'attachment_files' => FileResource::collection(
                 $this->relationLoaded('attachmentFiles') ? $this->attachmentFiles : [],
             ),
