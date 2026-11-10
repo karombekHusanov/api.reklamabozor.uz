@@ -26,11 +26,15 @@ class PlacementResource extends JsonResource
     public function toArray(Request $request): array
     {
         $minDay = $this->minDayPriceTiyin();
+        $minMonth = $this->minMonthPriceTiyin();
 
         return [
             'id' => $this->id,
             'kind' => $this->kind->value,
             'status' => $this->status->value,
+            // Owner's own name for the screen and its size in metres, when known.
+            'name' => $this->displayName(),
+            'size' => $this->sizeLabel(),
             'address' => $this->address,
             'lat' => $this->lat,
             'lng' => $this->lng,
@@ -51,6 +55,10 @@ class PlacementResource extends JsonResource
             'has_price' => $this->hasPrice(),
             'min_day_price_tiyin' => $minDay,
             'min_day_price_som' => $minDay === null ? null : intdiv($minDay, 100),
+            // Headline price: owners quote by the month (cheapest clip length).
+            'min_month_price_som' => $minMonth === null ? null : intdiv($minMonth, 100),
+            // Clip lengths (seconds) on the rate card — the calculator's choices.
+            'slot_options' => $this->slotOptions(),
             'audience_tags' => $this->audience_tags ?? [],
             'photo' => $this->photoUrl(),
             // Category a map order is filed under (the mini app preselects it).

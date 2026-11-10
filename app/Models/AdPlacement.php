@@ -120,13 +120,58 @@ class AdPlacement extends Model
         return $owner?->status === AgentProfileStatus::Approved;
     }
 
-    /** Cheapest active day rate, or null when the owner has not priced the screen. */
+    /**
+     * Cheapest price of one day across the active rate card (a monthly rate is
+     * pro-rated), or null when the owner has not priced the screen.
+     */
     public function minDayPriceTiyin(): ?int
     {
         $rates = $this->relationLoaded('activeRates') ? $this->activeRates : $this->activeRates()->get();
-        $day = $rates->where('unit', 'day')->min('price_tiyin');
+        $day = $rates->map(fn (AdPlacementRate $rate) => $rate->dayPriceTiyin())->min();
 
         return $day === null ? null : (int) $day;
+    }
+
+    /**
+     * Cheapest price of one month (`placements.month_days`) across the active
+     * rate card — the headline price, since owners quote by the month.
+     */
+    public function minMonthPriceTiyin(): ?int
+    {
+        $rates = $this->relationLoaded('activeRates') ? $this->activeRates : $this->activeRates()->get();
+        $monthDays = max(1, (int) config('placements.month_days', 30));
+        $month = $rates->map(fn (AdPlacementRate $rate) => $rate->priceForDaysTiyin($monthDays))->min();
+
+        return $month === null ? null : (int) $month;
+    }
+
+    /**
+     * Clip lengths (seconds) the owner sells, ascending.
+     *
+     * @return list<int>
+     */
+    public function slotOptions(): array
+    {
+        $rates = $this->relationLoaded('activeRates') ? $this->activeRates : $this->activeRates()->get();
+
+        return $rates->pluck('slot_seconds')->map(fn ($s) => (int) $s)->unique()->sort()->values()->all();
+    }
+
+    /** Owner's own name for the screen ("Magic city"), when the price list gave one. */
+    public function displayName(): ?string
+    {
+        $name = $this->specs['name'] ?? null;
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /** "16×6" (metres) when the size is known. */
+    public function sizeLabel(): ?string
+    {
+        $w = $this->specs['width_m'] ?? null;
+        $h = $this->specs['height_m'] ?? null;
+
+        return $w && $h ? $w.'×'.$h : null;
     }
 
     public function hasPrice(): bool

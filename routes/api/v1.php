@@ -99,6 +99,7 @@ Route::get('/agents/{agentProfile}', [PublicAgentController::class, 'show']);
 // Advertising placements (LED screens) on the public map — guests included.
 Route::get('/placements', [PublicPlacementController::class, 'index']);
 Route::get('/placements/{adPlacement}', [PublicPlacementController::class, 'show'])->whereNumber('adPlacement');
+Route::post('/placements/estimate', [PublicPlacementController::class, 'estimate']);
 
 // Public banners for the mini app home slider.
 Route::get('/banners', [PublicBannerController::class, 'index']);

@@ -6,6 +6,7 @@ use App\Http\Controllers\ApiController;
 use App\Http\Resources\PlacementDetailResource;
 use App\Http\Resources\PlacementResource;
 use App\Models\AdPlacement;
+use App\Services\Placement\PlacementEstimateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -71,5 +72,26 @@ class PublicPlacementController extends ApiController
         $adPlacement->load(AdPlacement::PUBLIC_RELATIONS);
 
         return $this->success(new PlacementDetailResource($adPlacement));
+    }
+
+    /**
+     * Calculator: what the picked screens cost for a clip of `slot_seconds`
+     * shown for `days` days. An estimate from the owners' rate cards — the
+     * owner confirms the final price.
+     */
+    public function estimate(Request $request, PlacementEstimateService $estimates): JsonResponse
+    {
+        $validated = $request->validate([
+            'placement_ids' => ['required', 'array', 'min:1', 'max:'.(int) config('placements.max_per_order', 20)],
+            'placement_ids.*' => ['integer', 'distinct'],
+            'days' => ['required', 'integer', 'min:'.max(1, (int) config('placements.min_estimate_days', 30)), 'max:'.(int) config('placements.max_estimate_days', 365)],
+            'slot_seconds' => ['required', 'integer', 'min:1', 'max:120'],
+        ]);
+
+        return $this->success($estimates->estimate(
+            array_map(intval(...), $validated['placement_ids']),
+            (int) $validated['days'],
+            (int) $validated['slot_seconds'],
+        ));
     }
 }
