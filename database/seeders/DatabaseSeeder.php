@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             SuperAdminSeeder::class,
             CategorySeeder::class,
             RegionSeeder::class,
+            AdFormatSeeder::class,
         ]);
     }
 }

@@ -1,0 +1,333 @@
+{
+ "attribution": "© OpenStreetMap contributors (ODbL); Sergeli station: Wikidata (CC0)",
+ "lines": [
+  {
+   "code": "chilonzor",
+   "name_uz": "Chilonzor",
+   "name_ru": "Чиланзарская",
+   "stations": [
+    {
+     "name_uz": "Buyuk Ipak Yo'li",
+     "name_ru": "Буюк Ипак Йули",
+     "lat": 41.326105,
+     "lng": 69.32856
+    },
+    {
+     "name_uz": "Pushkin",
+     "name_ru": "Пушкин",
+     "lat": 41.321948,
+     "lng": 69.311102
+    },
+    {
+     "name_uz": "Hamid Olimjon",
+     "name_ru": "Хамид Алимджан",
+     "lat": 41.318164,
+     "lng": 69.295742
+    },
+    {
+     "name_uz": "Amir Temur xiyoboni",
+     "name_ru": "Сквер Амира Тимура",
+     "lat": 41.312674,
+     "lng": 69.283269
+    },
+    {
+     "name_uz": "Mustaqillik maydoni",
+     "name_ru": "Мустакиллик майдони",
+     "lat": 41.314945,
+     "lng": 69.271065
+    },
+    {
+     "name_uz": "Paxtakor",
+     "name_ru": "Пахтакор",
+     "lat": 41.317791,
+     "lng": 69.255088
+    },
+    {
+     "name_uz": "Xalqlar do'stligi",
+     "name_ru": "Дружба Народов",
+     "lat": 41.311899,
+     "lng": 69.243096
+    },
+    {
+     "name_uz": "Milliy bog'",
+     "name_ru": "Миллий бог",
+     "lat": 41.303394,
+     "lng": 69.235666
+    },
+    {
+     "name_uz": "Novza",
+     "name_ru": "Новза",
+     "lat": 41.291872,
+     "lng": 69.223617
+    },
+    {
+     "name_uz": "Mirzo Ulug'bek",
+     "name_ru": "Мирзо Улугбек",
+     "lat": 41.282034,
+     "lng": 69.212583
+    },
+    {
+     "name_uz": "Chilonzor",
+     "name_ru": "Чиланзар",
+     "lat": 41.274359,
+     "lng": 69.204973
+    },
+    {
+     "name_uz": "Olmazor",
+     "name_ru": "Алмазар",
+     "lat": 41.256672,
+     "lng": 69.196105
+    },
+    {
+     "name_uz": "Choshtepa",
+     "name_ru": "Чаштепа",
+     "lat": 41.23825,
+     "lng": 69.196034
+    },
+    {
+     "name_uz": "O'zgarish",
+     "name_ru": "Узгариш",
+     "lat": 41.227336,
+     "lng": 69.203971
+    },
+    {
+     "name_uz": "Sergeli",
+     "name_ru": "Сергели",
+     "lat": 41.221042,
+     "lng": 69.208555
+    },
+    {
+     "name_uz": "Yangihayot",
+     "name_ru": "Янгихаёт",
+     "lat": 41.21351,
+     "lng": 69.214015
+    },
+    {
+     "name_uz": "Chinor",
+     "name_ru": "Чинара",
+     "lat": 41.206696,
+     "lng": 69.218958
+    }
+   ]
+  },
+  {
+   "code": "ozbekiston",
+   "name_uz": "O'zbekiston",
+   "name_ru": "Узбекистанская",
+   "stations": [
+    {
+     "name_uz": "Beruniy",
+     "name_ru": "Беруни",
+     "lat": 41.344615,
+     "lng": 69.206205
+    },
+    {
+     "name_uz": "Tinchlik",
+     "name_ru": "Тинчлик",
+     "lat": 41.332301,
+     "lng": 69.219116
+    },
+    {
+     "name_uz": "Chorsu",
+     "name_ru": "Чорсу",
+     "lat": 41.325865,
+     "lng": 69.236815
+    },
+    {
+     "name_uz": "G'afur G'ulom",
+     "name_ru": "Гафур Гулям",
+     "lat": 41.327883,
+     "lng": 69.245834
+    },
+    {
+     "name_uz": "Alisher Navoiy",
+     "name_ru": "Алишер Навои",
+     "lat": 41.318922,
+     "lng": 69.254297
+    },
+    {
+     "name_uz": "O'zbekiston",
+     "name_ru": "Узбекистан",
+     "lat": 41.311944,
+     "lng": 69.253406
+    },
+    {
+     "name_uz": "Kosmonavtlar",
+     "name_ru": "Космонавтов",
+     "lat": 41.305162,
+     "lng": 69.264721
+    },
+    {
+     "name_uz": "Oybek",
+     "name_ru": "Айбек",
+     "lat": 41.298013,
+     "lng": 69.27405
+    },
+    {
+     "name_uz": "Toshkent",
+     "name_ru": "Ташкент",
+     "lat": 41.293289,
+     "lng": 69.287721
+    },
+    {
+     "name_uz": "Mashinasozlar",
+     "name_ru": "Машинасозлар",
+     "lat": 41.298985,
+     "lng": 69.305128
+    },
+    {
+     "name_uz": "Do'stlik",
+     "name_ru": "Дустлик",
+     "lat": 41.29364,
+     "lng": 69.322244
+    }
+   ]
+  },
+  {
+   "code": "yunusobod",
+   "name_uz": "Yunusobod",
+   "name_ru": "Юнусабадская",
+   "stations": [
+    {
+     "name_uz": "Turkiston",
+     "name_ru": "Туркистан",
+     "lat": 41.377522,
+     "lng": 69.296015
+    },
+    {
+     "name_uz": "Yunusobod",
+     "name_ru": "Юнусабад",
+     "lat": 41.366841,
+     "lng": 69.2923
+    },
+    {
+     "name_uz": "Shahriston",
+     "name_ru": "Шахристан",
+     "lat": 41.353119,
+     "lng": 69.288107
+    },
+    {
+     "name_uz": "Bodomzor",
+     "name_ru": "Бадамзар",
+     "lat": 41.33717,
+     "lng": 69.28457
+    },
+    {
+     "name_uz": "Minor",
+     "name_ru": "Минор",
+     "lat": 41.326892,
+     "lng": 69.283416
+    },
+    {
+     "name_uz": "Abdulla Qodiriy",
+     "name_ru": "Абдулла Кадыри",
+     "lat": 41.320192,
+     "lng": 69.281759
+    },
+    {
+     "name_uz": "Yunus Rajabiy",
+     "name_ru": "Юнус Раджаби",
+     "lat": 41.313887,
+     "lng": 69.283508
+    },
+    {
+     "name_uz": "Ming O'rik",
+     "name_ru": "Минг Урик",
+     "lat": 41.299661,
+     "lng": 69.27441
+    }
+   ]
+  },
+  {
+   "code": "halqa",
+   "name_uz": "Halqa",
+   "name_ru": "Кольцевая",
+   "stations": [
+    {
+     "name_uz": "Texnopark",
+     "name_ru": "Технопарк",
+     "lat": 41.294628,
+     "lng": 69.323187
+    },
+    {
+     "name_uz": "Yashnobod",
+     "name_ru": "Яшнабад",
+     "lat": 41.297586,
+     "lng": 69.349783
+    },
+    {
+     "name_uz": "Tuzel",
+     "name_ru": "Тузель",
+     "lat": 41.292012,
+     "lng": 69.356184
+    },
+    {
+     "name_uz": "Olmos",
+     "name_ru": "Алмас",
+     "lat": 41.281705,
+     "lng": 69.360334
+    },
+    {
+     "name_uz": "Rohat",
+     "name_ru": "Рахат",
+     "lat": 41.265291,
+     "lng": 69.364752
+    },
+    {
+     "name_uz": "Yangiobod",
+     "name_ru": "Янгиабад",
+     "lat": 41.256507,
+     "lng": 69.358724
+    },
+    {
+     "name_uz": "Qo'yliq",
+     "name_ru": "Куйлюк",
+     "lat": 41.237458,
+     "lng": 69.327
+    },
+    {
+     "name_uz": "Matonat",
+     "name_ru": "Матонат",
+     "lat": 41.244471,
+     "lng": 69.308323
+    },
+    {
+     "name_uz": "Qiyot",
+     "name_ru": "Киёт",
+     "lat": 41.24448,
+     "lng": 69.299728
+    },
+    {
+     "name_uz": "Tolariq",
+     "name_ru": "Таларык",
+     "lat": 41.244514,
+     "lng": 69.284957
+    },
+    {
+     "name_uz": "Xonobod",
+     "name_ru": "Ханабад",
+     "lat": 41.23001,
+     "lng": 69.270435
+    },
+    {
+     "name_uz": "Quruvchilar",
+     "name_ru": "Курувчилар",
+     "lat": 41.221637,
+     "lng": 69.260503
+    },
+    {
+     "name_uz": "Turon",
+     "name_ru": "Туран",
+     "lat": 41.210681,
+     "lng": 69.234154
+    },
+    {
+     "name_uz": "Qipchoq",
+     "name_ru": "Кипчак",
+     "lat": 41.205423,
+     "lng": 69.221411
+    }
+   ]
+  }
+ ]
+}

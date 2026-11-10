@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\V1\Placement;
 
 use App\Http\Controllers\ApiController;
+use App\Http\Resources\AdFormatResource;
 use App\Http\Resources\PlacementDetailResource;
 use App\Http\Resources\PlacementResource;
+use App\Models\AdFormat;
 use App\Models\AdPlacement;
 use App\Services\Placement\PlacementEstimateService;
 use Illuminate\Http\JsonResponse;
@@ -75,23 +77,60 @@ class PublicPlacementController extends ApiController
     }
 
     /**
-     * Calculator: what the picked screens cost for a clip of `slot_seconds`
-     * shown for `days` days. An estimate from the owners' rate cards — the
-     * owner confirms the final price.
+     * Catalogue of per-unit formats (metro): one price per format, counts per
+     * line, network packages. `venue` defaults to the only one so far.
+     */
+    public function formats(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['venue' => ['nullable', 'string', 'max:20']]);
+
+        $formats = AdFormat::query()
+            ->active()
+            ->where('venue', $validated['venue'] ?? 'metro')
+            ->orderBy('sort_order')
+            ->get();
+
+        return $this->success(AdFormatResource::collection($formats));
+    }
+
+    /**
+     * Tashkent metro lines with their stations in travel order — the map's
+     * "Metro" layer. Static reference data (OpenStreetMap), so it is read from
+     * the bundled file rather than a table.
+     */
+    public function metroLines(): JsonResponse
+    {
+        $data = json_decode((string) file_get_contents(database_path('data/metro/tashkent_metro.json')), true);
+
+        return $this->success([
+            'attribution' => $data['attribution'],
+            'lines' => $data['lines'],
+        ]);
+    }
+
+    /**
+     * Calculator: what the picked screens and metro formats cost for a clip of
+     * `slot_seconds` shown for `days` days. An estimate from the owners' rate
+     * cards — the owner confirms the final price.
      */
     public function estimate(Request $request, PlacementEstimateService $estimates): JsonResponse
     {
+        $max = (int) config('placements.max_per_order', 20);
         $validated = $request->validate([
-            'placement_ids' => ['required', 'array', 'min:1', 'max:'.(int) config('placements.max_per_order', 20)],
+            'placement_ids' => ['required_without:formats', 'array', 'max:'.$max],
             'placement_ids.*' => ['integer', 'distinct'],
+            'formats' => ['required_without:placement_ids', 'array', 'max:'.$max],
+            'formats.*.format_id' => ['required', 'integer', 'distinct'],
+            'formats.*.quantity' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'days' => ['required', 'integer', 'min:'.max(1, (int) config('placements.min_estimate_days', 30)), 'max:'.(int) config('placements.max_estimate_days', 365)],
             'slot_seconds' => ['required', 'integer', 'min:1', 'max:120'],
         ]);
 
         return $this->success($estimates->estimate(
-            array_map(intval(...), $validated['placement_ids']),
+            array_map(intval(...), $validated['placement_ids'] ?? []),
             (int) $validated['days'],
             (int) $validated['slot_seconds'],
+            array_map(fn (array $row) => ['format_id' => (int) $row['format_id'], 'quantity' => (int) ($row['quantity'] ?? 1)], $validated['formats'] ?? []),
         ));
     }
 }
