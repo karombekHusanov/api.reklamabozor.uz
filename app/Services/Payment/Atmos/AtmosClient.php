@@ -185,7 +185,7 @@ class AtmosClient
         $code = $json['result']['code'] ?? null;
 
         if ($code !== null && (string) $code !== 'OK') {
-            throw new CardPaymentException((string) ($json['result']['description'] ?? $code));
+            throw new CardPaymentException((string) ($json['result']['description'] ?? $code), (string) $code);
         }
 
         return $json;

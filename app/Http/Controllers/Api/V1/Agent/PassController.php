@@ -20,6 +20,7 @@ use App\Services\Pass\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /** Agent-facing per-order fee summary + wallet (balance, card top-ups, saved cards). */
 class PassController extends ApiController
@@ -62,19 +63,27 @@ class PassController extends ApiController
     public function walletCardStart(StartWalletTopupRequest $request): JsonResponse
     {
         if (! config('passes.wallet_enabled')) {
-            return $this->error('The wallet is not enabled.', 422);
+            return $this->coded('The wallet is not enabled.', 'wallet_disabled', 422);
         }
 
         $agent = $request->user();
 
+        // A provider whose application is still under review can open the
+        // balance page in Agent mode, but cannot top up until approved.
         if ($agent->approvedProfile() === null) {
-            return $this->error('Only approved providers can top up the balance.', 403);
+            Log::info('gateway.card.rejected', [
+                'user' => $agent->id,
+                'reason' => 'profile_not_approved',
+                'profile_status' => $agent->profile?->status?->value,
+            ]);
+
+            return $this->coded('Only approved providers can top up the balance.', 'profile_not_approved', 403);
         }
 
         $source = $this->cardSource($request);
 
         if ($source === null) {
-            return $this->error('Saved card not found.', 422);
+            return $this->coded('Saved card not found.', 'saved_card_not_found', 422);
         }
 
         return $this->cardStarted(
@@ -101,12 +110,18 @@ class PassController extends ApiController
         $saved = $this->savedCards->findForUser($request->user(), $card);
 
         if ($saved === null) {
-            return $this->error('Saved card not found.', 404);
+            return $this->coded('Saved card not found.', 'saved_card_not_found', 404);
         }
 
         $this->savedCards->delete($saved);
 
         return $this->success(null, 'Card removed');
+    }
+
+    /** Error with a stable `code` the mini app maps to its own wording. */
+    private function coded(string $message, string $code, int $status): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => $message, 'code' => $code, 'data' => null], $status);
     }
 
     private function cardSource(StartCardPaymentRequest $request): ?CardSource

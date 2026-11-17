@@ -124,7 +124,19 @@ class CardPaymentTest extends TestCase
 
     public function test_unapproved_provider_cannot_pay(): void
     {
-        $this->start(User::factory()->create())->assertForbidden();
+        $this->start(User::factory()->create())->assertForbidden()->assertJsonPath('code', 'profile_not_approved');
+    }
+
+    /** Prod case (2026-11-16): an applicant under review opened the balance in Agent mode. */
+    public function test_provider_under_review_is_told_why_and_summary_says_so(): void
+    {
+        $user = User::factory()->create();
+        AgentProfile::factory()->for($user)->create(['status' => 'pending']);
+
+        $this->as($user)->getJson('/api/v1/agent/pass')->assertJsonPath('data.can_top_up', false);
+        $this->start($user)->assertForbidden()->assertJsonPath('code', 'profile_not_approved');
+        $this->as($this->agent())->getJson('/api/v1/agent/pass')->assertJsonPath('data.can_top_up', true);
+        $this->assertSame(0, GatewayPayment::query()->count());
     }
 
     public function test_wallet_top_up_by_card_credits_the_balance(): void

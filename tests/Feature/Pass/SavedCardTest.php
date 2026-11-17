@@ -226,4 +226,60 @@ class SavedCardTest extends TestCase
         Http::assertSent(fn (HttpRequest $r) => str_ends_with($r->url(), '/partner/remove-card')
             && $r['id'] === 1579076 && $r['token'] === 'TOKEN-abc');
     }
+
+    /**
+     * Prod case (2026-11-16): the card binds, the token charge is refused for
+     * lack of funds. The agent gets the bank's reason with its code, the card
+     * stays saved, and the dead payment cannot be "confirmed" again.
+     */
+    public function test_atmos_token_charge_refused_after_binding(): void
+    {
+        config([
+            'passes.gateway' => 'atmos',
+            'atmos.base_url' => 'https://atmos.test',
+            'atmos.consumer_key' => 'key',
+            'atmos.consumer_secret' => 'secret',
+            'atmos.store_id' => 77,
+        ]);
+        Cache::flush();
+        Log::spy();
+
+        $ok = ['result' => ['code' => 'OK', 'description' => 'Нет ошибок']];
+        Http::fake([
+            'atmos.test/token' => Http::response(['access_token' => 'tok', 'expires_in' => 3600]),
+            'atmos.test/partner/bind-card/init' => Http::response($ok + ['transaction_id' => 442]),
+            'atmos.test/partner/bind-card/confirm' => Http::response($ok + ['data' => [
+                'card_id' => 1579076, 'pan' => '986012******2365', 'card_token' => 'TOKEN-abc',
+            ]]),
+            'atmos.test/merchant/pay/create' => Http::response($ok + ['transaction_id' => 6001]),
+            'atmos.test/merchant/pay/pre-apply' => Http::response($ok),
+            'atmos.test/merchant/pay/apply' => Http::response(['result' => [
+                'code' => 'STPIMS-ERR-TEST', 'description' => 'Недостаточно средств на балансе карты для проведения платежа',
+            ]]),
+        ]);
+
+        $agent = $this->agent();
+        $ref = $this->as($agent)->postJson('/api/v1/agent/wallet/card', [
+            'amount_som' => 1000,
+            'card_number' => '9860 1234 5678 2365', 'expiry' => '01/28', 'save_card' => true,
+        ])->assertCreated()->json('data.payment_ref');
+
+        $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '123456'])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'card_declined')
+            ->assertJsonPath('provider_code', 'STPIMS-ERR-TEST')
+            ->assertJsonPath('message', 'Недостаточно средств на балансе карты для проведения платежа');
+
+        Log::shouldHaveReceived('warning')->withArgs(
+            fn (string $message, array $context) => $message === 'gateway.card.declined'
+                && $context['stage'] === 'token_charge'
+                && $context['provider_code'] === 'STPIMS-ERR-TEST'
+                && $context['card_bin'] === '9860',
+        )->once();
+        $this->assertSame(1, SavedCard::query()->count());
+
+        $this->as($agent)->postJson("/api/v1/agent/pass/card/{$ref}/confirm", ['otp' => '123456'])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'payment_failed');
+    }
 }

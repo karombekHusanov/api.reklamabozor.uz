@@ -30,6 +30,8 @@ class PassService
             'tezkor_billing' => $this->settings->tezkorBilling()->value,
             'pick_pay_minutes' => $this->settings->pickPayMinutes(),
             'balance_som' => $walletOn ? intdiv($this->wallet->balanceTiyin($agent), 100) : null,
+            // Card top-up opens once the provider profile is approved.
+            'can_top_up' => $walletOn && $agent->approvedProfile() !== null,
         ];
     }
 

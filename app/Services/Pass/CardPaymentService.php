@@ -91,7 +91,7 @@ class CardPaymentService
             $this->logDeclined($payment, 'start', $e);
             $this->fail($payment);
 
-            throw $this->userError($e->getMessage(), 'card_declined');
+            throw $this->providerError($e, 'card_declined');
         } catch (\Throwable $e) {
             $this->fail($payment);
             Log::warning('gateway.card.start_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
@@ -116,6 +116,11 @@ class CardPaymentService
             throw $this->userError('Payment not found.', 'payment_not_found', 404);
         }
 
+        // A declined payment cannot be revived with a code — the agent starts over.
+        if ($payment->status === GatewayPaymentStatus::Failed) {
+            throw $this->userError('This payment did not go through. Start a new one.', 'payment_failed');
+        }
+
         if ($payment->status->isFinal()) {
             return $payment;
         }
@@ -129,7 +134,7 @@ class CardPaymentService
         } catch (CardPaymentException $e) {
             $this->logDeclined($payment, 'confirm_otp', $e);
 
-            throw $this->userError($e->getMessage(), 'otp_invalid');
+            throw $this->providerError($e, 'otp_invalid');
         } catch (\Throwable $e) {
             // The debit may still have gone through — the status sync settles it.
             Log::warning('gateway.card.confirm_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
@@ -172,7 +177,7 @@ class CardPaymentService
             } catch (CardPaymentException $e) {
                 $this->logDeclined($payment, 'bind_confirm', $e);
 
-                throw $this->userError($e->getMessage(), 'otp_invalid');
+                throw $this->providerError($e, 'otp_invalid');
             } catch (\Throwable $e) {
                 Log::warning('gateway.card.bind_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
 
@@ -205,7 +210,7 @@ class CardPaymentService
             $this->logDeclined($payment, 'token_start', $e);
             $this->fail($payment);
 
-            throw $this->userError($e->getMessage(), 'card_declined');
+            throw $this->providerError($e, 'card_declined');
         } catch (\Throwable $e) {
             $this->fail($payment);
             Log::warning('gateway.card.start_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
@@ -219,7 +224,7 @@ class CardPaymentService
             $this->logDeclined($payment, 'token_charge', $e);
             $this->fail($payment);
 
-            throw $this->userError($e->getMessage(), 'card_declined');
+            throw $this->providerError($e, 'card_declined');
         } catch (\Throwable $e) {
             // The debit may still have gone through — the status sync settles it.
             Log::warning('gateway.card.token_charge_failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
@@ -264,8 +269,23 @@ class CardPaymentService
             'payment' => $payment->id,
             'user' => $payment->user_id,
             'stage' => $stage,
+            'provider_code' => $e->providerCode,
+            // Card scheme by BIN only (8600/5614 UzCard, 9860 Humo, 4 Visa…) — the mask never holds more.
+            'card_bin' => substr((string) ($payment->meta['card_mask'] ?? ''), 0, 4) ?: null,
             'error' => $e->getMessage(),
         ]);
+    }
+
+    /** The provider's refusal as a 422 the mini app switches on; its text is safe to show. */
+    private function providerError(CardPaymentException $e, string $code): HttpResponseException
+    {
+        return new HttpResponseException(response()->json([
+            'success' => false,
+            'message' => $e->getMessage(),
+            'code' => $code,
+            'provider_code' => $e->providerCode,
+            'data' => null,
+        ], 422));
     }
 
     private function fail(GatewayPayment $payment): void
