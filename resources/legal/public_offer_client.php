@@ -5,6 +5,8 @@
  | Mijoz_uchun_Ommaviy_Oferta-11.docx). Mini app ko'rinishi va PDF shu bitta
  | manbadan olinadi (PublicOfferService). Matnni o'zgartirsangiz
  | config/legal.php → terms_version ni ham oshiring (qayta rozilik so'raladi).
+ | Tarjimalar (faqat ma'lumot uchun, shu matn ustun): translations/{uz,ru,en}/public_offer_client.php
+ | — asl matn o'zgarsa ularni ham yangilang. Aksept hash'i faqat shu fayldan olinadi.
 */
 
 return [

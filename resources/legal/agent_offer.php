@@ -6,6 +6,8 @@
  | manbadan olinadi (PublicOfferService, kind=agent). Matnni o'zgartirsangiz
  | config/legal.php → agent_offer_version ni ham oshiring (agentlardan qayta
  | rozilik so'raladi).
+ | Tarjimalar (faqat ma'lumot uchun, shu matn ustun): translations/{uz,ru,en}/agent_offer.php
+ | — asl matn o'zgarsa ularni ham yangilang. Aksept hash'i faqat shu fayldan olinadi.
 */
 
 return [

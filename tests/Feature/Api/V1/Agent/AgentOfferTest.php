@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Legal\PublicOfferService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AgentOfferTest extends TestCase
@@ -49,12 +50,15 @@ class AgentOfferTest extends TestCase
 
     public function test_agent_offer_text_is_public(): void
     {
-        $this->getJson('/api/v1/legal/agent-offer')
+        $this->withHeader('Accept-Language', '')->getJson('/api/v1/legal/agent-offer')
             ->assertOk()
             ->assertJsonPath('data.version', config('legal.agent_offer_version'))
             ->assertJsonCount(12, 'data.sections')
             ->assertJsonPath('data.requisites.0.value', '«Imprint Business» МЧЖ')
-            ->assertJsonPath('data.pdf_url', url('/api/v1/legal/agent-offer.pdf'))
+            ->assertJsonPath('data.pdf_url', url('/api/v1/legal/agent-offer.pdf').'?locale=uz-Cyrl')
+            ->assertJsonPath('data.locale', 'uz-Cyrl')
+            ->assertJsonPath('data.is_original', true)
+            ->assertJsonPath('data.translation_notice', null)
             ->assertJsonStructure(['data' => ['title', 'sections' => [['title', 'clauses' => [['label', 'text']]]]]]);
     }
 
@@ -66,6 +70,66 @@ class AgentOfferTest extends TestCase
 
         $this->assertStringStartsWith('%PDF', $response->getContent());
         $this->assertStringContainsString('agentlik', (string) $response->headers->get('Content-Disposition'));
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function translatedLocales(): array
+    {
+        return [
+            'uz latin' => ['uz', '«Imprint Business» MChJ'],
+            'russian' => ['ru', 'ООО «Imprint Business»'],
+            'english' => ['en', '«Imprint Business» LLC'],
+        ];
+    }
+
+    #[DataProvider('translatedLocales')]
+    public function test_agent_offer_is_served_in_the_requested_language(string $locale, string $operatorName): void
+    {
+        $this->getJson('/api/v1/legal/agent-offer?locale='.$locale)
+            ->assertOk()
+            ->assertJsonPath('data.locale', $locale)
+            ->assertJsonPath('data.is_original', false)
+            ->assertJsonPath('data.version', config('legal.agent_offer_version'))
+            ->assertJsonCount(12, 'data.sections')
+            ->assertJsonPath('data.requisites.0.value', $operatorName)
+            ->assertJsonPath('data.pdf_url', url('/api/v1/legal/agent-offer.pdf').'?locale='.$locale)
+            ->assertJsonPath('data.original_pdf_url', url('/api/v1/legal/agent-offer.pdf').'?locale=uz-Cyrl')
+            ->assertJson(['data' => ['translation_notice' => app(PublicOfferService::class)->translationNotice($locale)]]);
+
+        $response = $this->get('/api/v1/legal/agent-offer.pdf?locale='.$locale)->assertOk();
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->assertStringContainsString('_'.$locale.'.pdf', (string) $response->headers->get('Content-Disposition'));
+    }
+
+    public function test_translations_mirror_the_original_structure(): void
+    {
+        $offers = app(PublicOfferService::class);
+        $shape = fn (array $doc) => [
+            array_map(fn ($s) => array_map(fn ($c) => preg_match('/^\d+\.\d+\.$/', $c['label']) ? $c['label'] : '*', $s['clauses']), $doc['sections']),
+            count($doc['requisites']),
+        ];
+
+        foreach ([PublicOfferService::CLIENT, PublicOfferService::AGENT] as $kind) {
+            foreach (['uz', 'ru', 'en'] as $locale) {
+                $this->assertSame($shape($offers->document($kind)), $shape($offers->document($kind, $locale)), "{$kind}/{$locale}");
+            }
+        }
+    }
+
+    public function test_acceptance_hash_is_taken_from_the_original_whatever_language_was_read(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)
+            ->withHeader('Accept-Language', 'en')
+            ->postJson('/api/v1/agent/profile?locale=ru', $this->kycPayload($user))
+            ->assertCreated();
+
+        $offers = app(PublicOfferService::class);
+        $this->assertSame($offers->hash(PublicOfferService::AGENT), $user->profile()->first()->offer_hash);
+        $this->assertSame(
+            hash('sha256', json_encode($offers->document(PublicOfferService::AGENT, 'uz-Cyrl'), JSON_UNESCAPED_UNICODE).'|'.$offers->version(PublicOfferService::AGENT)),
+            $offers->hash(PublicOfferService::AGENT),
+        );
     }
 
     public function test_application_requires_accepting_the_offer(): void

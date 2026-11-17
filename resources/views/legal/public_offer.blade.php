@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="{{ $lang ?? 'uz-Cyrl' }}">
 <head>
     <meta charset="utf-8">
     <style>
@@ -13,12 +13,17 @@
         .req { width: 100%; border-collapse: collapse; margin-top: 6px; }
         .req td { padding: 3px 6px; border: 1px solid #ccc; vertical-align: top; }
         .req td.k { width: 28%; font-weight: bold; }
+        .notice { border: 1px solid #c9a227; background: #fff8e1; padding: 6px 8px; margin: 0 0 12px; font-size: 9.5px; }
         .footer { margin-top: 18px; font-size: 8.5px; color: #777; text-align: center; }
     </style>
 </head>
 <body>
     <div class="brand">«PRB»</div>
     <h1>{{ $doc['title'] }}</h1>
+
+    @if (! empty($notice))
+        <div class="notice">{{ $notice }}</div>
+    @endif
 
     @foreach ($doc['sections'] as $section)
         <h2>{{ $section['title'] }}</h2>
@@ -34,6 +39,6 @@
         @endforeach
     </table>
 
-    <div class="footer">reklamabozor.uz · {{ $version }}</div>
+    <div class="footer">reklamabozor.uz · {{ $version }} · {{ $lang ?? 'uz-Cyrl' }}</div>
 </body>
 </html>
