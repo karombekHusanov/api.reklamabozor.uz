@@ -72,4 +72,23 @@ class ProfileUpdateTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.first_name', 'New');
     }
+
+    public function test_first_name_needs_at_least_two_letters(): void
+    {
+        $user = User::factory()->create(['first_name' => '.']);
+        $token = $user->createToken('test')->plainTextToken;
+
+        foreach (['.', 'A', '😀', '1 2'] as $bad) {
+            $this->patchJson('/api/v1/me', ['first_name' => $bad], ['Authorization' => 'Bearer '.$token])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('first_name');
+        }
+
+        // Cyrillic and Uzbek apostrophe names pass.
+        foreach (['Ли', "G'ayrat"] as $good) {
+            $this->patchJson('/api/v1/me', ['first_name' => $good], ['Authorization' => 'Bearer '.$token])
+                ->assertOk()
+                ->assertJsonPath('data.first_name', $good);
+        }
+    }
 }

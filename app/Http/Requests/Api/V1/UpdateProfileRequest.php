@@ -18,7 +18,8 @@ class UpdateProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'first_name' => ['sometimes', 'required', 'string', 'max:100'],
+            // A real name: at least two letters (Telegram names like "." are replaced here).
+            'first_name' => ['sometimes', 'required', 'string', 'max:100', 'regex:/\p{L}.*\p{L}/su'],
             'last_name' => ['nullable', 'string', 'max:100'],
             // Avatar must reference a file the user uploaded themselves.
             'avatar_file_id' => [
@@ -26,6 +27,16 @@ class UpdateProfileRequest extends FormRequest
                 'integer',
                 Rule::exists('files', 'id')->where('uploaded_by', $this->user()->id),
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'first_name.regex' => 'Your name needs at least 2 letters.',
         ];
     }
 }
